@@ -1,0 +1,53 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "ai-workflow-benchmark"
+version = "0.1.0"
+description = "Benchmark harness measuring AI coding tool+workflow performance, not just model capability"
+readme = "README.md"
+license = "MIT"
+requires-python = ">=3.11"
+authors = [
+    {name = "Xavier Puspus"},
+]
+keywords = ["benchmark", "ai-coding", "claude-code", "developer-tools"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Software Development :: Testing",
+]
+
+dependencies = [
+    "click>=8.1.0,<9",
+    "pyyaml>=6.0,<7",
+    "jsonschema>=4.20.0,<5",
+    "jinja2>=3.1.0,<4",
+    "rich>=13.0.0,<14",
+    "tabulate>=0.9.0,<1",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0.0,<9",
+    "pytest-asyncio>=0.23.0,<1",
+    "ruff>=0.3.0,<1",
+]
+
+[project.scripts]
+awb = "harness.cli:cli"
+
+[tool.ruff]
+target-version = "py311"
+line-length = 100
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "N", "UP", "B", "A", "SIM"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"

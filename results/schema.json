@@ -1,0 +1,69 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "AWB Run Result",
+  "type": "object",
+  "required": ["task_id", "tool", "run_id", "timestamp", "outcome", "metrics", "cost", "quality", "environment"],
+  "properties": {
+    "task_id": {"type": "string"},
+    "tool": {"type": "string"},
+    "tool_version": {"type": "string"},
+    "model": {"type": "string"},
+    "run_id": {"type": "string"},
+    "timestamp": {"type": "string", "format": "date-time"},
+    "outcome": {
+      "type": "object",
+      "required": ["success", "partial_credit_score", "partial_credit_max"],
+      "properties": {
+        "success": {"type": "boolean"},
+        "partial_credit_score": {"type": "number", "minimum": 0},
+        "partial_credit_max": {"type": "number", "minimum": 0},
+        "breakdown": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "criterion": {"type": "string"},
+              "points_earned": {"type": "number"},
+              "points_possible": {"type": "number"},
+              "passed": {"type": "boolean"}
+            }
+          }
+        }
+      }
+    },
+    "metrics": {
+      "type": "object",
+      "properties": {
+        "wall_clock_seconds": {"type": "number"},
+        "iteration_count": {"type": "integer"},
+        "human_interventions": {"type": "integer"},
+        "tool_calls": {"type": "object"},
+        "files_modified": {"type": "integer"},
+        "lines_changed": {"type": "integer"}
+      }
+    },
+    "cost": {
+      "type": "object",
+      "properties": {
+        "input_tokens": {"type": "integer"},
+        "output_tokens": {"type": "integer"},
+        "estimated_cost_usd": {"type": "number"}
+      }
+    },
+    "quality": {
+      "type": "object",
+      "properties": {
+        "lint_delta": {"type": "integer"},
+        "security_delta": {"type": "integer"},
+        "test_regressions": {"type": "integer"}
+      }
+    },
+    "environment": {
+      "type": "object",
+      "properties": {
+        "os": {"type": "string"},
+        "hardware": {"type": "string"}
+      }
+    }
+  }
+}

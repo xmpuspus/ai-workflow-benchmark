@@ -1,0 +1,114 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "AWB Task Definition",
+  "type": "object",
+  "required": ["id", "category", "title", "difficulty", "estimated_minutes", "languages", "repo", "issue", "verification", "constraints"],
+  "additionalProperties": false,
+  "properties": {
+    "id": {
+      "type": "string",
+      "pattern": "^[A-Z]{2}-\\d{3}$"
+    },
+    "category": {
+      "type": "string",
+      "enum": ["bug-fix", "feature-addition", "refactoring", "code-review", "debugging", "multi-file", "legacy-code"]
+    },
+    "title": {
+      "type": "string",
+      "minLength": 10,
+      "maxLength": 120
+    },
+    "difficulty": {
+      "type": "string",
+      "enum": ["easy", "medium", "hard"]
+    },
+    "estimated_minutes": {
+      "type": "integer",
+      "minimum": 5,
+      "maximum": 120
+    },
+    "languages": {
+      "type": "array",
+      "items": {"type": "string"},
+      "minItems": 1
+    },
+    "tags": {
+      "type": "array",
+      "items": {"type": "string"}
+    },
+    "repo": {
+      "type": "object",
+      "required": ["url", "commit"],
+      "additionalProperties": false,
+      "properties": {
+        "url": {"type": "string", "format": "uri"},
+        "commit": {"type": "string", "pattern": "^[a-f0-9]{7,40}$"},
+        "setup_commands": {
+          "type": "array",
+          "items": {"type": "string"}
+        }
+      }
+    },
+    "issue": {
+      "type": "object",
+      "required": ["description"],
+      "additionalProperties": false,
+      "properties": {
+        "description": {"type": "string"},
+        "files_to_examine": {
+          "type": "array",
+          "items": {"type": "string"}
+        }
+      }
+    },
+    "verification": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "test_commands": {
+          "type": "array",
+          "items": {"type": "string"}
+        },
+        "lint_commands": {
+          "type": "array",
+          "items": {"type": "string"}
+        },
+        "security_commands": {
+          "type": "array",
+          "items": {"type": "string"}
+        },
+        "partial_credit": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["criterion", "points", "check"],
+            "additionalProperties": false,
+            "properties": {
+              "criterion": {"type": "string"},
+              "points": {"type": "integer", "minimum": 1},
+              "check": {"type": "string"}
+            }
+          }
+        }
+      }
+    },
+    "constraints": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "max_iterations": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 100,
+          "default": 20
+        },
+        "timeout_seconds": {
+          "type": "integer",
+          "minimum": 60,
+          "maximum": 7200,
+          "default": 1800
+        }
+      }
+    }
+  }
+}
