@@ -1,0 +1,91 @@
+id: BF-004
+category: bug-fix
+title: "Fix None propagation through 3-layer service call chain"
+difficulty: medium
+estimated_minutes: 30
+languages: [python]
+tags: [fastapi, pydantic, none-handling, service-layer]
+capabilities: [bug_diagnosis, multi_file_reasoning]
+
+repo:
+  url: "https://github.com/tiangolo/fastapi"
+  commit: "628c34e0cae200564d191c95d7edea78c88c4b5e"
+  setup_commands:
+    - "python3 -m venv .venv && source .venv/bin/activate && pip install -e '.[all]' && pip install pytest httpx"
+
+issue:
+  description: |
+    A three-layer call chain (route -> service -> util) crashes with a
+    TypeError at the route layer, but the root cause is buried in the
+    utility function. Your job is to trace the error to its origin and
+    fix it there.
+
+    Your task:
+    1. Create utils/pricing.py with a calculate_total function:
+       def calculate_total(items: list) -> float:
+           return sum(item.get("price", 0) for item in items)
+       THE BUG IS HERE: when item["price"] is explicitly None (not missing),
+       .get("price", 0) returns None (the stored value), not 0. sum() then
+       receives None and raises TypeError: unsupported operand type(s) for +.
+
+    2. Create services/order_service.py with a process_order function:
+       def process_order(order: dict) -> dict:
+           total = calculate_total(order["items"])
+           return {"order_id": order["order_id"], "total": total}
+       This calls pricing.calculate_total. It does not handle errors itself.
+
+    3. Create routes/orders.py with a FastAPI router and POST /orders endpoint:
+       @router.post("/orders")
+       async def create_order(order: dict):
+           result = process_order(order)
+           return result
+       The TypeError surfaces here but originates in pricing.py.
+
+    4. Create tests/test_pricing.py that:
+       - Has a test_none_price_raises test that demonstrates the bug BEFORE fix
+         (call calculate_total([{"price": None}]) and expect TypeError)
+       - Has a test_none_price_handled test that passes AFTER the fix
+         (call calculate_total([{"price": None}]) and expect 0.0)
+       - Has a test_missing_price_default that verifies items without a price
+         key still default to 0 (the existing behavior must be preserved)
+       - Has a test_mixed_items that verifies a list with None, missing, and
+         valid prices all sum correctly
+
+    The fix must be in utils/pricing.py only. Change the generator to use:
+       item.get("price") or 0
+    or an explicit None check:
+       (item.get("price") if item.get("price") is not None else 0)
+
+    Do not mask the error with a try/except. The fix should be in the
+    value extraction logic itself.
+  files_to_examine:
+    - "fastapi/routing.py"
+    - "fastapi/applications.py"
+    - "tests/"
+
+verification:
+  test_commands:
+    - "source .venv/bin/activate && python3 -m pytest tests/test_pricing.py -v"
+  lint_commands:
+    - "source .venv/bin/activate && ruff check utils/ services/ routes/ tests/test_pricing.py"
+  security_commands: []
+  partial_credit:
+    - criterion: "Root cause identified in utils/pricing.py"
+      points: 20
+      check: "grep -qE 'or 0|is not None|if.*None' utils/pricing.py"
+    - criterion: "None check added to calculate_total"
+      points: 20
+      check: "grep -q 'calculate_total' utils/pricing.py"
+    - criterion: "Service layer unchanged (fix is only in pricing.py)"
+      points: 15
+      check: "grep -qv 'try\\|except\\|None' services/order_service.py"
+    - criterion: "Tests demonstrate the bug with None price"
+      points: 20
+      check: "grep -qE 'None.*price|price.*None' tests/test_pricing.py"
+    - criterion: "Tests pass"
+      points: 25
+      check: "source .venv/bin/activate && python3 -m pytest tests/test_pricing.py -v"
+
+constraints:
+  max_iterations: 20
+  timeout_seconds: 1200

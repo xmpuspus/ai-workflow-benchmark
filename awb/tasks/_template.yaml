@@ -1,0 +1,52 @@
+# AWB Task Definition Template
+# Copy this file and fill in all fields
+
+id: XX-000              # Format: 2-letter category prefix + 3-digit number
+category: bug-fix       # bug-fix | feature-addition | refactoring | code-review | debugging | multi-file | legacy-code
+title: "Short descriptive title"
+difficulty: medium      # easy | medium | hard
+estimated_minutes: 30
+languages: [python]
+tags: [concurrency, web-framework]
+capabilities: [code_comprehension]  # 1-3 from: code_comprehension, bug_diagnosis, multi_file_reasoning, framework_knowledge, test_writing, refactoring_discipline, security_awareness
+
+repo:
+  url: "https://github.com/org/repo"
+  commit: "abc1234"     # Pinned commit SHA
+  setup_commands:
+    - "python3 -m venv .venv && source .venv/bin/activate && pip install -e .[dev]"
+
+issue:
+  description: |
+    Full task description given to the AI tool.
+    Include context, expected behavior, and hints.
+  files_to_examine:
+    - "src/module.py"
+
+verification:
+  test_commands:
+    - "python3 -m pytest tests/test_module.py -v"
+  lint_commands:
+    - "ruff check src/"
+  security_commands:
+    - "bandit -r src/ -ll"
+  partial_credit:
+    - criterion: "Identifies the root cause"
+      points: 20
+      check: "grep -q 'pattern' src/module.py"
+    - criterion: "Fix is correct"
+      points: 40
+      check: "python3 -m pytest tests/test_module.py -v"
+    - criterion: "Existing tests pass"
+      points: 20
+      check: "python3 -m pytest tests/ -v"
+    - criterion: "No lint warnings"
+      points: 10
+      check: "ruff check src/module.py"
+    - criterion: "No security issues"
+      points: 10
+      check: "bandit -r src/module.py -ll"
+
+constraints:
+  max_iterations: 20
+  timeout_seconds: 1800

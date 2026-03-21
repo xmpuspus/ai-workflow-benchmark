@@ -1,0 +1,142 @@
+id: LC-005
+category: legacy-code
+title: "Replace sync requests with httpx in async FastAPI codebase"
+difficulty: hard
+estimated_minutes: 45
+languages: [python]
+tags: [async, httpx, requests, fastapi, event-loop]
+capabilities: [framework_knowledge, multi_file_reasoning, refactoring_discipline]
+
+repo:
+  url: "https://github.com/tiangolo/fastapi"
+  commit: "628c34e0cae200564d191c95d7edea78c88c4b5e"
+  setup_commands:
+    - "python3 -m venv .venv && source .venv/bin/activate && pip install -e '.[all]' && pip install pytest httpx requests"
+
+issue:
+  description: |
+    Four async FastAPI route files each import the synchronous `requests`
+    library and call requests.get() inside async endpoints. This blocks the
+    event loop, defeating the purpose of using async/await.
+
+    Replace all synchronous requests calls with httpx.AsyncClient used as
+    an async context manager.
+
+    Step 1 — Create these 4 route files:
+
+    routes/weather.py:
+      import requests
+      from fastapi import APIRouter
+
+      router = APIRouter()
+
+      @router.get("/weather/{city}")
+      async def get_weather(city: str):
+          resp = requests.get(f"https://api.example.com/weather/{city}")
+          return resp.json()
+
+    routes/prices.py:
+      import requests
+      from fastapi import APIRouter
+
+      router = APIRouter()
+
+      @router.get("/prices/{symbol}")
+      async def get_price(symbol: str):
+          resp = requests.get(f"https://api.example.com/prices/{symbol}")
+          return {"symbol": symbol, "data": resp.json()}
+
+    routes/users.py:
+      import requests
+      from fastapi import APIRouter
+
+      router = APIRouter()
+
+      @router.get("/users/{user_id}/profile")
+      async def get_user_profile(user_id: int):
+          resp = requests.get(f"https://api.example.com/users/{user_id}")
+          return resp.json()
+
+    routes/health.py:
+      import requests
+      from fastapi import APIRouter
+
+      router = APIRouter()
+
+      @router.get("/health/upstream")
+      async def check_upstream():
+          resp = requests.get("https://api.example.com/ping")
+          return {"status": resp.status_code}
+
+    Step 2 — Create tests/test_async_routes.py that verifies the routes use
+    httpx and are properly async:
+
+      import inspect
+      import pytest
+
+      def test_weather_route_is_async():
+          from routes.weather import get_weather
+          assert inspect.iscoroutinefunction(get_weather)
+
+      def test_no_requests_import_in_routes():
+          import routes.weather, routes.prices, routes.users, routes.health
+          import sys
+          for mod in [routes.weather, routes.prices, routes.users, routes.health]:
+              src = inspect.getsource(mod)
+              assert "import requests" not in src
+
+      def test_httpx_used_in_routes():
+          import routes.weather
+          import inspect
+          src = inspect.getsource(routes.weather)
+          assert "httpx" in src
+          assert "AsyncClient" in src
+
+    Step 3 — Rewrite all 4 route files to use httpx.AsyncClient:
+    - Replace `import requests` with `import httpx`.
+    - Replace `requests.get(url)` with `async with httpx.AsyncClient() as client:` and
+      `resp = await client.get(url)`.
+    - Do NOT create a shared global client — use async with per request.
+    - Keep the route functions async and the URL logic identical.
+
+    Requirements:
+    - Zero `import requests` lines may remain in any of the 4 files.
+    - Every route must use `async with httpx.AsyncClient()` (not a module-level client).
+    - All routes must remain async def.
+    - Tests must pass.
+  files_to_examine:
+    - "routes/weather.py"
+    - "routes/prices.py"
+    - "routes/users.py"
+    - "routes/health.py"
+    - "tests/test_async_routes.py"
+
+verification:
+  test_commands:
+    - "source .venv/bin/activate && python3 -m pytest tests/test_async_routes.py -v"
+  lint_commands:
+    - "source .venv/bin/activate && ruff check routes/"
+  security_commands: []
+  partial_credit:
+    - criterion: "No requests imports remaining in any route file"
+      points: 20
+      check: "! grep -r 'import requests' routes/"
+    - criterion: "httpx.AsyncClient used in route files"
+      points: 15
+      check: "grep -r 'AsyncClient' routes/ | wc -l | awk '{exit ($1 < 4)}'"
+    - criterion: "async with context manager used (not global client)"
+      points: 15
+      check: "grep -r 'async with httpx.AsyncClient' routes/ | wc -l | awk '{exit ($1 < 4)}'"
+    - criterion: "All 4 files converted"
+      points: 15
+      check: "grep -rL 'import requests' routes/weather.py routes/prices.py routes/users.py routes/health.py | wc -l | awk '{exit ($1 < 4)}'"
+    - criterion: "Routes remain async def"
+      points: 15
+      check: "grep -r 'async def' routes/ | wc -l | awk '{exit ($1 < 4)}'"
+    - criterion: "Tests pass"
+      points: 20
+      check: "source .venv/bin/activate && python3 -m pytest tests/test_async_routes.py -v"
+
+constraints:
+  max_iterations: 25
+  timeout_seconds: 1800

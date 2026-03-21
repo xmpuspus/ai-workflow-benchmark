@@ -1,0 +1,124 @@
+id: LC-002
+category: legacy-code
+title: "Replace deprecated datetime.utcnow() with datetime.now(timezone.utc) in 6 files"
+difficulty: easy
+estimated_minutes: 15
+languages: [python]
+tags: [datetime, deprecation, python312, timezone]
+capabilities: [code_comprehension, refactoring_discipline]
+
+repo:
+  url: "https://github.com/tiangolo/fastapi"
+  commit: "628c34e0cae200564d191c95d7edea78c88c4b5e"
+  setup_commands:
+    - "python3 -m venv .venv && source .venv/bin/activate && pip install -e '.[all]' && pip install pytest httpx"
+
+issue:
+  description: |
+    Six files in this codebase use datetime.utcnow(), which was deprecated
+    in Python 3.12 because it returns a naive datetime with no timezone info.
+    Replace every occurrence with datetime.now(timezone.utc).
+
+    Step 1 — Create these 6 files, each containing exactly one use of
+    datetime.utcnow():
+
+    utils/timestamps.py:
+      from datetime import datetime
+
+      def get_current_timestamp():
+          return datetime.utcnow()
+
+    services/scheduler.py:
+      from datetime import datetime
+
+      def next_run_time(delay_seconds):
+          return datetime.utcnow().timestamp() + delay_seconds
+
+    services/cache.py:
+      from datetime import datetime
+
+      def cache_entry(key, value):
+          return {"key": key, "value": value, "created_at": datetime.utcnow()}
+
+    services/logger.py:
+      from datetime import datetime
+
+      def log_event(event):
+          return {"event": event, "logged_at": datetime.utcnow().isoformat()}
+
+    models/audit.py:
+      from datetime import datetime
+
+      def audit_record(action, user_id):
+          return {"action": action, "user_id": user_id, "ts": datetime.utcnow()}
+
+    models/token.py:
+      from datetime import datetime
+
+      def token_expiry(seconds):
+          return datetime.utcnow().timestamp() + seconds
+
+    Step 2 — Create tests/test_timestamps.py that imports from all 6 files
+    and verifies the returned datetimes are timezone-aware:
+
+      import pytest
+      from utils.timestamps import get_current_timestamp
+      from services.cache import cache_entry
+      from models.audit import audit_record
+
+      def test_get_current_timestamp_is_aware():
+          ts = get_current_timestamp()
+          assert ts.tzinfo is not None
+
+      def test_cache_entry_created_at_is_aware():
+          entry = cache_entry("k", "v")
+          assert entry["created_at"].tzinfo is not None
+
+      def test_audit_record_ts_is_aware():
+          record = audit_record("login", 42)
+          assert record["ts"].tzinfo is not None
+
+    Step 3 — Replace ALL uses of datetime.utcnow() across all 6 files with
+    datetime.now(timezone.utc). Import timezone from the datetime module in
+    each file that needs it.
+
+    Requirements:
+    - Zero occurrences of utcnow() must remain across all 6 files.
+    - All datetime values must be timezone-aware (tzinfo is not None).
+    - All 6 files must import timezone from datetime.
+    - Tests must pass.
+  files_to_examine:
+    - "utils/timestamps.py"
+    - "services/scheduler.py"
+    - "services/cache.py"
+    - "services/logger.py"
+    - "models/audit.py"
+    - "models/token.py"
+    - "tests/test_timestamps.py"
+
+verification:
+  test_commands:
+    - "source .venv/bin/activate && python3 -m pytest tests/test_timestamps.py -v"
+  lint_commands:
+    - "source .venv/bin/activate && ruff check utils/ services/ models/"
+  security_commands: []
+  partial_credit:
+    - criterion: "No utcnow() calls remaining in any of the 6 files"
+      points: 25
+      check: "! grep -r 'utcnow' utils/ services/ models/ 2>/dev/null | grep -v test"
+    - criterion: "timezone.utc used in replacements"
+      points: 20
+      check: "grep -r 'timezone.utc' utils/ services/ models/ | wc -l | awk '{exit ($1 < 6)}'"
+    - criterion: "All 6 files fixed (timezone imported in each)"
+      points: 20
+      check: "grep -rl 'timezone' utils/timestamps.py services/scheduler.py services/cache.py services/logger.py models/audit.py models/token.py | wc -l | awk '{exit ($1 < 6)}'"
+    - criterion: "Returned datetimes are timezone-aware"
+      points: 15
+      check: "source .venv/bin/activate && python3 -c \"from utils.timestamps import get_current_timestamp; ts = get_current_timestamp(); assert ts.tzinfo is not None\""
+    - criterion: "Tests pass"
+      points: 20
+      check: "source .venv/bin/activate && python3 -m pytest tests/test_timestamps.py -v"
+
+constraints:
+  max_iterations: 15
+  timeout_seconds: 900

@@ -1,0 +1,152 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "AWB External Submission",
+  "type": "object",
+  "required": ["spec_version", "submission", "results"],
+  "additionalProperties": false,
+  "properties": {
+    "spec_version": {
+      "type": "string",
+      "const": "awb/v2"
+    },
+    "submission": {
+      "type": "object",
+      "required": ["tool", "environment", "awb_version"],
+      "additionalProperties": false,
+      "properties": {
+        "submitter": {"type": "string"},
+        "submitted_at": {"type": "string", "format": "date-time"},
+        "tool": {
+          "type": "object",
+          "required": ["name", "version"],
+          "additionalProperties": false,
+          "properties": {
+            "name": {"type": "string"},
+            "version": {"type": "string"},
+            "config_description": {"type": "string"}
+          }
+        },
+        "model": {
+          "type": "object",
+          "properties": {
+            "name": {"type": "string"},
+            "provider": {"type": "string"},
+            "pricing": {
+              "type": "object",
+              "properties": {
+                "input_per_m_tokens": {"type": "number", "minimum": 0},
+                "output_per_m_tokens": {"type": "number", "minimum": 0}
+              }
+            }
+          }
+        },
+        "environment": {
+          "type": "object",
+          "required": ["os", "hardware_class"],
+          "additionalProperties": false,
+          "properties": {
+            "os": {"type": "string"},
+            "hardware_class": {
+              "type": "string",
+              "enum": [
+                "apple_m1_16gb", "apple_m2_16gb", "apple_m2_24gb",
+                "apple_m3_36gb", "apple_m3_18gb",
+                "apple_m4_16gb", "apple_m4_24gb", "apple_m4_48gb",
+                "apple_m5_24gb", "apple_m5_48gb",
+                "desktop_16cpu_32gb", "desktop_32cpu_64gb",
+                "cloud_4cpu_16gb", "cloud_8cpu_32gb",
+                "cloud_16cpu_64gb", "cloud_32cpu_128gb",
+                "other"
+              ]
+            },
+            "hardware_detail": {"type": "string"},
+            "network": {
+              "type": "string",
+              "enum": ["local", "datacenter", "home", "mobile"]
+            }
+          }
+        },
+        "awb_version": {"type": "string"},
+        "task_set_hash": {"type": "string"}
+      }
+    },
+    "results": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "required": ["task_id", "runs"],
+        "additionalProperties": false,
+        "properties": {
+          "task_id": {
+            "type": "string",
+            "pattern": "^[A-Z]{2}-\\d{3}$"
+          },
+          "runs": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "type": "object",
+              "required": ["run_number", "outcome", "metrics", "cost", "quality"],
+              "additionalProperties": false,
+              "properties": {
+                "run_number": {"type": "integer", "minimum": 1},
+                "timestamp": {"type": "string"},
+                "outcome": {
+                  "type": "object",
+                  "required": ["success", "partial_credit_score", "partial_credit_max"],
+                  "properties": {
+                    "success": {"type": "boolean"},
+                    "partial_credit_score": {"type": "number", "minimum": 0},
+                    "partial_credit_max": {"type": "number", "minimum": 0},
+                    "breakdown": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "criterion": {"type": "string"},
+                          "points_earned": {"type": "number"},
+                          "points_possible": {"type": "number"},
+                          "passed": {"type": "boolean"}
+                        }
+                      }
+                    }
+                  }
+                },
+                "metrics": {
+                  "type": "object",
+                  "required": ["wall_clock_seconds", "iteration_count"],
+                  "properties": {
+                    "wall_clock_seconds": {"type": "number", "minimum": 0},
+                    "iteration_count": {"type": "integer", "minimum": 0},
+                    "human_interventions": {"type": "integer", "minimum": 0},
+                    "tool_calls": {"type": "object"},
+                    "files_modified": {"type": "integer", "minimum": 0},
+                    "lines_changed": {"type": "integer", "minimum": 0}
+                  }
+                },
+                "cost": {
+                  "type": "object",
+                  "required": ["estimated_cost_usd"],
+                  "properties": {
+                    "input_tokens": {"type": "integer", "minimum": 0},
+                    "output_tokens": {"type": "integer", "minimum": 0},
+                    "estimated_cost_usd": {"type": "number", "minimum": 0}
+                  }
+                },
+                "quality": {
+                  "type": "object",
+                  "properties": {
+                    "lint_delta": {"type": "integer"},
+                    "security_delta": {"type": "integer"},
+                    "test_regressions": {"type": "integer", "minimum": 0}
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

@@ -64,6 +64,17 @@
         "os": {"type": "string"},
         "hardware": {"type": "string"}
       }
+    },
+    "workflow": {
+      "type": "object",
+      "properties": {
+        "name": {"type": "string"},
+        "descriptor_hash": {"type": "string"},
+        "tool": {"type": "string"},
+        "model": {"type": "string"},
+        "mode": {"type": "string"},
+        "config_hash": {"type": "string"}
+      }
     }
   }
 }

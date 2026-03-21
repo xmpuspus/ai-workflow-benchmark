@@ -1,0 +1,102 @@
+id: RF-007
+category: refactoring
+title: "Split 400-line god function into 5 focused functions preserving behavior"
+difficulty: hard
+estimated_minutes: 45
+languages: [python]
+tags: [fastapi, refactoring, function-decomposition, single-responsibility]
+capabilities: [refactoring_discipline, code_comprehension]
+
+repo:
+  url: "https://github.com/tiangolo/fastapi"
+  commit: "628c34e0cae200564d191c95d7edea78c88c4b5e"
+  setup_commands:
+    - "python3 -m venv .venv && source .venv/bin/activate && pip install -e '.[all]' && pip install pytest"
+
+issue:
+  description: |
+    A FastAPI service contains a single large function generate_report(data)
+    in services/report_generator.py that does too much. It has 5 distinct
+    logical sections crammed into one function body:
+
+      Section 1 — Input validation: checks that data is a dict, has required
+        keys ("items", "user_id", "period"), validates that "items" is a
+        non-empty list, raises ValueError with descriptive messages otherwise.
+
+      Section 2 — Fetch related data: given data["user_id"], looks up user
+        metadata from a local dict (simulate with a hardcoded dict of users),
+        raises KeyError if user not found.
+
+      Section 3 — Transform data: iterates over data["items"], applies a
+        discount (10% off if quantity > 5), and computes line totals
+        (price * quantity after discount). Returns a list of dicts with
+        {name, quantity, unit_price, line_total}.
+
+      Section 4 — Format output: assembles a report dict from the transformed
+        items, user metadata, period, and a grand total. Formats the grand
+        total to 2 decimal places.
+
+      Section 5 — Write to file: writes the report dict as JSON to
+        reports/{user_id}_{period}.json, creating the reports/ directory if
+        it does not exist.
+
+    Create services/report_generator.py with the entire logic in a single
+    generate_report(data) function of roughly 80 lines that contains all 5
+    sections as inline code (no helper calls).
+
+    Then refactor: extract each section into its own named function:
+      _validate_input(data) → raises ValueError on bad input
+      _fetch_user(user_id) → returns user metadata dict or raises KeyError
+      _transform_items(items) → returns list of line-item dicts
+      _format_report(user, items, period) → returns report dict
+      _write_report(report, user_id, period) → writes JSON file, returns path
+
+    generate_report(data) must call all 5 helpers in order and remain the
+    public entry point. Each extracted function must be under 50 lines.
+
+    Create tests/test_report_generator.py that:
+      - Test generate_report() end-to-end with valid input, verify the JSON
+        file is created and contains the expected grand total
+      - Test that invalid input raises ValueError
+      - Test that an unknown user_id raises KeyError
+      - Test discount logic: items with quantity > 5 get 10% off
+      - Use pytest's tmp_path fixture to isolate the reports/ directory
+
+    Your task:
+      1. Create services/report_generator.py with the monolithic function.
+      2. Create tests/test_report_generator.py covering the behaviors above.
+      3. Refactor into 5 named helper functions without breaking any tests.
+      4. Confirm each helper is under 50 lines and no logic is duplicated.
+  files_to_examine:
+    - "services/report_generator.py"
+    - "tests/test_report_generator.py"
+
+verification:
+  test_commands:
+    - "source .venv/bin/activate && python3 -m pytest tests/test_report_generator.py -v"
+  lint_commands:
+    - "source .venv/bin/activate && ruff check services/report_generator.py"
+  security_commands: []
+  partial_credit:
+    - criterion: "5 helper functions extracted from generate_report"
+      points: 20
+      check: "funcs=$(grep -c '^def _' services/report_generator.py); [ \"$funcs\" -ge 5 ]"
+    - criterion: "Each extracted function is under 50 lines"
+      points: 15
+      check: "source .venv/bin/activate && python3 -c \"import ast, sys; tree=ast.parse(open('services/report_generator.py').read()); bad=[n.name for n in ast.walk(tree) if isinstance(n,ast.FunctionDef) and n.name.startswith('_') and (n.end_lineno - n.lineno) >= 50]; sys.exit(1 if bad else 0)\""
+    - criterion: "generate_report() calls all 5 helpers (original behavior preserved)"
+      points: 20
+      check: "grep -q '_validate_input' services/report_generator.py && grep -q '_fetch_user' services/report_generator.py && grep -q '_transform_items' services/report_generator.py && grep -q '_format_report' services/report_generator.py && grep -q '_write_report' services/report_generator.py"
+    - criterion: "Helper functions have descriptive names"
+      points: 10
+      check: "grep -qE 'def _(validate|fetch|transform|format|write)' services/report_generator.py"
+    - criterion: "No logic duplicated between helpers and generate_report body"
+      points: 10
+      check: "body_lines=$(source .venv/bin/activate && python3 -c \"import ast; tree=ast.parse(open('services/report_generator.py').read()); fn=[n for n in ast.walk(tree) if isinstance(n,ast.FunctionDef) and n.name=='generate_report'][0]; print(fn.end_lineno - fn.lineno)\"); [ \"$body_lines\" -le 20 ]"
+    - criterion: "Tests pass"
+      points: 25
+      check: "source .venv/bin/activate && python3 -m pytest tests/test_report_generator.py -v"
+
+constraints:
+  max_iterations: 25
+  timeout_seconds: 1800

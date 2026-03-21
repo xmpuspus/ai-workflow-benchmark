@@ -1,0 +1,81 @@
+id: DB-005
+category: debugging
+title: "Diagnose intermittent 500 from async endpoint sharing httpx client in gather"
+difficulty: hard
+estimated_minutes: 45
+languages: [python]
+tags: [fastapi, httpx, asyncio, concurrency, shared-state]
+capabilities: [bug_diagnosis, multi_file_reasoning]
+
+repo:
+  url: "https://github.com/tiangolo/fastapi"
+  commit: "628c34e0cae200564d191c95d7edea78c88c4b5e"
+  setup_commands:
+    - "python3 -m venv .venv && source .venv/bin/activate && pip install -e '.[all]' && pip install pytest httpx pytest-asyncio respx"
+
+issue:
+  description: |
+    An async FastAPI endpoint calls three external APIs concurrently using
+    asyncio.gather. Under certain conditions the responses appear to be from
+    the wrong APIs — fields from one service show up in the response slot for
+    another. The bug is intermittent and only manifests under concurrent load.
+
+    Your task:
+    1. Create services/enrichment.py with:
+       - A module-level httpx.AsyncClient instance (the bug: shared across
+         coroutines).
+       - An async function enrich(record_id) that uses asyncio.gather to
+         concurrently call three mock URLs:
+           /api/profile/{record_id}
+           /api/scores/{record_id}
+           /api/flags/{record_id}
+       - Returns a dict with keys profile, scores, flags from the three
+         responses.
+    2. Create app/main.py with a GET /enrich/{record_id} endpoint that calls
+       enrich().
+    3. Create tests/test_enrichment.py that:
+       - Uses respx (or unittest.mock) to mock the three external endpoints
+         with distinct response bodies.
+       - Sends two concurrent requests to /enrich/ with different record_ids
+         using asyncio.gather.
+       - Asserts that each response contains the correct data for its
+         record_id (no cross-contamination).
+       - Documents WHY the shared client causes the problem (cookies, auth
+         headers, or connection state can bleed between coroutines).
+    4. Fix: replace the module-level client with a fresh httpx.AsyncClient
+       created per call inside enrich(), or use a client with no shared
+       mutable state (no cookies, no auth). The asyncio.gather call must be
+       preserved.
+    5. Verify the fix: re-run the concurrent test and assert no cross-
+       contamination occurs across 10 concurrent requests.
+  files_to_examine:
+    - "services/enrichment.py"
+    - "app/main.py"
+    - "tests/test_enrichment.py"
+
+verification:
+  test_commands:
+    - "source .venv/bin/activate && python3 -m pytest tests/test_enrichment.py -v"
+  lint_commands:
+    - "source .venv/bin/activate && ruff check services/ app/ tests/test_enrichment.py"
+  security_commands: []
+  partial_credit:
+    - criterion: "Shared module-level httpx.AsyncClient identified as root cause"
+      points: 20
+      check: "grep -qvE '^client = httpx.AsyncClient' services/enrichment.py"
+    - criterion: "Per-coroutine client or stateless client used in fix"
+      points: 25
+      check: "grep -qE 'async with httpx.AsyncClient|AsyncClient\\(\\)' services/enrichment.py"
+    - criterion: "asyncio.gather preserved after fix"
+      points: 10
+      check: "grep -q 'gather' services/enrichment.py"
+    - criterion: "Test asserts no cross-contamination between concurrent requests"
+      points: 20
+      check: "grep -qE 'gather|concurrent|cross' tests/test_enrichment.py"
+    - criterion: "Tests pass"
+      points: 25
+      check: "source .venv/bin/activate && python3 -m pytest tests/test_enrichment.py -v"
+
+constraints:
+  max_iterations: 25
+  timeout_seconds: 1800

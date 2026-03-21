@@ -1,0 +1,164 @@
+id: FA-008
+category: feature-addition
+title: "Add WebSocket endpoint reusing existing JWT auth dependency from REST routes"
+difficulty: hard
+estimated_minutes: 45
+languages: [python]
+tags: [fastapi, websocket, jwt, authentication, dependency-injection]
+capabilities: [framework_knowledge, multi_file_reasoning]
+
+repo:
+  url: "https://github.com/tiangolo/fastapi"
+  commit: "628c34e0cae200564d191c95d7edea78c88c4b5e"
+  setup_commands:
+    - "python3 -m venv .venv && source .venv/bin/activate && pip install -e '.[all]' && pip install pytest httpx pytest-asyncio websockets"
+
+issue:
+  description: |
+    An existing REST API uses JWT authentication via a FastAPI Depends()
+    dependency. Add a WebSocket endpoint that reuses the same auth logic —
+    adapted for WebSocket since WebSocket connections cannot use Authorization
+    headers the same way. Token is passed as a query parameter or in the first
+    message.
+
+    Step 1 - Create the JWT auth infrastructure:
+
+    auth/jwt.py:
+      import hmac
+      import hashlib
+      import json
+      import base64
+      import time
+
+      SECRET = "test-secret-do-not-use-in-prod"
+
+      def create_token(user_id: str) -> str:
+          payload = {"sub": user_id, "exp": int(time.time()) + 3600}
+          data = base64.b64encode(json.dumps(payload).encode()).decode()
+          sig = hmac.new(SECRET.encode(), data.encode(), hashlib.sha256).hexdigest()
+          return f"{data}.{sig}"
+
+      def decode_token(token: str) -> dict:
+          parts = token.split(".")
+          if len(parts) != 2:
+              raise ValueError("invalid token format")
+          data, sig = parts
+          expected = hmac.new(SECRET.encode(), data.encode(), hashlib.sha256).hexdigest()
+          if not hmac.compare_digest(sig, expected):
+              raise ValueError("invalid token signature")
+          payload = json.loads(base64.b64decode(data.encode()).decode())
+          if payload.get("exp", 0) < time.time():
+              raise ValueError("token expired")
+          return payload
+
+    auth/dependencies.py:
+      from fastapi import Depends, HTTPException, Header
+      from auth.jwt import decode_token
+
+      async def get_current_user(authorization: str = Header(...)) -> dict:
+          if not authorization.startswith("Bearer "):
+              raise HTTPException(401, "invalid authorization header")
+          token = authorization.removeprefix("Bearer ")
+          try:
+              return decode_token(token)
+          except ValueError as e:
+              raise HTTPException(401, str(e))
+
+    routes/rest.py:
+      from fastapi import APIRouter, Depends
+      from auth.dependencies import get_current_user
+
+      router = APIRouter()
+
+      @router.get("/me")
+      def get_me(current_user: dict = Depends(get_current_user)):
+          return {"user_id": current_user["sub"]}
+
+    Step 2 - Add routes/ws.py with a WebSocket endpoint:
+
+    WebSocket auth works differently — no headers after the HTTP upgrade.
+    Token must come from:
+    - Query parameter: ws://host/ws?token=<jwt>  (preferred, implement this)
+    - Or first message (optional alternative)
+
+    auth/ws_dependencies.py:
+      from fastapi import WebSocket, WebSocketException, status, Query
+      from auth.jwt import decode_token
+
+      async def get_ws_user(
+          websocket: WebSocket,
+          token: str = Query(...),
+      ) -> dict:
+          try:
+              return decode_token(token)
+          except ValueError as e:
+              raise WebSocketException(code=status.WS_1008_POLICY_VIOLATION,
+                                       reason=str(e))
+
+    routes/ws.py:
+      from fastapi import APIRouter, WebSocket, Depends
+      from auth.ws_dependencies import get_ws_user
+
+      router = APIRouter()
+
+      @router.websocket("/ws")
+      async def websocket_endpoint(
+          websocket: WebSocket,
+          current_user: dict = Depends(get_ws_user),
+      ):
+          await websocket.accept()
+          await websocket.send_json({"user_id": current_user["sub"], "connected": True})
+          await websocket.close()
+
+    The key requirement: decode_token() is called in both auth paths — REST via
+    get_current_user, WebSocket via get_ws_user. The token validation logic is
+    NOT duplicated; both call into auth/jwt.py decode_token.
+
+    Step 3 - Create tests/test_ws_auth.py:
+      - test_rest_auth_valid_token: GET /me with valid Bearer token -> 200 with user_id
+      - test_rest_auth_missing_token: GET /me with no header -> 401
+      - test_rest_auth_invalid_token: GET /me with bad token -> 401
+      - test_ws_auth_valid_token: connect to /ws?token=<valid_jwt>, receive
+        {"user_id": ..., "connected": True}
+      - test_ws_auth_missing_token: connect to /ws with no token query param ->
+        connection rejected (WebSocketDisconnect or 1008)
+      - test_ws_auth_invalid_token: connect to /ws?token=bad -> connection rejected
+      - test_decode_token_reused: assert auth.ws_dependencies imports decode_token
+        from auth.jwt (grep the source — not reimplemented)
+  files_to_examine:
+    - "fastapi/websockets.py"
+    - "fastapi/dependencies/utils.py"
+    - "tests/"
+
+verification:
+  test_commands:
+    - "source .venv/bin/activate && python3 -m pytest tests/test_ws_auth.py -v"
+  lint_commands:
+    - "source .venv/bin/activate && ruff check auth/ routes/ tests/test_ws_auth.py"
+  security_commands: []
+  partial_credit:
+    - criterion: "WebSocket endpoint created at /ws"
+      points: 10
+      check: "grep -qE '@router\\.websocket.*ws|websocket.*endpoint' routes/ws.py"
+    - criterion: "auth/ws_dependencies.py reuses decode_token from auth/jwt.py"
+      points: 20
+      check: "grep -q 'from auth.jwt import decode_token' auth/ws_dependencies.py"
+    - criterion: "Token extracted from query parameter"
+      points: 15
+      check: "grep -qE 'Query|token.*query|query.*token' auth/ws_dependencies.py"
+    - criterion: "Unauthorized WebSocket connection rejected"
+      points: 15
+      check: "grep -qE 'WebSocketException|WS_1008|policy_violation' auth/ws_dependencies.py"
+    - criterion: "Test for REST auth exists and passes"
+      points: 10
+      check: "grep -qE 'test_rest_auth|Bearer' tests/test_ws_auth.py"
+    - criterion: "Test for WebSocket auth exists"
+      points: 10
+      check: "grep -qE 'test_ws_auth|websocket.*token' tests/test_ws_auth.py"
+    - criterion: "Tests pass"
+      points: 20
+      check: "source .venv/bin/activate && python3 -m pytest tests/test_ws_auth.py -v"
+
+constraints:
+  max_iterations: 25
+  timeout_seconds: 1800

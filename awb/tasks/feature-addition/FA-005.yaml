@@ -1,0 +1,143 @@
+id: FA-005
+category: feature-addition
+title: "Add retry decorator with exponential backoff and jitter to 3 HTTP clients"
+difficulty: medium
+estimated_minutes: 30
+languages: [python]
+tags: [httpx, retry, backoff, jitter, decorator, multi-file]
+capabilities: [framework_knowledge, multi_file_reasoning]
+
+repo:
+  url: "https://github.com/encode/httpx"
+  commit: "26d48e0634e6ee9cdc0533996db289ce4b430177"
+  setup_commands:
+    - "python3 -m venv .venv && source .venv/bin/activate && pip install -e '.[cli,http2]' && pip install pytest pytest-asyncio"
+
+issue:
+  description: |
+    Three API client modules make HTTP calls with no retry logic. Add a shared
+    @retry decorator that implements exponential backoff WITH jitter, and apply
+    it consistently to the call functions in all three clients.
+
+    Step 1 - Create the three client modules (with functions that simulate calls):
+
+    clients/payment.py:
+      import httpx
+
+      def charge_card(amount: float, card_token: str) -> dict:
+          with httpx.Client() as client:
+              resp = client.post("https://payments.example.com/charge",
+                                 json={"amount": amount, "token": card_token})
+              resp.raise_for_status()
+              return resp.json()
+
+    clients/notification.py:
+      import httpx
+
+      def send_email(to: str, subject: str, body: str) -> dict:
+          with httpx.Client() as client:
+              resp = client.post("https://notify.example.com/email",
+                                 json={"to": to, "subject": subject, "body": body})
+              resp.raise_for_status()
+              return resp.json()
+
+    clients/inventory.py:
+      import httpx
+
+      def reserve_stock(sku: str, quantity: int) -> dict:
+          with httpx.Client() as client:
+              resp = client.get("https://inventory.example.com/reserve",
+                                params={"sku": sku, "qty": quantity})
+              resp.raise_for_status()
+              return resp.json()
+
+    Step 2 - Create decorators/retry.py with a @retry decorator:
+      import time
+      import random
+      import functools
+      from typing import Callable, Type
+
+      def retry(
+          max_attempts: int = 3,
+          base_delay: float = 1.0,
+          max_delay: float = 60.0,
+          exceptions: tuple[Type[Exception], ...] = (Exception,),
+      ):
+          def decorator(func: Callable) -> Callable:
+              @functools.wraps(func)
+              def wrapper(*args, **kwargs):
+                  for attempt in range(max_attempts):
+                      try:
+                          return func(*args, **kwargs)
+                      except exceptions as e:
+                          if attempt == max_attempts - 1:
+                              raise
+                          # Exponential backoff: base_delay * 2^attempt
+                          delay = min(base_delay * (2 ** attempt), max_delay)
+                          # Jitter: add random fraction of delay to avoid thundering herd
+                          jitter = random.uniform(0, delay * 0.1)
+                          time.sleep(delay + jitter)
+              return wrapper
+          return decorator
+
+    Step 3 - Apply @retry to all three client functions:
+      from decorators.retry import retry
+      import httpx
+
+      @retry(max_attempts=3, base_delay=0.5, exceptions=(httpx.HTTPStatusError,
+             httpx.ConnectError, httpx.TimeoutException))
+      def charge_card(amount: float, card_token: str) -> dict:
+          ...
+
+    Use the same decorator arguments across all three clients (same max_attempts,
+    same base_delay, same exceptions tuple). Do not vary the configuration
+    per-client — consistency is required.
+
+    Step 4 - Create tests/test_retry_decorator.py:
+      - test_retry_on_failure: mock time.sleep, make the wrapped function fail
+        twice then succeed, assert it was called 3 times and result is correct
+      - test_no_retry_on_success: function succeeds on first call, time.sleep
+        never called
+      - test_max_attempts_exhausted: function always fails, assert exception
+        raised after exactly max_attempts calls
+      - test_exponential_backoff_delays: capture sleep calls — first sleep ~0.5s,
+        second sleep ~1.0s (within jitter range), verify second > first
+      - test_jitter_varies_delay: call wrapper 20 times with a failing function,
+        collect sleep values, assert not all identical (jitter produces variance)
+      - test_all_three_clients_decorated: import charge_card, send_email,
+        reserve_stock and check each has __wrapped__ attribute (functools.wraps
+        sets this when a decorator is applied)
+  files_to_examine:
+    - "httpx/_client.py"
+    - "httpx/_exceptions.py"
+    - "tests/"
+
+verification:
+  test_commands:
+    - "source .venv/bin/activate && python3 -m pytest tests/test_retry_decorator.py -v"
+  lint_commands:
+    - "source .venv/bin/activate && ruff check decorators/ clients/ tests/test_retry_decorator.py"
+  security_commands: []
+  partial_credit:
+    - criterion: "retry decorator created in decorators/retry.py"
+      points: 15
+      check: "test -f decorators/retry.py && grep -q 'def retry' decorators/retry.py"
+    - criterion: "Exponential backoff implemented (2^attempt or equivalent)"
+      points: 15
+      check: "grep -qE '2 \\*\\* attempt|pow\\(2|backoff' decorators/retry.py"
+    - criterion: "Jitter added using random module"
+      points: 20
+      check: "grep -qE 'random\\.uniform|random\\.random|jitter' decorators/retry.py"
+    - criterion: "@retry applied to all 3 client functions"
+      points: 15
+      check: "grep -q '@retry' clients/payment.py clients/notification.py clients/inventory.py"
+    - criterion: "Test verifies backoff timing with mocked sleep"
+      points: 15
+      check: "grep -qE 'mock.*sleep|sleep.*mock|patch.*sleep' tests/test_retry_decorator.py"
+    - criterion: "Tests pass"
+      points: 20
+      check: "source .venv/bin/activate && python3 -m pytest tests/test_retry_decorator.py -v"
+
+constraints:
+  max_iterations: 20
+  timeout_seconds: 1200

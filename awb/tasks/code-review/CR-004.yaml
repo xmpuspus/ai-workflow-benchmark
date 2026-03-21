@@ -1,0 +1,131 @@
+id: CR-004
+category: code-review
+title: "Review async code for 4 concurrency bugs and fix them"
+difficulty: hard
+estimated_minutes: 45
+languages: [python]
+tags: [fastapi, asyncio, concurrency, sqlalchemy, httpx, bug-diagnosis]
+capabilities: [security_awareness, bug_diagnosis, multi_file_reasoning]
+
+repo:
+  url: "https://github.com/tiangolo/fastapi"
+  commit: "628c34e0cae200564d191c95d7edea78c88c4b5e"
+  setup_commands:
+    - "python3 -m venv .venv && source .venv/bin/activate && pip install -e '.[all]' && pip install pytest sqlalchemy[asyncio] aiosqlite pytest-asyncio httpx"
+
+issue:
+  description: |
+    A FastAPI application has 4 concurrency bugs spread across 3 service
+    files and a client module. These bugs are subtle — the code looks
+    syntactically correct and often works under light load, but fails or
+    corrupts state under concurrent requests.
+
+    Create these files with the bugs embedded:
+
+      routes/batch.py — Bug 1: Shared AsyncSession in asyncio.gather
+        An endpoint runs multiple DB queries concurrently using asyncio.gather,
+        but passes the same AsyncSession instance to all coroutines:
+          async def batch_endpoint():
+              async with AsyncSession(engine) as session:
+                  results = await asyncio.gather(
+                      query_users(session),
+                      query_orders(session),
+                      query_items(session),
+                  )
+        SQLAlchemy AsyncSession is not safe for interleaved concurrent use.
+        Fix: each coroutine must get its own session (create inside the coroutine
+        or use a context manager per coroutine).
+
+      services/notifier.py — Bug 2: Missing await on async function
+        A notification is "sent" but the coroutine is never awaited:
+          def notify_user(user_id):
+              send_notification(user_id)  # send_notification is async def
+        The notification silently never executes. Fix: add await and make the
+        caller async.
+
+      services/aggregator.py — Bug 3: Shared mutable list modified by concurrent tasks
+        Multiple concurrent asyncio tasks append to a shared list without
+        coordination:
+          results = []
+          async def fetch_and_append(item_id):
+              data = await fetch(item_id)
+              results.append(data)
+          await asyncio.gather(*[fetch_and_append(i) for i in item_ids])
+        In Python's asyncio, list.append is atomic, so this technically works —
+        but the results list is defined in the outer scope and shared, making it
+        a state management bug that breaks if the function is called concurrently
+        (the list accumulates across calls). Fix: initialize results inside the
+        function or collect results from gather's return values.
+
+      clients/api.py — Bug 4: httpx.AsyncClient with cookies shared across gather coroutines
+        A single httpx.AsyncClient instance (with cookie state) is shared
+        across multiple concurrent coroutines in asyncio.gather:
+          client = httpx.AsyncClient()
+          results = await asyncio.gather(
+              client.get("/api/user/1"),
+              client.get("/api/user/2"),
+              client.get("/api/user/3"),
+          )
+        When the client has session cookies, concurrent requests can interleave
+        cookie mutations. Fix: either use a single client sequentially, or
+        create a separate client per coroutine if cookie isolation is needed.
+
+    Create review/concurrency_findings.md documenting:
+      - Each bug's location (file + line range)
+      - Why it fails under concurrency
+      - The recommended fix
+
+    Fix all 4 bugs in their respective files.
+
+    Create tests/test_concurrency.py that:
+      - Test Bug 1 fix: verify that gather with per-coroutine sessions works
+        without raising SQLAlchemy errors
+      - Test Bug 2 fix: verify notify_user actually awaits the notification
+        (use AsyncMock to assert it was awaited)
+      - Test Bug 3 fix: verify aggregator returns consistent results across
+        multiple calls (no cross-call state pollution)
+      - Test Bug 4 fix: verify each gather coroutine uses its own client
+        or the client is used safely
+
+    Your task:
+      1. Create all 4 files with the bugs as described.
+      2. Create review/concurrency_findings.md.
+      3. Fix all 4 bugs.
+      4. Create tests/test_concurrency.py and confirm all tests pass.
+  files_to_examine:
+    - "routes/batch.py"
+    - "services/notifier.py"
+    - "services/aggregator.py"
+    - "clients/api.py"
+    - "review/concurrency_findings.md"
+    - "tests/test_concurrency.py"
+
+verification:
+  test_commands:
+    - "source .venv/bin/activate && python3 -m pytest tests/test_concurrency.py -v"
+  lint_commands:
+    - "source .venv/bin/activate && ruff check routes/batch.py services/ clients/"
+  security_commands: []
+  partial_credit:
+    - criterion: "Shared AsyncSession in gather fixed (per-coroutine sessions)"
+      points: 20
+      check: "! grep -A5 'asyncio.gather' routes/batch.py | grep -q 'AsyncSession(engine)' || grep -q 'async with.*session' routes/batch.py"
+    - criterion: "Missing await on async function found and fixed"
+      points: 10
+      check: "grep -q 'await send_notification\\|await.*notify' services/notifier.py"
+    - criterion: "Shared mutable list refactored to avoid cross-call pollution"
+      points: 15
+      check: "! grep -B5 'results.append' services/aggregator.py | grep -q '^results = \\[\\]'"
+    - criterion: "httpx client per-coroutine or sequential usage in clients/api.py"
+      points: 15
+      check: "grep -q 'AsyncClient()' clients/api.py"
+    - criterion: "review/concurrency_findings.md documents all 4 bugs"
+      points: 15
+      check: "test -f review/concurrency_findings.md && wc -l < review/concurrency_findings.md | awk '{if($1>=10) exit 0; else exit 1}'"
+    - criterion: "Tests pass"
+      points: 25
+      check: "source .venv/bin/activate && python3 -m pytest tests/test_concurrency.py -v"
+
+constraints:
+  max_iterations: 30
+  timeout_seconds: 2400

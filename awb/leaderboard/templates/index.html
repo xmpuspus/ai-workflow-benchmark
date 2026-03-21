@@ -1,0 +1,128 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI Workflow Benchmark - Leaderboard</title>
+    <link rel="stylesheet" href="static/style.css">
+</head>
+<body>
+    <header>
+        <h1>AI Workflow Benchmark</h1>
+        <p class="subtitle">Measuring tool+workflow performance, not just model capability</p>
+    </header>
+
+    <div class="container">
+        <div class="stats-bar">
+            <div class="stat">
+                <span class="stat-value">{{ total_results }}</span>
+                <span class="stat-label">Total Runs</span>
+            </div>
+            <div class="stat">
+                <span class="stat-value">{{ task_results|length }}</span>
+                <span class="stat-label">Tasks</span>
+            </div>
+            <div class="stat">
+                <span class="stat-value">{{ tools|length }}</span>
+                <span class="stat-label">Tools Compared</span>
+            </div>
+        </div>
+
+        {% if tools %}
+        <div class="controls">
+            <input type="text" id="filter-input" placeholder="Filter by tool name..." class="filter-input">
+        </div>
+
+        <div class="table-wrapper">
+            <table id="leaderboard-table">
+                <thead>
+                    <tr>
+                        <th data-sort="rank">Rank</th>
+                        <th data-sort="tool">Tool</th>
+                        <th data-sort="model">Model</th>
+                        <th data-sort="composite" class="sort-active sort-desc">Composite</th>
+                        <th data-sort="success">Success %</th>
+                        <th data-sort="score">Avg Score %</th>
+                        <th data-sort="time">Avg Time (s)</th>
+                        <th data-sort="cost">Avg Cost ($)</th>
+                        <th data-sort="iterations">Avg Iterations</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for tool in tools %}
+                    <tr data-tool="{{ tool.tool }}">
+                        <td class="rank">{{ loop.index }}</td>
+                        <td class="tool-name">{{ tool.tool }}</td>
+                        <td>{{ tool.model }}</td>
+                        <td><span class="score-badge {% if tool.composite_score >= 80 %}score-high{% elif tool.composite_score >= 50 %}score-mid{% else %}score-low{% endif %}" data-target="{{ tool.composite_score }}">0</span></td>
+                        <td><span data-target="{{ tool.success_rate }}">0</span>%</td>
+                        <td><span data-target="{{ tool.avg_score_pct }}">0</span>%</td>
+                        <td>{{ tool.avg_time }}</td>
+                        <td>${{ tool.avg_cost }}</td>
+                        <td>{{ tool.avg_iterations }}</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+
+        <div class="chart-section">
+            <h2>Metric Comparison</h2>
+            <canvas id="radar-chart" width="500" height="500"></canvas>
+        </div>
+
+        {% if task_results %}
+        <div class="breakdown-section">
+            <h2>Per-Task Breakdown</h2>
+            {% for task_id, tool_results in task_results.items() %}
+            <details>
+                <summary>{{ task_id }}</summary>
+                <div class="task-detail">
+                    <table class="detail-table">
+                        <thead>
+                            <tr>
+                                <th>Tool</th>
+                                <th>Success</th>
+                                <th>Score</th>
+                                <th>Time (s)</th>
+                                <th>Cost ($)</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for tool_name, result in tool_results.items() %}
+                            <tr>
+                                <td>{{ tool_name }}</td>
+                                <td>{% if result.outcome.success %}<span class="pass">PASS</span>{% else %}<span class="fail">FAIL</span>{% endif %}</td>
+                                <td>{{ result.outcome.partial_credit_score }}/{{ result.outcome.partial_credit_max }}</td>
+                                <td>{{ result.metrics.wall_clock_seconds }}</td>
+                                <td>${{ result.cost.estimated_cost_usd }}</td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </details>
+            {% endfor %}
+        </div>
+        {% endif %}
+
+        {% else %}
+        <div class="empty-state">
+            <h2>No results yet</h2>
+            <p>Run benchmarks first:</p>
+            <pre>awb run claude-code-vanilla -t BF-001
+awb leaderboard</pre>
+        </div>
+        {% endif %}
+    </div>
+
+    <footer>
+        <p><a href="METHODOLOGY.md">Methodology</a></p>
+    </footer>
+
+    <script>
+        const RESULTS_DATA = {{ results_json | safe }};
+    </script>
+    <script src="static/leaderboard.js"></script>
+</body>
+</html>

@@ -1,0 +1,167 @@
+id: LC-007
+category: legacy-code
+title: "Remove 15 pieces of dead code safely without breaking live behavior"
+difficulty: medium
+estimated_minutes: 30
+languages: [python]
+tags: [dead-code, cleanup, refactoring, static-analysis]
+capabilities: [code_comprehension, refactoring_discipline]
+
+repo:
+  url: "https://github.com/tiangolo/fastapi"
+  commit: "628c34e0cae200564d191c95d7edea78c88c4b5e"
+  setup_commands:
+    - "python3 -m venv .venv && source .venv/bin/activate && pip install -e '.[all]' && pip install pytest httpx"
+
+issue:
+  description: |
+    Four source files contain 15 pieces of dead code planted deliberately.
+    Remove all 15 safely without breaking any live behavior.
+
+    Step 1 — Create these 4 files with dead code embedded:
+
+    core/math_utils.py:
+      import os           # unused import (dead #1)
+      import sys          # unused import (dead #2)
+      from math import sqrt
+
+      def square(n):
+          return n * n
+
+      def cube(n):
+          return n * n * n
+
+      def _old_square(n):   # unused function (dead #3)
+          return n ** 2
+
+      def _legacy_root(n):  # unused function (dead #4)
+          return n ** 0.5
+
+      def hypotenuse(a, b):
+          if False:             # unreachable branch (dead #5)
+              return 0
+          return sqrt(a*a + b*b)
+
+    core/string_utils.py:
+      def slugify(text):
+          # old approach: text = text.replace(" ", "_")  # commented-out code (dead #6)
+          return text.lower().replace(" ", "-")
+
+      def truncate(text, max_len):
+          if False:                                      # unreachable branch (dead #7)
+              return text[:max_len] + "..."
+          if len(text) <= max_len:
+              return text
+          return text[:max_len] + "..."
+
+      def _unused_helper(text):                         # unused function (dead #8)
+          return text.strip().title()
+
+      def count_words(text):
+          # result = len(text)                          # commented-out code (dead #9)
+          result = len(text.split())
+          return result
+
+    core/list_utils.py:
+      def flatten(lst):
+          _debug = True                                 # unused variable (dead #10)
+          result = []
+          for item in lst:
+              if isinstance(item, list):
+                  result.extend(flatten(item))
+              else:
+                  result.append(item)
+          return result
+
+      def chunk(lst, size):
+          _temp = []                                    # unused variable (dead #11)
+          return [lst[i:i+size] for i in range(0, len(lst), size)]
+
+      def _noop(lst):                                   # unused function (dead #12)
+          pass
+
+      def unique(lst):
+          if False:                                     # unreachable branch (dead #13)
+              return sorted(set(lst))
+          return list(dict.fromkeys(lst))
+
+    core/io_utils.py:
+      import json
+      import pickle          # unused import (dead #14)
+
+      def load_json(path):
+          # with open(path, "rb") as f:                # commented-out code (dead #15)
+          #     return pickle.load(f)
+          with open(path) as f:
+              return json.load(f)
+
+      def save_json(data, path):
+          with open(path, "w") as f:
+              json.dump(data, f)
+
+    Step 2 — Create tests/test_live_code.py that covers all LIVE functions:
+
+      import pytest
+      from core.math_utils import square, cube, hypotenuse
+      from core.string_utils import slugify, truncate, count_words
+      from core.list_utils import flatten, chunk, unique
+      from core.io_utils import load_json, save_json
+
+      def test_square(): assert square(4) == 16
+      def test_cube(): assert cube(3) == 27
+      def test_hypotenuse(): assert hypotenuse(3, 4) == pytest.approx(5.0)
+      def test_slugify(): assert slugify("Hello World") == "hello-world"
+      def test_truncate(): assert truncate("hello world", 5) == "hello..."
+      def test_count_words(): assert count_words("one two three") == 3
+      def test_flatten(): assert flatten([1, [2, [3]]]) == [1, 2, 3]
+      def test_chunk(): assert chunk([1,2,3,4], 2) == [[1,2],[3,4]]
+      def test_unique(): assert unique([1,2,1,3]) == [1,2,3]
+
+    Step 3 — Remove all 15 dead code items from the 4 source files:
+    - Dead items 1,2,14: unused imports (os, sys, pickle).
+    - Dead items 3,4,8,12: unused private functions.
+    - Dead items 5,7,13: unreachable `if False:` branches.
+    - Dead items 6,9,15: commented-out code blocks.
+    - Dead items 10,11: unused local variables.
+
+    Requirements:
+    - All 15 dead items must be removed.
+    - No live function may be removed or broken.
+    - Tests must pass after removal.
+    - ruff must report no F401 (unused import) or F841 (unused variable) warnings.
+  files_to_examine:
+    - "core/math_utils.py"
+    - "core/string_utils.py"
+    - "core/list_utils.py"
+    - "core/io_utils.py"
+    - "tests/test_live_code.py"
+
+verification:
+  test_commands:
+    - "source .venv/bin/activate && python3 -m pytest tests/test_live_code.py -v"
+  lint_commands:
+    - "source .venv/bin/activate && ruff check core/"
+  security_commands: []
+  partial_credit:
+    - criterion: "At least 10 of 15 dead items removed"
+      points: 15
+      check: "! grep -rE '^import os|^import sys|^import pickle' core/"
+    - criterion: "All 15 dead items removed"
+      points: 15
+      check: "! grep -rE 'if False:|_old_square|_legacy_root|_unused_helper|_noop|import pickle|import os|import sys' core/"
+    - criterion: "No live function accidentally removed"
+      points: 20
+      check: "grep -q 'def hypotenuse' core/math_utils.py && grep -q 'def flatten' core/list_utils.py"
+    - criterion: "No unused imports (ruff F401 clean)"
+      points: 10
+      check: "source .venv/bin/activate && ruff check core/ --select F401 2>&1 | grep -q 'All checks passed'"
+    - criterion: "No commented-out code blocks remain"
+      points: 10
+      check: "! grep -rE '# (old approach|result = len\\(text\\)|with open.*rb)' core/"
+    - criterion: "Tests pass"
+      points: 30
+      check: "source .venv/bin/activate && python3 -m pytest tests/test_live_code.py -v"
+
+constraints:
+  max_iterations: 20
+  timeout_seconds: 1200

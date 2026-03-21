@@ -1,0 +1,101 @@
+id: MF-007
+category: multi-file
+title: "Add a database migration system with models, migration scripts, and rollback"
+difficulty: hard
+estimated_minutes: 45
+languages: [python]
+tags: [fastapi, sqlalchemy, alembic, migrations, sqlite]
+capabilities: [multi_file_reasoning, framework_knowledge, test_writing]
+
+repo:
+  url: "https://github.com/tiangolo/fastapi"
+  commit: "628c34e0cae200564d191c95d7edea78c88c4b5e"
+  setup_commands:
+    - "python3 -m venv .venv && source .venv/bin/activate && pip install -e '.[all]' && pip install pytest sqlalchemy alembic aiosqlite"
+
+issue:
+  description: |
+    Build a lightweight database migration system that applies and rolls back
+    schema changes in a deterministic order. The system must NOT rely on
+    Alembic's autogenerate — each migration script contains explicit upgrade()
+    and downgrade() functions.
+
+    Files to create:
+
+    db/base.py
+      - Synchronous SQLAlchemy engine and session factory using SQLite
+        (connection string: "sqlite:///./test.db").
+      - A Base = declarative_base() for model inheritance.
+      - Functions: get_engine() -> Engine, get_session() -> Session.
+
+    models/user.py
+      - SQLAlchemy User model with columns: id (PK), username (unique, str),
+        email (str), created_at (DateTime, default=now).
+
+    models/post.py
+      - SQLAlchemy Post model with columns: id (PK), title (str), body (Text),
+        user_id (FK → users.id), created_at (DateTime, default=now).
+
+    migrations/001_create_users.py
+      - upgrade(engine): creates the users table using Base.metadata (or
+        explicit Table DDL).
+      - downgrade(engine): drops the users table.
+
+    migrations/002_create_posts.py
+      - upgrade(engine): creates the posts table.
+      - downgrade(engine): drops the posts table.
+      - Must be applied AFTER 001 (posts depends on users FK).
+
+    migrations/runner.py
+      - MigrationRunner class that:
+          - Accepts a list of migration modules in apply order.
+          - apply(): runs each migration's upgrade() in order.
+          - rollback(): runs each migration's downgrade() in REVERSE order.
+          - A migrations table tracks which migrations have been applied.
+          - Re-applying an already-applied migration is a no-op (idempotent).
+
+    tests/test_migrations.py
+      - Uses a fresh in-memory SQLite engine for each test.
+      - Test: apply() creates both tables; inspect them with SQLAlchemy inspect.
+      - Test: rollback() drops both tables in reverse order.
+      - Test: apply() → rollback() → apply() succeeds (idempotent round-trip).
+      - Test: applying 002 before 001 raises an error (FK constraint violation).
+      - Test: migrations table tracks applied migrations correctly.
+  files_to_examine:
+    - "db/base.py"
+    - "models/"
+    - "migrations/"
+    - "tests/test_migrations.py"
+
+verification:
+  test_commands:
+    - "source .venv/bin/activate && python3 -m pytest tests/test_migrations.py -v"
+  lint_commands:
+    - "source .venv/bin/activate && ruff check db/ models/ migrations/ tests/test_migrations.py"
+  security_commands: []
+  partial_credit:
+    - criterion: "User and Post SQLAlchemy models created with correct columns"
+      points: 10
+      check: "grep -qE 'user_id.*FK|ForeignKey' models/post.py"
+    - criterion: "Migration scripts have upgrade and downgrade functions"
+      points: 15
+      check: "grep -qE 'def upgrade|def downgrade' migrations/001_create_users.py"
+    - criterion: "Runner applies migrations in declared order"
+      points: 15
+      check: "grep -q 'apply' migrations/runner.py"
+    - criterion: "Runner rolls back in reverse order"
+      points: 15
+      check: "grep -qE 'reverse|reversed' migrations/runner.py"
+    - criterion: "Re-apply is idempotent (no duplicate migration)"
+      points: 10
+      check: "grep -qE 'migrations.*table|already.*applied|idempotent' migrations/runner.py"
+    - criterion: "Tests verify full apply → rollback → apply lifecycle"
+      points: 10
+      check: "grep -qE 'rollback.*apply|apply.*rollback' tests/test_migrations.py"
+    - criterion: "Tests pass"
+      points: 25
+      check: "source .venv/bin/activate && python3 -m pytest tests/test_migrations.py -v"
+
+constraints:
+  max_iterations: 30
+  timeout_seconds: 2400

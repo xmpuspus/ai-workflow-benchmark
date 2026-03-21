@@ -1,0 +1,97 @@
+id: RF-010
+category: refactoring
+title: "Consolidate 3 duplicate validation functions into a shared utility module"
+difficulty: easy
+estimated_minutes: 15
+languages: [python]
+tags: [fastapi, refactoring, dry-principle, code-reuse]
+capabilities: [refactoring_discipline, code_comprehension]
+
+repo:
+  url: "https://github.com/tiangolo/fastapi"
+  commit: "628c34e0cae200564d191c95d7edea78c88c4b5e"
+  setup_commands:
+    - "python3 -m venv .venv && source .venv/bin/activate && pip install -e '.[all]' && pip install pytest"
+
+issue:
+  description: |
+    A FastAPI application has 3 route modules that each define their own
+    copies of the same validation functions. The functions are nearly
+    identical but were copy-pasted with minor differences (different error
+    messages, slight variations in regex). This makes bug fixes or rule
+    changes require updating 3 places.
+
+    Create these 3 route files, each containing local copies of 3 validators:
+
+      routes/users.py:
+        validate_email(email: str) → bool  — checks "@" and "." present
+        validate_phone(phone: str) → bool  — checks 10-digit format with re
+        validate_date(date: str) → bool    — checks YYYY-MM-DD format with re
+
+      routes/items.py:
+        Same 3 functions, but validate_email uses a slightly different check
+        (splits on "@" and checks both parts non-empty), validate_phone uses
+        a different regex pattern string, validate_date has a different error
+        message format.
+
+      routes/orders.py:
+        Same 3 functions again, with yet another minor variation in each.
+
+    Each route file has 1-2 endpoint functions that call these local
+    validators before processing the request.
+
+    Create utils/validators.py with a single canonical implementation of:
+      validate_email(email: str) → bool
+      validate_phone(phone: str) → bool
+      validate_date(date: str) → bool
+
+    Choose the most correct implementation for each validator (proper regex,
+    handles edge cases). Remove the local copies from all 3 route files and
+    replace with:
+      from utils.validators import validate_email, validate_phone, validate_date
+
+    Create tests/test_validators.py that:
+      - Test each validator with valid inputs (should return True)
+      - Test each validator with invalid inputs (should return False)
+      - Confirm all 3 route files import from utils.validators (not local)
+      - Verify the route endpoints still call the validators correctly
+
+    Your task:
+      1. Create all 3 route files with duplicate validator functions.
+      2. Create utils/validators.py with canonical implementations.
+      3. Remove the duplicate functions from all 3 route files and import
+         from utils/validators.py instead.
+      4. Create tests/test_validators.py and confirm all tests pass.
+  files_to_examine:
+    - "routes/users.py"
+    - "routes/items.py"
+    - "routes/orders.py"
+    - "utils/validators.py"
+    - "tests/test_validators.py"
+
+verification:
+  test_commands:
+    - "source .venv/bin/activate && python3 -m pytest tests/test_validators.py -v"
+  lint_commands:
+    - "source .venv/bin/activate && ruff check routes/ utils/validators.py"
+  security_commands: []
+  partial_credit:
+    - criterion: "utils/validators.py created with 3 canonical validators"
+      points: 15
+      check: "test -f utils/validators.py && grep -c 'def validate_' utils/validators.py | awk '{if($1>=3) exit 0; else exit 1}'"
+    - criterion: "No duplicate validate_ functions remain in any route file"
+      points: 25
+      check: "! grep -rq 'def validate_' routes/"
+    - criterion: "All 3 route files import from utils.validators"
+      points: 20
+      check: "grep -q 'from utils.validators import' routes/users.py && grep -q 'from utils.validators import' routes/items.py && grep -q 'from utils.validators import' routes/orders.py"
+    - criterion: "Validation behavior unchanged (valid/invalid inputs handled correctly)"
+      points: 15
+      check: "source .venv/bin/activate && python3 -c \"from utils.validators import validate_email, validate_phone, validate_date; assert validate_email('a@b.com'); assert not validate_email('invalid'); assert validate_date('2024-01-15'); assert not validate_date('not-a-date')\""
+    - criterion: "Tests pass"
+      points: 25
+      check: "source .venv/bin/activate && python3 -m pytest tests/test_validators.py -v"
+
+constraints:
+  max_iterations: 15
+  timeout_seconds: 900

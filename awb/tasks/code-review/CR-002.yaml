@@ -1,0 +1,98 @@
+id: CR-002
+category: code-review
+title: "Security review of FastAPI app with 5 planted vulnerabilities"
+difficulty: hard
+estimated_minutes: 45
+languages: [python]
+tags: [fastapi, sqlalchemy, security, sql-injection, yaml, cors]
+capabilities: [security_awareness, code_comprehension]
+
+repo:
+  url: "https://github.com/tiangolo/fastapi"
+  commit: "628c34e0cae200564d191c95d7edea78c88c4b5e"
+  setup_commands:
+    - "python3 -m venv .venv && source .venv/bin/activate && pip install -e '.[all]' && pip install pytest pytest-asyncio sqlalchemy pyyaml"
+
+issue:
+  description: |
+    Create a FastAPI application with 5 deliberately planted security
+    vulnerabilities, perform a security review, document the findings,
+    then write tests that prove each vulnerability is fixed.
+
+    Step 1 - Create the vulnerable app (~200 lines total):
+
+    app/db.py:
+      - SQLAlchemy setup with a User table (id, username, email, password_hash)
+      - A get_user_by_name(session, username) function that uses:
+          session.execute(text(f"SELECT * FROM users WHERE username = '{username}'"))
+        (VULNERABILITY 1: SQL injection via f-string in text())
+
+    app/auth.py:
+      - A load_config(path) function that does:
+          yaml.load(open(path))
+        (VULNERABILITY 2: yaml.load without SafeLoader)
+      - A verify_password(plain, stored) function with:
+          try:
+              return hmac.compare_digest(plain, stored)
+          except:
+              return False
+        (VULNERABILITY 3: bare except swallowing auth errors)
+
+    app/main.py:
+      - FastAPI app with CORSMiddleware(allow_origins=["*"])
+        (VULNERABILITY 4: overly permissive CORS)
+      - A POST /login endpoint that, on auth failure, logs:
+          logger.info(f"Failed login for {username} with password {password}")
+        (VULNERABILITY 5: password in log)
+      - A GET /users/{name} endpoint calling get_user_by_name
+
+    Step 2 - Write the security review:
+
+    Create review/security_findings.md with a section for each of the 5
+    vulnerabilities. Each section must include:
+      - Vulnerability name and severity (Critical/High/Medium/Low)
+      - The exact file and line pattern where it occurs
+      - Why it is dangerous
+      - The specific fix required
+
+    Step 3 - Fix all 5 vulnerabilities in the app files, then create
+    tests/test_security_fixes.py that proves each fix works:
+      - SQL injection test: special characters in username do not corrupt query
+      - yaml.safe_load used (not yaml.load)
+      - bare except replaced with specific exception type
+      - CORS origins restricted (not ["*"])
+      - Password not present in log output (capture logging)
+  files_to_examine:
+    - "fastapi/middleware/cors.py"
+    - "fastapi/routing.py"
+    - "tests/"
+
+verification:
+  test_commands:
+    - "source .venv/bin/activate && python3 -m pytest tests/test_security_fixes.py -v"
+  lint_commands:
+    - "source .venv/bin/activate && ruff check app/ tests/test_security_fixes.py"
+  security_commands: []
+  partial_credit:
+    - criterion: "SQL injection vulnerability found and fixed"
+      points: 15
+      check: "grep -qiE 'sql.inject|text.*bindparam|:username' app/db.py"
+    - criterion: "yaml.load replaced with yaml.safe_load"
+      points: 15
+      check: "grep -q 'safe_load' app/auth.py && ! grep -qE 'yaml\\.load\\(' app/auth.py"
+    - criterion: "Bare except replaced with specific exception"
+      points: 15
+      check: "! grep -qE 'except:' app/auth.py"
+    - criterion: "CORS origins no longer allow wildcard"
+      points: 15
+      check: "! grep -q 'allow_origins.*\\[\"\\*\"\\]' app/main.py"
+    - criterion: "Password not logged on failed login"
+      points: 15
+      check: "! grep -qE 'password.*log|log.*password' app/main.py"
+    - criterion: "Security findings document created"
+      points: 25
+      check: "test -f review/security_findings.md && grep -qiE 'sql|yaml|cors|password' review/security_findings.md"
+
+constraints:
+  max_iterations: 25
+  timeout_seconds: 1800

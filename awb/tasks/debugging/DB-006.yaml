@@ -1,0 +1,73 @@
+id: DB-006
+category: debugging
+title: "Find why CLI tool silently succeeds but does nothing when subcommand runs"
+difficulty: easy
+estimated_minutes: 15
+languages: [python]
+tags: [click, cli, command-group, registration]
+capabilities: [bug_diagnosis, framework_knowledge]
+
+repo:
+  url: "https://github.com/pallets/click"
+  commit: "1d038f270701498433cb432f54db89f95f07a845"
+  setup_commands:
+    - "python3 -m venv .venv && source .venv/bin/activate && pip install -e . && pip install pytest"
+
+issue:
+  description: |
+    A Click CLI tool has a command group with a `process` subcommand. Running
+    `python cli/main.py process` exits with code 0 and prints nothing. No error
+    is raised and the developer has verified the function body contains a
+    print statement. The command appears to be registered but silently does
+    nothing.
+
+    The bug: the `process` function is defined with @click.command() but is
+    never added to the group — either the decorator references the wrong group
+    object or group.add_command() is never called.
+
+    Your task:
+    1. Create cli/main.py with:
+       - A Click group `cli` defined with @click.group().
+       - A standalone function `process` decorated with @click.command() that
+         prints "Processing..." and writes a file called output.txt with the
+         text "done".
+       - The bug: do NOT attach process to cli (omit @cli.command() or
+         group.add_command(process)).
+    2. Demonstrate the bug: show that `cli.commands` does not contain
+       "process" and that invoking the CLI with ["process"] raises UsageError
+       or exits silently.
+    3. Fix: attach the process command to the cli group using either
+       @cli.command() as the decorator or cli.add_command(process) after
+       definition.
+    4. Create tests/test_cli.py using Click's CliRunner that:
+       - Invokes the CLI with ["process"].
+       - Asserts exit code is 0.
+       - Asserts "Processing..." appears in the output.
+       - Asserts output.txt was created with content "done".
+  files_to_examine:
+    - "cli/main.py"
+    - "tests/test_cli.py"
+
+verification:
+  test_commands:
+    - "source .venv/bin/activate && python3 -m pytest tests/test_cli.py -v"
+  lint_commands:
+    - "source .venv/bin/activate && ruff check cli/ tests/test_cli.py"
+  security_commands: []
+  partial_credit:
+    - criterion: "Missing command registration identified as root cause"
+      points: 25
+      check: "grep -qE '@cli.command|add_command' cli/main.py"
+    - criterion: "process command registered to the cli group"
+      points: 25
+      check: "grep -qE '@cli.command\\(\\)|cli.add_command' cli/main.py"
+    - criterion: "Test verifies command executes and produces output"
+      points: 25
+      check: "grep -qE 'Processing|output.txt' tests/test_cli.py"
+    - criterion: "Tests pass"
+      points: 25
+      check: "source .venv/bin/activate && python3 -m pytest tests/test_cli.py -v"
+
+constraints:
+  max_iterations: 15
+  timeout_seconds: 900

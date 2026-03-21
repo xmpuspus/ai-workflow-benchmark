@@ -1,0 +1,86 @@
+id: BF-005
+category: bug-fix
+title: "Fix timezone-naive datetime comparison causing TypeError at midnight"
+difficulty: easy
+estimated_minutes: 15
+languages: [python]
+tags: [fastapi, datetime, timezone, stdlib]
+capabilities: [bug_diagnosis, framework_knowledge]
+
+repo:
+  url: "https://github.com/tiangolo/fastapi"
+  commit: "628c34e0cae200564d191c95d7edea78c88c4b5e"
+  setup_commands:
+    - "python3 -m venv .venv && source .venv/bin/activate && pip install -e '.[all]' && pip install pytest httpx"
+
+issue:
+  description: |
+    A scheduling utility compares a stored datetime against the current time
+    to determine if a record has expired. It works when the stored datetime
+    is naive, but crashes with TypeError when the database returns a
+    timezone-aware datetime (which all modern ORMs do by default).
+
+    Your task:
+    1. Create utils/scheduling.py with:
+       from datetime import datetime
+
+       def is_expired(created_at: datetime, ttl_hours: int) -> bool:
+           now = datetime.utcnow()
+           age = now - created_at
+           return age.total_seconds() > ttl_hours * 3600
+
+       THE BUG: datetime.utcnow() returns a naive datetime. When created_at
+       is timezone-aware (e.g., from a DB column with timezone=True), Python
+       raises: TypeError: can't subtract offset-naive and offset-aware datetimes
+
+    2. Create tests/test_scheduling.py with:
+       - test_expired_naive: shows the function works with naive datetimes
+         (this passes even before the fix)
+       - test_expired_aware_raises: demonstrates the bug — call is_expired
+         with a timezone-aware created_at and assert it raises TypeError
+         (this test documents the bug; it should PASS before fix but FAIL
+         after, so invert it with pytest.raises)
+       - test_expired_aware_fixed: call is_expired with a timezone-aware
+         created_at that is 2 hours old and a ttl_hours=1 — assert True
+       - test_not_expired_aware: call is_expired with a timezone-aware
+         created_at that is 30 minutes old and a ttl_hours=1 — assert False
+
+    The fix is to replace datetime.utcnow() with datetime.now(timezone.utc):
+       from datetime import datetime, timezone
+
+       def is_expired(created_at: datetime, ttl_hours: int) -> bool:
+           now = datetime.now(timezone.utc)
+           if created_at.tzinfo is None:
+               created_at = created_at.replace(tzinfo=timezone.utc)
+           age = now - created_at
+           return age.total_seconds() > ttl_hours * 3600
+
+    The fix must handle both naive and aware inputs without breaking callers
+    that pass naive datetimes.
+  files_to_examine:
+    - "fastapi/routing.py"
+    - "tests/"
+
+verification:
+  test_commands:
+    - "source .venv/bin/activate && python3 -m pytest tests/test_scheduling.py -v"
+  lint_commands:
+    - "source .venv/bin/activate && ruff check utils/scheduling.py tests/test_scheduling.py"
+  security_commands: []
+  partial_credit:
+    - criterion: "datetime.now(timezone.utc) replaces datetime.utcnow()"
+      points: 25
+      check: "grep -q 'timezone.utc' utils/scheduling.py"
+    - criterion: "utcnow() removed from scheduling.py"
+      points: 25
+      check: "grep -qv 'utcnow' utils/scheduling.py"
+    - criterion: "Test with timezone-aware datetime exists"
+      points: 25
+      check: "grep -qE 'timezone|tzinfo|aware' tests/test_scheduling.py"
+    - criterion: "Tests pass"
+      points: 25
+      check: "source .venv/bin/activate && python3 -m pytest tests/test_scheduling.py -v"
+
+constraints:
+  max_iterations: 15
+  timeout_seconds: 900

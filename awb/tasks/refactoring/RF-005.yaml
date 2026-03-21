@@ -1,0 +1,93 @@
+id: RF-005
+category: refactoring
+title: "Extract 4 inline SQL queries into parameterized repository functions"
+difficulty: medium
+estimated_minutes: 30
+languages: [python]
+tags: [fastapi, sqlalchemy, sql-injection, repository-pattern, security]
+capabilities: [refactoring_discipline, security_awareness]
+
+repo:
+  url: "https://github.com/tiangolo/fastapi"
+  commit: "628c34e0cae200564d191c95d7edea78c88c4b5e"
+  setup_commands:
+    - "python3 -m venv .venv && source .venv/bin/activate && pip install -e '.[all]' && pip install pytest httpx sqlalchemy aiosqlite"
+
+issue:
+  description: |
+    A FastAPI application contains 4 endpoints that each build SQL queries
+    using f-strings, embedding user-supplied values directly into the query
+    string. This is a SQL injection vulnerability.
+
+    Create routes/products.py with 4 endpoints:
+
+      1. GET /products/{product_id} — fetches a product by ID using:
+         f"SELECT * FROM products WHERE id = {product_id}"
+      2. POST /products — inserts a product using:
+         f"INSERT INTO products (name, price) VALUES ('{name}', {price})"
+      3. PUT /products/{product_id} — updates a product name using:
+         f"UPDATE products SET name = '{name}' WHERE id = {product_id}"
+      4. DELETE /products/{product_id} — deletes a product using:
+         f"DELETE FROM products WHERE id = {product_id}"
+
+    Each endpoint executes the query via SQLAlchemy's engine.execute() or
+    a raw connection, passing the f-string directly.
+
+    Create repos/product_repo.py and extract all SQL into repository
+    functions using SQLAlchemy's text() with named :param placeholders:
+
+      from sqlalchemy import text
+      engine.execute(text("SELECT * FROM products WHERE id = :id"), {"id": product_id})
+
+    The routes must import and call the repo functions; no SQL should remain
+    in the routes themselves.
+
+    Create tests/test_product_repo.py that:
+      - Set up an in-memory SQLite database with a products table
+      - Test all 4 CRUD operations through the repo functions
+      - Include a SQL injection test: pass a value like
+        "1 OR 1=1" or "'; DROP TABLE products; --" as a parameter and
+        verify the query either returns no rows or raises an error cleanly,
+        rather than executing the injected SQL
+
+    Your task:
+      1. Create routes/products.py with the 4 f-string SQL endpoints.
+      2. Create repos/product_repo.py with parameterized equivalents.
+      3. Refactor routes/products.py to use the repo functions (no SQL in routes).
+      4. Create tests/test_product_repo.py proving parameterized queries work
+         and injection inputs are treated as literal values.
+  files_to_examine:
+    - "routes/products.py"
+    - "repos/product_repo.py"
+    - "tests/test_product_repo.py"
+
+verification:
+  test_commands:
+    - "source .venv/bin/activate && python3 -m pytest tests/test_product_repo.py -v"
+  lint_commands:
+    - "source .venv/bin/activate && ruff check routes/products.py repos/product_repo.py"
+  security_commands:
+    - "source .venv/bin/activate && bandit -r routes/ repos/ -ll 2>/dev/null || true"
+  partial_credit:
+    - criterion: "repos/product_repo.py module created"
+      points: 10
+      check: "test -f repos/product_repo.py"
+    - criterion: "No f-string SQL remaining in routes/products.py"
+      points: 20
+      check: "! grep -qE 'f\"(SELECT|INSERT|UPDATE|DELETE)' routes/products.py"
+    - criterion: "Parameterized queries using text() and :param syntax in repo"
+      points: 20
+      check: "grep -q 'text(' repos/product_repo.py && grep -qE ':[a-z_]+' repos/product_repo.py"
+    - criterion: "SQL injection test present and injection input treated as literal"
+      points: 20
+      check: "grep -qiE '(injection|OR 1=1|DROP TABLE)' tests/test_product_repo.py"
+    - criterion: "All 4 CRUD operations covered in repo"
+      points: 10
+      check: "grep -qiE 'SELECT|INSERT|UPDATE|DELETE' repos/product_repo.py && grep -c 'def ' repos/product_repo.py | awk '{if($1>=4) exit 0; else exit 1}'"
+    - criterion: "Tests pass"
+      points: 20
+      check: "source .venv/bin/activate && python3 -m pytest tests/test_product_repo.py -v"
+
+constraints:
+  max_iterations: 20
+  timeout_seconds: 1200

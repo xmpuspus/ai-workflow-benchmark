@@ -1,0 +1,62 @@
+id: BF-001
+category: bug-fix
+title: "Fix response_model silently dropping extra fields in FastAPI"
+difficulty: easy
+estimated_minutes: 15
+languages: [python]
+tags: [fastapi, pydantic, response-model, validation]
+capabilities: [framework_knowledge, test_writing]
+
+repo:
+  url: "https://github.com/tiangolo/fastapi"
+  commit: "628c34e0cae200564d191c95d7edea78c88c4b5e"
+  setup_commands:
+    - "python3 -m venv .venv && source .venv/bin/activate && pip install -e '.[all]' && pip install pytest httpx"
+
+issue:
+  description: |
+    A FastAPI endpoint returns extra fields that the client relies on, but
+    the response_model Pydantic schema silently strips them. The endpoint
+    handler returns a dict with fields `id`, `name`, `email`, and `role`,
+    but the response_model only declares `id`, `name`, and `email`.
+
+    The developer wants extra fields to cause a validation error rather than
+    being silently dropped, so that schema mismatches are caught early.
+
+    Your task:
+    1. Find or create a minimal reproduction in tests/test_extra_fields.py:
+       - A Pydantic model with `model_config = ConfigDict(extra="forbid")`
+       - A FastAPI endpoint using that model as response_model
+       - A test that confirms returning extra fields raises a validation error
+    2. The key insight is using Pydantic v2's ConfigDict(extra="forbid")
+       instead of the v1 pattern (class Config: extra = "forbid").
+    3. Verify that endpoints without extra="forbid" still work normally.
+
+    This tests knowledge of Pydantic v2 ConfigDict vs v1 class Meta patterns.
+  files_to_examine:
+    - "fastapi/routing.py"
+    - "tests/"
+
+verification:
+  test_commands:
+    - "source .venv/bin/activate && python3 -m pytest tests/test_extra_fields.py -v"
+  lint_commands:
+    - "source .venv/bin/activate && ruff check tests/test_extra_fields.py"
+  security_commands: []
+  partial_credit:
+    - criterion: "Test file created with ConfigDict extra=forbid model"
+      points: 25
+      check: "grep -q 'extra.*forbid' tests/test_extra_fields.py"
+    - criterion: "Uses Pydantic v2 ConfigDict (not v1 class Config)"
+      points: 25
+      check: "grep -q 'ConfigDict' tests/test_extra_fields.py"
+    - criterion: "Test validates that extra fields raise error"
+      points: 25
+      check: "grep -qE 'ValidationError|422|validation_error|ResponseValidationError' tests/test_extra_fields.py"
+    - criterion: "Tests pass"
+      points: 25
+      check: "source .venv/bin/activate && python3 -m pytest tests/test_extra_fields.py -v"
+
+constraints:
+  max_iterations: 15
+  timeout_seconds: 900

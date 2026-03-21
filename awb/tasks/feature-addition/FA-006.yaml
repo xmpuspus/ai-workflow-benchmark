@@ -1,0 +1,124 @@
+id: FA-006
+category: feature-addition
+title: "Add runtime response validation middleware to catch schema mismatches in dev"
+difficulty: hard
+estimated_minutes: 45
+languages: [python]
+tags: [fastapi, pydantic, middleware, validation, dev-tools]
+capabilities: [framework_knowledge, code_comprehension]
+
+repo:
+  url: "https://github.com/tiangolo/fastapi"
+  commit: "628c34e0cae200564d191c95d7edea78c88c4b5e"
+  setup_commands:
+    - "python3 -m venv .venv && source .venv/bin/activate && pip install -e '.[all]' && pip install pytest httpx"
+
+issue:
+  description: |
+    FastAPI validates request bodies but does NOT validate response bodies at
+    runtime — it trusts the handler to return the right fields. Add middleware
+    that, in development mode, reads the declared response_model for each route
+    and validates the actual response body against it, raising a 500 error if
+    the response does not conform.
+
+    This catches bugs where handlers return extra undeclared fields or omit
+    required fields, which would otherwise be silently stripped or cause
+    unexpected client behavior.
+
+    Step 1 - Create an app with 3 endpoints that have schema drift:
+
+    models/responses.py:
+      from pydantic import BaseModel
+
+      class UserResponse(BaseModel):
+          id: str
+          name: str
+          email: str
+
+      class ProductResponse(BaseModel):
+          sku: str
+          price: float
+
+      class OrderResponse(BaseModel):
+          order_id: str
+          total: float
+          status: str
+
+    routes/api.py:
+      from fastapi import APIRouter
+      from models.responses import UserResponse, ProductResponse, OrderResponse
+
+      router = APIRouter()
+
+      @router.get("/users/{user_id}", response_model=UserResponse)
+      def get_user(user_id: str):
+          # SCHEMA DRIFT: returns undeclared field "role"
+          return {"id": user_id, "name": "Alice", "email": "a@b.com", "role": "admin"}
+
+      @router.get("/products/{sku}", response_model=ProductResponse)
+      def get_product(sku: str):
+          # SCHEMA DRIFT: missing required field "price"
+          return {"sku": sku}
+
+      @router.get("/orders/{order_id}", response_model=OrderResponse)
+      def get_order(order_id: str):
+          # CORRECT: matches schema exactly
+          return {"order_id": order_id, "total": 99.99, "status": "shipped"}
+
+    Step 2 - Create middleware/response_validator.py:
+      A BaseHTTPMiddleware subclass that:
+      - Only activates when DEV_MODE=true (check os.environ)
+      - Intercepts responses before they are sent
+      - Reads the response body (JSON)
+      - Finds the route's response_model from app.routes by matching request path
+      - Validates response body against response_model using model.model_validate(data)
+      - Returns HTTP 500 with {"error": "response schema mismatch", "detail": str(e)}
+        if validation fails
+      - Passes through unchanged if validation succeeds or if no response_model
+
+    Step 3 - Update app/main.py to add the middleware only when DEV_MODE=true.
+
+    Step 4 - Create tests/test_response_validator.py:
+      - test_extra_field_caught: GET /users/1 in dev mode returns 500 with schema
+        mismatch error (because "role" is not in UserResponse)
+      - test_missing_field_caught: GET /products/SKU1 in dev mode returns 500
+        (because "price" is missing)
+      - test_correct_response_passes: GET /orders/ORD1 in dev mode returns 200
+      - test_middleware_disabled_in_prod: with DEV_MODE unset or false, GET /users/1
+        returns 200 (FastAPI strips extra fields, does not raise)
+      - test_middleware_dev_toggle: explicitly test that setting DEV_MODE=true
+        activates validation and DEV_MODE=false bypasses it
+  files_to_examine:
+    - "fastapi/routing.py"
+    - "fastapi/middleware/base.py"
+    - "tests/"
+
+verification:
+  test_commands:
+    - "source .venv/bin/activate && python3 -m pytest tests/test_response_validator.py -v"
+  lint_commands:
+    - "source .venv/bin/activate && ruff check middleware/response_validator.py routes/api.py models/responses.py tests/test_response_validator.py"
+  security_commands: []
+  partial_credit:
+    - criterion: "ResponseValidatorMiddleware class created"
+      points: 15
+      check: "test -f middleware/response_validator.py && grep -qE 'class.*Middleware|BaseHTTPMiddleware' middleware/response_validator.py"
+    - criterion: "Middleware validates response against response_model"
+      points: 20
+      check: "grep -qE 'response_model|model_validate' middleware/response_validator.py"
+    - criterion: "Extra fields in response caught and returns 500"
+      points: 15
+      check: "grep -qE '500|schema.*mismatch|mismatch' middleware/response_validator.py"
+    - criterion: "Missing required fields caught"
+      points: 15
+      check: "grep -qE 'ValidationError|missing' middleware/response_validator.py"
+    - criterion: "DEV_MODE toggle disables middleware in production"
+      points: 10
+      check: "grep -qE 'DEV_MODE|environ|dev.*mode' middleware/response_validator.py"
+    - criterion: "Tests pass"
+      points: 25
+      check: "source .venv/bin/activate && python3 -m pytest tests/test_response_validator.py -v"
+
+constraints:
+  max_iterations: 25
+  timeout_seconds: 1800

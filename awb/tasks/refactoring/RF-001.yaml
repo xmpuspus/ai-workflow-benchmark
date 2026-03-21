@@ -1,0 +1,78 @@
+id: RF-001
+category: refactoring
+title: "Extract FastAPI inline validation into service layer without framework imports"
+difficulty: hard
+estimated_minutes: 45
+languages: [python]
+tags: [fastapi, refactoring, service-layer, separation-of-concerns]
+capabilities: [refactoring_discipline, code_comprehension]
+
+repo:
+  url: "https://github.com/tiangolo/fastapi"
+  commit: "628c34e0cae200564d191c95d7edea78c88c4b5e"
+  setup_commands:
+    - "python3 -m venv .venv && source .venv/bin/activate && pip install -e '.[all]' && pip install pytest httpx"
+
+issue:
+  description: |
+    Create a demonstration of proper service layer extraction from FastAPI
+    route handlers. The goal is to show how inline validation and business
+    logic should be refactored into a service module that has ZERO FastAPI
+    imports - making it framework-agnostic and independently testable.
+
+    Your task:
+    1. Create examples/inline_routes.py showing the BEFORE state:
+       - 3-4 route handlers with inline business logic and validation
+       - Direct database-like operations inside handlers
+       - Validation logic mixed with HTTP concerns
+       - Example: user registration with email validation, duplicate check,
+         password hashing, and welcome email trigger - all inline
+    2. Create examples/services/user_service.py showing the AFTER state:
+       - Pure Python functions/class with business logic extracted
+       - NO imports from fastapi, starlette, or any web framework
+       - Uses plain Python types (dataclasses, TypedDict, or Pydantic models)
+       - Raises domain exceptions (not HTTPException)
+    3. Create examples/clean_routes.py showing refactored handlers:
+       - Thin route handlers that delegate to service layer
+       - Exception mapping (domain exceptions -> HTTPException)
+       - The handlers only do: parse request, call service, format response
+    4. Create tests/test_service_layer.py that:
+       - Tests the service layer WITHOUT any FastAPI/HTTP infrastructure
+       - Tests the route handlers with TestClient
+       - Proves service layer has no fastapi imports (import check)
+    5. The critical rule: examples/services/user_service.py must contain
+       ZERO imports from fastapi or starlette
+
+    This tests understanding of separation of concerns and the ability to
+    refactor tightly-coupled web handler code into testable service layers.
+  files_to_examine:
+    - "fastapi/routing.py"
+    - "fastapi/exceptions.py"
+    - "examples/"
+
+verification:
+  test_commands:
+    - "source .venv/bin/activate && python3 -m pytest tests/test_service_layer.py -v"
+  lint_commands:
+    - "source .venv/bin/activate && ruff check examples/inline_routes.py examples/services/ examples/clean_routes.py tests/test_service_layer.py"
+  security_commands: []
+  partial_credit:
+    - criterion: "Inline routes show business logic in handlers"
+      points: 15
+      check: "test -f examples/inline_routes.py && grep -qE '@app\\.(get|post|put|delete)' examples/inline_routes.py"
+    - criterion: "Service layer has NO fastapi imports"
+      points: 25
+      check: "test -f examples/services/user_service.py && ! grep -qE 'from fastapi|import fastapi|from starlette|import starlette' examples/services/user_service.py"
+    - criterion: "Clean routes delegate to service layer"
+      points: 15
+      check: "grep -qE 'user_service|service\\.' examples/clean_routes.py"
+    - criterion: "Service tests work without FastAPI infrastructure"
+      points: 20
+      check: "grep -qE 'def test_.*service|def test_.*register|def test_.*create' tests/test_service_layer.py"
+    - criterion: "Tests pass"
+      points: 25
+      check: "source .venv/bin/activate && python3 -m pytest tests/test_service_layer.py -v"
+
+constraints:
+  max_iterations: 30
+  timeout_seconds: 2400

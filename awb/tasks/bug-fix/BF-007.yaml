@@ -1,0 +1,119 @@
+id: BF-007
+category: bug-fix
+title: "Fix race condition in concurrent cache writes using plain dict"
+difficulty: hard
+estimated_minutes: 45
+languages: [python]
+tags: [httpx, concurrency, threading, race-condition, cache]
+capabilities: [bug_diagnosis, multi_file_reasoning]
+
+repo:
+  url: "https://github.com/encode/httpx"
+  commit: "26d48e0634e6ee9cdc0533996db289ce4b430177"
+  setup_commands:
+    - "python3 -m venv .venv && source .venv/bin/activate && pip install -e '.[cli,http2]' && pip install pytest pytest-asyncio"
+
+issue:
+  description: |
+    A response cache backed by a plain dict is accessed from multiple threads.
+    Under load, concurrent mutations during iteration raise RuntimeError:
+    "dictionary changed size during iteration". Fix the cache to be
+    thread-safe using a threading.Lock.
+
+    Your task:
+    1. Create cache/store.py with a CacheStore class:
+       class CacheStore:
+           def __init__(self):
+               self._data = {}
+
+           def get(self, key: str):
+               return self._data.get(key)
+
+           def set(self, key: str, value) -> None:
+               self._data[key] = value
+
+           def delete(self, key: str) -> None:
+               self._data.pop(key, None)
+
+           def keys(self) -> list:
+               return list(self._data.keys())   # BUG: iterating dict while other
+                                                 # threads mutate causes RuntimeError
+
+    2. Create cache/manager.py with a CacheManager class that uses CacheStore:
+       class CacheManager:
+           def __init__(self, store: CacheStore):
+               self.store = store
+
+           def cache_response(self, url: str, response: dict) -> None:
+               self.store.set(url, response)
+
+           def get_cached(self, url: str):
+               return self.store.get(url)
+
+           def evict_all(self) -> None:
+               for key in self.store.keys():   # iterates while threads write
+                   self.store.delete(key)
+
+    3. Create tests/test_cache_thread_safety.py with:
+       - test_concurrent_writes: spawns 50 threads each calling
+         store.set(f"key-{i}", i) concurrently, then asserts no exception
+         was raised and len(store.keys()) == 50
+       - test_evict_during_writes: spawns 20 writer threads and 5 evict
+         threads concurrently, asserts no RuntimeError
+       - test_get_set_consistent: writes a value from thread A, reads from
+         thread B, asserts the value is correct
+
+    The fix is to add threading.Lock to CacheStore and acquire it in every
+    method. All three methods (get, set, delete, keys) must hold the lock:
+       import threading
+
+       class CacheStore:
+           def __init__(self):
+               self._data = {}
+               self._lock = threading.Lock()
+
+           def get(self, key: str):
+               with self._lock:
+                   return self._data.get(key)
+
+           def set(self, key: str, value) -> None:
+               with self._lock:
+                   self._data[key] = value
+
+           def delete(self, key: str) -> None:
+               with self._lock:
+                   self._data.pop(key, None)
+
+           def keys(self) -> list:
+               with self._lock:
+                   return list(self._data.keys())
+  files_to_examine:
+    - "httpx/_client.py"
+    - "tests/"
+
+verification:
+  test_commands:
+    - "source .venv/bin/activate && python3 -m pytest tests/test_cache_thread_safety.py -v"
+  lint_commands:
+    - "source .venv/bin/activate && ruff check cache/ tests/test_cache_thread_safety.py"
+  security_commands: []
+  partial_credit:
+    - criterion: "threading.Lock or RLock added to CacheStore"
+      points: 20
+      check: "grep -qE 'threading\\.Lock|threading\\.RLock' cache/store.py"
+    - criterion: "Lock acquired in get() method"
+      points: 20
+      check: "grep -qE 'with self\\._lock' cache/store.py"
+    - criterion: "Concurrent write test exists with multiple threads"
+      points: 25
+      check: "grep -qE 'Thread|ThreadPool|concurrent' tests/test_cache_thread_safety.py"
+    - criterion: "No RuntimeError raised under concurrent load"
+      points: 15
+      check: "grep -qE 'RuntimeError|exception|raises' tests/test_cache_thread_safety.py"
+    - criterion: "Tests pass"
+      points: 20
+      check: "source .venv/bin/activate && python3 -m pytest tests/test_cache_thread_safety.py -v"
+
+constraints:
+  max_iterations: 25
+  timeout_seconds: 1800

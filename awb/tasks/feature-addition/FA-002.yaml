@@ -1,0 +1,110 @@
+id: FA-002
+category: feature-addition
+title: "Add rate limiting middleware matching existing auth middleware pattern exactly"
+difficulty: medium
+estimated_minutes: 30
+languages: [python]
+tags: [starlette, middleware, rate-limiting, conventions]
+capabilities: [framework_knowledge, code_comprehension]
+
+repo:
+  url: "https://github.com/encode/starlette"
+  commit: "e5b8a5d200504a2608bed11fe6f66b1d20b9ae2c"
+  setup_commands:
+    - "python3 -m venv .venv && source .venv/bin/activate && pip install -e '.[full]' && pip install pytest httpx"
+
+issue:
+  description: |
+    An existing Starlette app has an AuthMiddleware using BaseHTTPMiddleware.
+    Add a RateLimitMiddleware that follows the EXACT same class structure —
+    same __init__ signature style, same dispatch method signature, same way
+    of calling the next app. The goal is convention matching.
+
+    Step 1 - Create the existing auth middleware:
+
+    middleware/auth.py:
+      from starlette.middleware.base import BaseHTTPMiddleware
+      from starlette.requests import Request
+      from starlette.responses import Response, JSONResponse
+
+      class AuthMiddleware(BaseHTTPMiddleware):
+          def __init__(self, app, allowed_tokens: list[str] | None = None):
+              super().__init__(app)
+              self.allowed_tokens = allowed_tokens or []
+
+          async def dispatch(self, request: Request, call_next) -> Response:
+              token = request.headers.get("Authorization", "").removeprefix("Bearer ")
+              if self.allowed_tokens and token not in self.allowed_tokens:
+                  return JSONResponse({"error": "unauthorized"}, status_code=401)
+              response = await call_next(request)
+              return response
+
+    app/main.py:
+      from starlette.applications import Starlette
+      from starlette.routing import Route
+      from starlette.responses import JSONResponse
+      from middleware.auth import AuthMiddleware
+
+      async def homepage(request):
+          return JSONResponse({"hello": "world"})
+
+      app = Starlette(routes=[Route("/", homepage)])
+      app.add_middleware(AuthMiddleware, allowed_tokens=["secret"])
+
+    Step 2 - Add middleware/rate_limit.py:
+      - Class name: RateLimitMiddleware
+      - Extends BaseHTTPMiddleware (same base class as AuthMiddleware)
+      - __init__ signature: (self, app, max_requests: int = 100, window_seconds: int = 60)
+        plus super().__init__(app) call (same pattern as AuthMiddleware.__init__)
+      - async dispatch(self, request: Request, call_next) -> Response (same signature)
+      - Rate limit logic: track request counts per client IP using a dict and
+        a timestamp per window. Reset count when window expires.
+      - Return JSONResponse({"error": "rate limit exceeded"}, status_code=429) when over limit
+      - Call and return await call_next(request) when under limit (same as auth middleware)
+
+    Step 3 - Update app/main.py to add RateLimitMiddleware before AuthMiddleware.
+
+    Step 4 - Create tests/test_middlewares.py:
+      - test_auth_rejects_missing_token: request without Authorization -> 401
+      - test_auth_accepts_valid_token: request with Bearer secret -> 200
+      - test_rate_limit_allows_under_limit: 5 requests with max_requests=10 -> all 200
+      - test_rate_limit_blocks_over_limit: max_requests=3, send 5 requests ->
+        first 3 are 200, 4th and 5th are 429
+      - test_both_middlewares_active: with both middlewares, an unauthorized request
+        over the limit still gets 401 (auth runs before rate limit response matters,
+        or 429 — document which behavior your ordering produces)
+      - test_rate_limit_class_structure: verify RateLimitMiddleware uses BaseHTTPMiddleware
+        and has dispatch method with same signature (grep the source file)
+  files_to_examine:
+    - "starlette/middleware/base.py"
+    - "tests/"
+
+verification:
+  test_commands:
+    - "source .venv/bin/activate && python3 -m pytest tests/test_middlewares.py -v"
+  lint_commands:
+    - "source .venv/bin/activate && ruff check middleware/ app/ tests/test_middlewares.py"
+  security_commands: []
+  partial_credit:
+    - criterion: "RateLimitMiddleware extends BaseHTTPMiddleware"
+      points: 15
+      check: "grep -q 'BaseHTTPMiddleware' middleware/rate_limit.py"
+    - criterion: "dispatch method signature matches AuthMiddleware pattern"
+      points: 20
+      check: "grep -qE 'async def dispatch.*Request.*call_next' middleware/rate_limit.py"
+    - criterion: "Rate limit logic returns 429 when exceeded"
+      points: 20
+      check: "grep -qE '429|rate.*limit.*exceed' middleware/rate_limit.py"
+    - criterion: "__init__ follows same super().__init__(app) pattern"
+      points: 15
+      check: "grep -q 'super().__init__(app)' middleware/rate_limit.py"
+    - criterion: "Test for rate limiting behavior exists"
+      points: 10
+      check: "grep -qE 'test_rate_limit|429' tests/test_middlewares.py"
+    - criterion: "Tests pass"
+      points: 20
+      check: "source .venv/bin/activate && python3 -m pytest tests/test_middlewares.py -v"
+
+constraints:
+  max_iterations: 20
+  timeout_seconds: 1200

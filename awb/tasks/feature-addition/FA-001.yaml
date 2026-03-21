@@ -1,0 +1,99 @@
+id: FA-001
+category: feature-addition
+title: "Add health check endpoint following existing /status convention exactly"
+difficulty: easy
+estimated_minutes: 15
+languages: [python]
+tags: [fastapi, conventions, endpoint, uptime]
+capabilities: [framework_knowledge, code_comprehension]
+
+repo:
+  url: "https://github.com/tiangolo/fastapi"
+  commit: "628c34e0cae200564d191c95d7edea78c88c4b5e"
+  setup_commands:
+    - "python3 -m venv .venv && source .venv/bin/activate && pip install -e '.[all]' && pip install pytest httpx"
+
+issue:
+  description: |
+    An existing FastAPI app exposes a GET /status endpoint. Add a GET /health
+    endpoint that follows the EXACT same implementation pattern — same response
+    field names, same router registration style, same import structure. The goal
+    is convention matching, not just making a working endpoint.
+
+    Step 1 - Create the existing app skeleton:
+
+    routes/status.py:
+      from fastapi import APIRouter
+      from datetime import datetime, timezone
+
+      router = APIRouter()
+      _start_time = datetime.now(timezone.utc)
+
+      @router.get("/status")
+      def get_status():
+          uptime = (datetime.now(timezone.utc) - _start_time).total_seconds()
+          return {"status": "ok", "version": "1.0.0", "uptime_seconds": uptime}
+
+    app/main.py:
+      from fastapi import FastAPI
+      from routes.status import router as status_router
+
+      app = FastAPI()
+      app.include_router(status_router)
+
+    Step 2 - Add routes/health.py:
+      - Must use APIRouter (same as status.py)
+      - Must define its own _start_time using datetime.now(timezone.utc) (same pattern)
+      - Endpoint must be GET /health (not /health-check or /healthz)
+      - Response must include exactly these fields: status, version, uptime_seconds
+      - version value must be "1.0.0" (same as status)
+      - No new dependencies introduced that status.py doesn't use
+
+    Step 3 - Update app/main.py:
+      - Import health router using same pattern as status router import
+      - Register with app.include_router (same call style)
+
+    Step 4 - Create tests/test_health.py using TestClient:
+      - test_health_returns_200: GET /health -> 200
+      - test_health_response_fields: response body contains status, version,
+        uptime_seconds keys
+      - test_health_status_ok: response["status"] == "ok"
+      - test_health_version_matches_status: GET /health and GET /status both
+        return the same version value
+      - test_health_uptime_is_number: response["uptime_seconds"] is a float or int
+      - test_convention_router_pattern: inspect routes/health.py source to verify
+        it uses APIRouter and _start_time (grep the file in the test)
+  files_to_examine:
+    - "fastapi/routing.py"
+    - "fastapi/testclient.py"
+    - "tests/"
+
+verification:
+  test_commands:
+    - "source .venv/bin/activate && python3 -m pytest tests/test_health.py -v"
+  lint_commands:
+    - "source .venv/bin/activate && ruff check routes/health.py app/main.py tests/test_health.py"
+  security_commands: []
+  partial_credit:
+    - criterion: "GET /health endpoint exists and returns 200"
+      points: 15
+      check: "grep -qE '@router\\.get.*health' routes/health.py"
+    - criterion: "Response matches {status, version, uptime_seconds} format"
+      points: 20
+      check: "grep -qE 'uptime_seconds|uptime' routes/health.py"
+    - criterion: "Follows router pattern (APIRouter, not app.get directly)"
+      points: 20
+      check: "grep -q 'APIRouter' routes/health.py"
+    - criterion: "Health router registered in app/main.py"
+      points: 15
+      check: "grep -qE 'health.*router|include_router.*health' app/main.py"
+    - criterion: "Tests verify convention match between /health and /status"
+      points: 10
+      check: "grep -qE 'version.*status|status.*version|convention' tests/test_health.py"
+    - criterion: "Tests pass"
+      points: 20
+      check: "source .venv/bin/activate && python3 -m pytest tests/test_health.py -v"
+
+constraints:
+  max_iterations: 15
+  timeout_seconds: 900

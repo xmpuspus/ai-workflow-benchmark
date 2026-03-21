@@ -1,0 +1,97 @@
+id: BF-008
+category: bug-fix
+title: "Fix Pydantic silently truncating float strings to int in invoice model"
+difficulty: medium
+estimated_minutes: 30
+languages: [python]
+tags: [fastapi, pydantic, validation, strict-mode, coercion]
+capabilities: [bug_diagnosis, framework_knowledge]
+
+repo:
+  url: "https://github.com/tiangolo/fastapi"
+  commit: "628c34e0cae200564d191c95d7edea78c88c4b5e"
+  setup_commands:
+    - "python3 -m venv .venv && source .venv/bin/activate && pip install -e '.[all]' && pip install pytest httpx"
+
+issue:
+  description: |
+    An invoice model declares its `amount` field as int. Pydantic v2 silently
+    coerces the string "150.75" to 150 (float truncation then int), causing
+    billing to undercharge customers. The fix is to enable strict mode so
+    string inputs are rejected outright.
+
+    Your task:
+    1. Create models/invoice.py with:
+       from pydantic import BaseModel
+
+       class Invoice(BaseModel):
+           invoice_id: str
+           amount: int
+           currency: str = "USD"
+
+       THE BUG: Pydantic v2 in lax mode coerces "150.75" -> 150.75 -> 150,
+       silently dropping cents. The model accepts the string and returns a
+       wrong value instead of raising ValidationError.
+
+    2. Create tests/test_invoice_model.py with:
+       - test_string_amount_coercion_bug: demonstrates the bug — pass
+         {"invoice_id": "INV-1", "amount": "150.75", "currency": "USD"},
+         show that Invoice.model_validate(data).amount == 150 (not 150.75,
+         not a ValidationError). This is the silent data loss.
+       - test_string_amount_rejected_after_fix: after the fix, the same call
+         raises pydantic.ValidationError
+       - test_valid_int_accepted: {"amount": 150} still validates successfully
+       - test_float_rejected: {"amount": 150.75} raises ValidationError
+         (an int field should reject floats in strict mode too)
+
+    The fix is to add strict mode to the amount field or the whole model:
+       from pydantic import BaseModel, ConfigDict
+
+       class Invoice(BaseModel):
+           model_config = ConfigDict(strict=True)
+           invoice_id: str
+           amount: int
+           currency: str = "USD"
+
+    Or per-field:
+       from pydantic import BaseModel, Field
+
+       class Invoice(BaseModel):
+           invoice_id: str
+           amount: int = Field(..., strict=True)
+           currency: str = "USD"
+
+    Either approach is acceptable. The test for float rejection (test_float_rejected)
+    only needs to pass if strict=True is applied at the model level (ConfigDict).
+    Per-field strict on amount alone does not affect float->int coercion the same way.
+    Make the tests match the approach chosen.
+  files_to_examine:
+    - "fastapi/routing.py"
+    - "tests/"
+
+verification:
+  test_commands:
+    - "source .venv/bin/activate && python3 -m pytest tests/test_invoice_model.py -v"
+  lint_commands:
+    - "source .venv/bin/activate && ruff check models/ tests/test_invoice_model.py"
+  security_commands: []
+  partial_credit:
+    - criterion: "strict=True or ConfigDict(strict=True) applied to Invoice"
+      points: 25
+      check: "grep -qE 'strict.*True|ConfigDict.*strict' models/invoice.py"
+    - criterion: "Test for string amount rejection exists"
+      points: 25
+      check: "grep -qE 'ValidationError|validation_error' tests/test_invoice_model.py"
+    - criterion: "Test for valid integer acceptance exists"
+      points: 15
+      check: "grep -qE 'test_valid|valid_int|amount.*150[^.]' tests/test_invoice_model.py"
+    - criterion: "Test for float truncation data loss documented"
+      points: 15
+      check: "grep -qE '150\\.75|truncat|coer' tests/test_invoice_model.py"
+    - criterion: "Tests pass"
+      points: 20
+      check: "source .venv/bin/activate && python3 -m pytest tests/test_invoice_model.py -v"
+
+constraints:
+  max_iterations: 20
+  timeout_seconds: 1200

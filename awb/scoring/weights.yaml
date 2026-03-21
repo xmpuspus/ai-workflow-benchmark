@@ -1,0 +1,29 @@
+# Scoring weight profiles for AWB composite score.
+# Each profile maps metric names to weights that must sum to 1.0.
+
+default:
+  correctness: 0.55       # success_rate + partial_credit combined
+  cost_efficiency: 0.15
+  speed: 0.10
+  code_quality: 0.10
+  reliability: 0.05       # test regressions
+  security: 0.03
+  efficiency: 0.02        # iteration count
+
+correctness_focused:
+  correctness: 0.70
+  cost_efficiency: 0.10
+  speed: 0.05
+  code_quality: 0.08
+  reliability: 0.05
+  security: 0.02
+  efficiency: 0.00
+
+production:
+  correctness: 0.45
+  cost_efficiency: 0.20
+  speed: 0.05
+  code_quality: 0.10
+  reliability: 0.10
+  security: 0.08
+  efficiency: 0.02

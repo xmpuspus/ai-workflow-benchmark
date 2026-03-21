@@ -1,0 +1,157 @@
+id: LC-010
+category: legacy-code
+title: "Replace string formatting with f-strings across 8 files"
+difficulty: easy
+estimated_minutes: 15
+languages: [python]
+tags: [f-strings, formatting, modernization, refactoring]
+capabilities: [refactoring_discipline, code_comprehension]
+
+repo:
+  url: "https://github.com/tiangolo/fastapi"
+  commit: "628c34e0cae200564d191c95d7edea78c88c4b5e"
+  setup_commands:
+    - "python3 -m venv .venv && source .venv/bin/activate && pip install -e '.[all]' && pip install pytest httpx"
+
+issue:
+  description: |
+    Eight files use old-style string formatting. Four use %-style formatting
+    and four use .format()-style. Replace all occurrences with f-strings.
+
+    Step 1 — Create these 8 files:
+
+    messages/greet.py  (% style):
+      def greet(name):
+          return "Hello, %s!" % name
+
+      def greet_formal(title, name):
+          return "Dear %s %s," % (title, name)
+
+    messages/error.py  (% style):
+      def not_found(resource, id_):
+          return "Error: %s with id %d was not found." % (resource, id_)
+
+      def permission_denied(user, action):
+          return "User '%s' is not allowed to %s." % (user, action)
+
+    messages/status.py  (% style):
+      def progress(current, total):
+          return "Progress: %d/%d (%.1f%%)" % (current, total, 100 * current / total)
+
+      def done(item):
+          return "Done processing: %s" % item
+
+    messages/log.py  (% style):
+      def log_request(method, path, status):
+          return "[%s] %s -> %d" % (method, path, status)
+
+      def log_error(msg):
+          return "ERROR: %s" % msg
+
+    reports/summary.py  (.format() style):
+      def summary(name, count):
+          return "User {} has {} items.".format(name, count)
+
+      def header(title, width):
+          return "{:^{}}".format(title, width)
+
+    reports/table.py  (.format() style):
+      def row(label, value, unit):
+          return "{}: {} {}".format(label, value, unit)
+
+      def total(amount):
+          return "Total: {:.2f}".format(amount)
+
+    reports/invoice.py  (.format() style):
+      def line_item(desc, qty, price):
+          return "{} x{} @ ${:.2f}".format(desc, qty, price)
+
+      def invoice_header(number, date):
+          return "Invoice #{} dated {}".format(number, date)
+
+    reports/notify.py  (.format() style):
+      def alert(level, message):
+          return "[{}] {}".format(level, message)
+
+      def reminder(name, task):
+          return "Hi {name}, don't forget: {task}".format(name=name, task=task)
+
+    Step 2 — Create tests/test_formatting.py covering all functions:
+
+      from messages.greet import greet, greet_formal
+      from messages.error import not_found, permission_denied
+      from messages.status import progress, done
+      from messages.log import log_request, log_error
+      from reports.summary import summary, header
+      from reports.table import row, total
+      from reports.invoice import line_item, invoice_header
+      from reports.notify import alert, reminder
+
+      def test_greet(): assert greet("Alice") == "Hello, Alice!"
+      def test_greet_formal(): assert greet_formal("Dr", "Smith") == "Dear Dr Smith,"
+      def test_not_found(): assert "42" in not_found("User", 42)
+      def test_permission_denied(): assert "admin" in permission_denied("admin", "delete")
+      def test_progress(): assert "50.0%" in progress(1, 2)
+      def test_done(): assert done("report") == "Done processing: report"
+      def test_log_request(): assert "GET" in log_request("GET", "/api", 200)
+      def test_log_error(): assert log_error("oops") == "ERROR: oops"
+      def test_summary(): assert summary("Bob", 5) == "User Bob has 5 items."
+      def test_total(): assert total(19.9) == "Total: 19.90"
+      def test_line_item(): assert "$" in line_item("Widget", 3, 4.99)
+      def test_alert(): assert alert("WARN", "disk full") == "[WARN] disk full"
+      def test_reminder(): assert "Alice" in reminder("Alice", "review PR")
+
+    Step 3 — Replace all %-style and .format()-style formatting with
+    f-strings across all 8 files. Edge cases to handle correctly:
+    - Literal percent signs in f-strings: use {{ and }} for literal braces,
+      and keep % as-is inside the string for literal percent output.
+    - Format specifiers like :.2f and :^{width} translate directly into
+      f-string format specs: f"{value:.2f}", f"{title:^{width}}".
+    - Keyword .format(name=name) becomes f"{name}".
+
+    Requirements:
+    - No % formatting remaining in any of the 8 files (no "..." % ...).
+    - No .format() calls remaining in any of the 8 files.
+    - All 8 files must be converted.
+    - Output of every function must be byte-for-byte identical to before.
+    - Tests must pass.
+  files_to_examine:
+    - "messages/greet.py"
+    - "messages/error.py"
+    - "messages/status.py"
+    - "messages/log.py"
+    - "reports/summary.py"
+    - "reports/table.py"
+    - "reports/invoice.py"
+    - "reports/notify.py"
+    - "tests/test_formatting.py"
+
+verification:
+  test_commands:
+    - "source .venv/bin/activate && python3 -m pytest tests/test_formatting.py -v"
+  lint_commands:
+    - "source .venv/bin/activate && ruff check messages/ reports/"
+  security_commands: []
+  partial_credit:
+    - criterion: "No % formatting remaining in any file"
+      points: 15
+      check: "! grep -rE '\"[^\"]*%[sdf][^\"]*\" %' messages/ reports/"
+    - criterion: "No .format() calls remaining in any file"
+      points: 15
+      check: "! grep -r '\\.format(' messages/ reports/"
+    - criterion: "f-strings used throughout"
+      points: 15
+      check: "grep -rE \"f'|f\\\"\" messages/ reports/ | wc -l | awk '{exit ($1 < 8)}'"
+    - criterion: "All 8 files converted"
+      points: 15
+      check: "grep -rlE \"f'|f\\\"\" messages/ reports/ | wc -l | awk '{exit ($1 < 8)}'"
+    - criterion: "Edge cases handled (format specs, literal braces)"
+      points: 15
+      check: "grep -qE 'f\".+:.2f' reports/table.py && grep -qE 'f\".+:' reports/summary.py"
+    - criterion: "Tests pass"
+      points: 25
+      check: "source .venv/bin/activate && python3 -m pytest tests/test_formatting.py -v"
+
+constraints:
+  max_iterations: 15
+  timeout_seconds: 900

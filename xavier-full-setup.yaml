@@ -1,0 +1,15 @@
+spec: awb/v1
+name: xavier-full-setup
+tool: claude-code-custom
+mode: custom
+config:
+  max_turns: 20
+  timeout_seconds: 1800
+  config_hash: ''
+metadata:
+  created: '2026-03-20T12:52:17.040008+00:00'
+environment:
+  hooks_count: 82
+  agents_count: 23
+  skills_count: 2
+  claude_md_hash: 100b4e057d006802

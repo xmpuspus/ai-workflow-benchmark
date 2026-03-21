@@ -1,0 +1,97 @@
+id: CR-003
+category: code-review
+title: "Find and fix all yaml.load() without SafeLoader in a config system"
+difficulty: easy
+estimated_minutes: 15
+languages: [python]
+tags: [fastapi, yaml, security, deserialization, config]
+capabilities: [security_awareness, code_comprehension]
+
+repo:
+  url: "https://github.com/tiangolo/fastapi"
+  commit: "628c34e0cae200564d191c95d7edea78c88c4b5e"
+  setup_commands:
+    - "python3 -m venv .venv && source .venv/bin/activate && pip install -e '.[all]' && pip install pytest pyyaml"
+
+issue:
+  description: |
+    A FastAPI application's configuration system uses yaml.load() without
+    specifying a Loader. The default Loader allows arbitrary Python object
+    deserialization, which means a maliciously crafted YAML file can execute
+    arbitrary code when loaded. This is a known critical vulnerability.
+
+    Create 4 config files, each calling yaml.load() without a Loader:
+
+      config/loader.py:
+        def load_config(path):
+            with open(path) as f:
+                return yaml.load(f)   # no Loader
+
+      config/env.py:
+        def load_env_config(stream):
+            return yaml.load(stream)   # no Loader
+
+      config/secrets.py:
+        def load_secrets(path):
+            with open(path) as f:
+                data = yaml.load(f)   # no Loader
+            return data
+
+      config/templates.py:
+        def load_template(content):
+            return yaml.load(content)  # no Loader
+
+    Fix all 4 by replacing yaml.load() with yaml.safe_load(), or by passing
+    Loader=yaml.SafeLoader explicitly:
+      yaml.load(f, Loader=yaml.SafeLoader)  # acceptable
+      yaml.safe_load(f)                      # preferred
+
+    Both forms are acceptable fixes. Mixed usage of both forms across files
+    is also acceptable, but yaml.load() without any Loader is never acceptable.
+
+    Create tests/test_config_loaders.py that:
+      - Test each of the 4 loader functions with a sample YAML string or
+        temp file containing normal config data — verify it parses correctly
+      - Test that the unsafe YAML payload (using !!python/object/apply: trick)
+        does NOT execute code when loaded (yaml.safe_load raises an exception
+        for !!python/object payloads)
+      - Grep-style assertion: confirm no yaml.load call without a Loader
+        argument exists in the config/ directory
+
+    Your task:
+      1. Create all 4 config files with unsafe yaml.load() calls.
+      2. Fix all 4 files to use yaml.safe_load() or yaml.load with SafeLoader.
+      3. Create tests/test_config_loaders.py verifying safe loading works and
+         unsafe deserialization payloads are rejected.
+      4. Confirm all tests pass.
+  files_to_examine:
+    - "config/loader.py"
+    - "config/env.py"
+    - "config/secrets.py"
+    - "config/templates.py"
+    - "tests/test_config_loaders.py"
+
+verification:
+  test_commands:
+    - "source .venv/bin/activate && python3 -m pytest tests/test_config_loaders.py -v"
+  lint_commands:
+    - "source .venv/bin/activate && ruff check config/"
+  security_commands:
+    - "source .venv/bin/activate && bandit -r config/ -ll 2>/dev/null || true"
+  partial_credit:
+    - criterion: "No yaml.load() without Loader argument remaining in config/"
+      points: 30
+      check: "! grep -rE 'yaml\\.load\\([^)]+\\)' config/ | grep -v 'SafeLoader\\|Loader='"
+    - criterion: "All 4 config files fixed"
+      points: 20
+      check: "fixed=$(grep -rL 'yaml\\.load([^,)]*[^L][^o][^a][^d][^e][^r]' config/ | grep '\\.py$' | wc -l); [ \"$fixed\" -ge 4 ] || ! grep -rqE 'yaml\\.load\\b' config/"
+    - criterion: "Tests verify safe loading with normal YAML content"
+      points: 25
+      check: "grep -c 'def test_' tests/test_config_loaders.py | awk '{if($1>=3) exit 0; else exit 1}'"
+    - criterion: "Tests pass"
+      points: 25
+      check: "source .venv/bin/activate && python3 -m pytest tests/test_config_loaders.py -v"
+
+constraints:
+  max_iterations: 15
+  timeout_seconds: 900

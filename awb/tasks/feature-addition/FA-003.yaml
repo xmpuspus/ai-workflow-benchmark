@@ -1,0 +1,107 @@
+id: FA-003
+category: feature-addition
+title: "Add categories resource following exact conventions of existing users and posts"
+difficulty: medium
+estimated_minutes: 35
+languages: [python]
+tags: [fastapi, pydantic, conventions, service-layer, dependency-injection]
+capabilities: [framework_knowledge, code_comprehension]
+
+repo:
+  url: "https://github.com/tiangolo/fastapi"
+  commit: "628c34e0cae200564d191c95d7edea78c88c4b5e"
+  setup_commands:
+    - "python3 -m venv .venv && source .venv/bin/activate && pip install -e '.[all]' && pip install pytest pytest-asyncio"
+
+issue:
+  description: |
+    An existing FastAPI app has two resources (users and posts) with a strict
+    set of conventions. Add a third resource (categories) that follows the
+    EXACT same patterns. Tests must verify convention adherence, not just
+    behavior.
+
+    Step 1 - Create the existing app skeleton (do not deviate from these
+    patterns - they are the conventions the third resource must match):
+
+    models/__init__.py, models/user.py, models/post.py:
+      - Each defines a BaseModel, CreateModel, and ResponseModel
+      - ResponseModel includes id: str and created_at: datetime
+      - Example: UserResponse(BaseModel): id: str, name: str, email: str, created_at: datetime
+
+    services/user_service.py, services/post_service.py:
+      - Pure Python, ZERO fastapi or starlette imports
+      - Functions: get_all() -> list, get_by_id(id) -> dict | None,
+        create(data: dict) -> dict, delete(id) -> bool
+      - Raises domain exceptions (not HTTPException):
+          class NotFoundError(Exception): pass
+
+    routes/users.py, routes/posts.py:
+      - APIRouter with prefix and tags
+      - Every endpoint uses Depends(get_current_user) for auth
+      - Response envelope: {"data": {...}} for single, {"data": [...]} for list
+      - Maps NotFoundError -> HTTPException(404)
+      - Example pattern for GET /{id}:
+          @router.get("/{id}")
+          def get_user(id: str, current_user=Depends(get_current_user)):
+              item = user_service.get_by_id(id)
+              if not item:
+                  raise HTTPException(404)
+              return {"data": item}
+
+    auth/dependencies.py:
+      - get_current_user() dependency (stub that returns a dict is fine)
+
+    tests/test_users.py, tests/test_posts.py:
+      - Each tests GET list, GET by id (found and 404), POST create, DELETE
+
+    Step 2 - Add the categories resource:
+
+    models/category.py - same structure as user.py and post.py
+    services/category_service.py - same structure, no fastapi imports
+    routes/categories.py - same router pattern, same response envelope
+
+    Update app/main.py to include the categories router.
+
+    Step 3 - Create tests/test_categories.py that:
+      - Tests all CRUD endpoints behave correctly
+      - Verifies services/category_service.py has no fastapi imports
+      - Verifies routes/categories.py uses Depends for auth
+      - Verifies response shape uses {"data": ...} envelope
+      - All tests must pass
+  files_to_examine:
+    - "fastapi/routing.py"
+    - "fastapi/dependencies.py"
+    - "tests/"
+
+verification:
+  test_commands:
+    - "source .venv/bin/activate && python3 -m pytest tests/test_categories.py -v"
+  lint_commands:
+    - "source .venv/bin/activate && ruff check routes/categories.py services/category_service.py models/category.py tests/test_categories.py"
+  security_commands: []
+  partial_credit:
+    - criterion: "routes/categories.py follows same router pattern"
+      points: 15
+      check: "test -f routes/categories.py && grep -qE 'APIRouter|prefix' routes/categories.py"
+    - criterion: "services/category_service.py has no fastapi imports"
+      points: 15
+      check: "test -f services/category_service.py && ! grep -qE 'from fastapi|import fastapi' services/category_service.py"
+    - criterion: "Response envelope uses data key"
+      points: 15
+      check: "grep -qE '\"data\"' routes/categories.py"
+    - criterion: "Endpoints use Depends for auth"
+      points: 10
+      check: "grep -q 'Depends' routes/categories.py"
+    - criterion: "Tests verify convention adherence"
+      points: 10
+      check: "grep -qE 'fastapi.*import|no.*import|Depends' tests/test_categories.py"
+    - criterion: "Tests pass"
+      points: 25
+      check: "source .venv/bin/activate && python3 -m pytest tests/test_categories.py -v"
+    - criterion: "Lint clean"
+      points: 10
+      check: "source .venv/bin/activate && ruff check routes/categories.py services/category_service.py"
+
+constraints:
+  max_iterations: 20
+  timeout_seconds: 1200

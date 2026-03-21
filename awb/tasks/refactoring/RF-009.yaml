@@ -1,0 +1,93 @@
+id: RF-009
+category: refactoring
+title: "Replace ad-hoc dict returns with typed Pydantic response models in 6 endpoints"
+difficulty: medium
+estimated_minutes: 30
+languages: [python]
+tags: [fastapi, pydantic, response-model, api-design, type-safety]
+capabilities: [refactoring_discipline, framework_knowledge]
+
+repo:
+  url: "https://github.com/tiangolo/fastapi"
+  commit: "628c34e0cae200564d191c95d7edea78c88c4b5e"
+  setup_commands:
+    - "python3 -m venv .venv && source .venv/bin/activate && pip install -e '.[all]' && pip install pytest httpx"
+
+issue:
+  description: |
+    A FastAPI application has 6 endpoints in routes/api.py that all return
+    raw dictionaries. Without response_model declarations, FastAPI cannot
+    validate, document, or filter response fields. Extra keys added by
+    mistake would leak to clients silently.
+
+    Create routes/api.py with 6 endpoints, each returning a plain dict:
+
+      GET  /users/{user_id}     → {"id": user_id, "name": "Alice", "email": "alice@example.com", "status": "active"}
+      POST /users               → {"id": 1, "name": body.name, "email": body.email, "status": "pending"}
+      GET  /items/{item_id}     → {"id": item_id, "name": "Widget", "price": 9.99, "stock": 42}
+      POST /items               → {"id": 2, "name": body.name, "price": body.price, "stock": 0}
+      GET  /orders/{order_id}   → {"id": order_id, "user_id": 1, "total": 29.97, "status": "shipped"}
+      POST /orders              → {"id": 3, "user_id": body.user_id, "total": body.total, "status": "pending"}
+
+    Create models/responses.py with Pydantic v2 response models for each
+    endpoint's return shape. Use ConfigDict (not the v1 class Config pattern):
+
+      class UserResponse(BaseModel):
+          model_config = ConfigDict(extra="forbid")
+          id: int
+          name: str
+          email: str
+          status: str
+
+    Define similar models: ItemResponse, OrderResponse. Both POST and GET
+    endpoints for the same resource share the same response model.
+
+    Add response_model=<ModelName> to each of the 6 endpoint decorators.
+
+    Create tests/test_api_responses.py that:
+      - Use httpx.AsyncClient with the FastAPI app as ASGI transport
+      - Test each of the 6 endpoints returns a 200 with the correct JSON shape
+      - Verify that adding an extra key to a handler's return dict causes a
+        422 ResponseValidationError (i.e., extra="forbid" is enforced)
+      - Test at least one endpoint per resource type
+
+    Your task:
+      1. Create routes/api.py with 6 dict-returning endpoints.
+      2. Create models/responses.py with Pydantic v2 models using ConfigDict.
+      3. Add response_model to all 6 endpoints in routes/api.py.
+      4. Create tests/test_api_responses.py as described.
+      5. Run tests — all must pass.
+  files_to_examine:
+    - "routes/api.py"
+    - "models/responses.py"
+    - "tests/test_api_responses.py"
+
+verification:
+  test_commands:
+    - "source .venv/bin/activate && python3 -m pytest tests/test_api_responses.py -v"
+  lint_commands:
+    - "source .venv/bin/activate && ruff check routes/api.py models/responses.py"
+  security_commands: []
+  partial_credit:
+    - criterion: "models/responses.py created with Pydantic v2 response models"
+      points: 15
+      check: "test -f models/responses.py && grep -q 'BaseModel' models/responses.py"
+    - criterion: "Models use Pydantic v2 ConfigDict (not v1 class Config)"
+      points: 15
+      check: "grep -q 'ConfigDict' models/responses.py && ! grep -qE 'class Config:' models/responses.py"
+    - criterion: "All 6 endpoints have response_model declared"
+      points: 20
+      check: "count=$(grep -c 'response_model=' routes/api.py); [ \"$count\" -ge 6 ]"
+    - criterion: "Response models match actual return shapes (no missing fields)"
+      points: 15
+      check: "source .venv/bin/activate && python3 -m pytest tests/test_api_responses.py -k 'not extra' -v"
+    - criterion: "extra=forbid catches extra fields in responses"
+      points: 15
+      check: "grep -q 'extra.*forbid' models/responses.py"
+    - criterion: "Tests pass"
+      points: 20
+      check: "source .venv/bin/activate && python3 -m pytest tests/test_api_responses.py -v"
+
+constraints:
+  max_iterations: 20
+  timeout_seconds: 1200

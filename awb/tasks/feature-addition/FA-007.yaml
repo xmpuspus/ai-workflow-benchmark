@@ -1,0 +1,128 @@
+id: FA-007
+category: feature-addition
+title: "Add users delete and update CLI subcommands matching existing Click group conventions"
+difficulty: easy
+estimated_minutes: 15
+languages: [python]
+tags: [click, cli, conventions, subcommands]
+capabilities: [framework_knowledge, code_comprehension]
+
+repo:
+  url: "https://github.com/pallets/click"
+  commit: "1d038f270701498433cb432f54db89f95f07a845"
+  setup_commands:
+    - "python3 -m venv .venv && source .venv/bin/activate && pip install -e '.' && pip install pytest"
+
+issue:
+  description: |
+    An existing CLI has two subcommands under a `users` group: `users list`
+    and `users create`. Add `users delete` and `users update` that follow the
+    EXACT same patterns: same option naming style, same error handling, same
+    output format. Deviation breaks the convention.
+
+    Step 1 - Create the existing CLI with `users list` and `users create`:
+
+    cli/users.py:
+      import sys
+      import click
+
+      @click.group()
+      def users():
+          pass
+
+      @users.command("list")
+      @click.option("--limit", default=10, help="Max results to return")
+      def list_users(limit):
+          try:
+              results = [{"id": str(i), "name": f"User {i}"} for i in range(limit)]
+              for r in results:
+                  click.echo(f"  {r['id']}: {r['name']}")
+          except Exception as e:
+              click.echo(f"Error: {e}", err=True)
+              sys.exit(1)
+
+      @users.command("create")
+      @click.option("--name", required=True, help="User display name")
+      @click.option("--email", required=True, help="User email address")
+      def create_user(name, email):
+          try:
+              click.echo(f"Created user: {name} <{email}>")
+          except Exception as e:
+              click.echo(f"Error: {e}", err=True)
+              sys.exit(1)
+
+    cli/main.py:
+      import click
+      from cli.users import users
+
+      @click.group()
+      def cli():
+          pass
+
+      cli.add_command(users)
+
+      if __name__ == "__main__":
+          cli()
+
+    Step 2 - Add `users delete` and `users update` to cli/users.py:
+
+    `users delete` conventions to match:
+      - Option: --id (required, str) — same naming style as --name, --email
+      - Output: click.echo(f"Deleted user: {id}") — same format as create output
+      - Error handling: same try/except pattern with click.echo err=True + sys.exit(1)
+      - Command name: "delete" (not "remove" or "rm")
+
+    `users update` conventions to match:
+      - Options: --id (required, str), --name (optional, str), --email (optional, str)
+        Same option names as create but --id added, others become optional
+      - Output: click.echo(f"Updated user {id}: name={name}, email={email}")
+      - Error handling: same try/except pattern
+      - Command name: "update" (not "modify" or "edit")
+
+    Step 3 - Create tests/test_users_cli.py using Click's CliRunner:
+      - test_list_users: invoke users list, assert exit code 0 and output contains IDs
+      - test_create_user: invoke users create --name Alice --email a@b.com, assert
+        output contains "Created user: Alice <a@b.com>"
+      - test_delete_user: invoke users delete --id 42, assert exit code 0 and
+        output contains "Deleted user: 42"
+      - test_update_user: invoke users update --id 42 --name Bob, assert exit code 0
+        and output contains "Updated user 42"
+      - test_delete_requires_id: invoke users delete with no options, assert exit code != 0
+      - test_update_requires_id: invoke users update with no options, assert exit code != 0
+      - test_option_naming_consistency: assert delete and update use --id not --user_id
+        or --user-id (grep the source file in the test)
+      - test_error_handling_pattern: all commands have try/except (grep source)
+  files_to_examine:
+    - "src/click/core.py"
+    - "src/click/decorators.py"
+    - "tests/"
+
+verification:
+  test_commands:
+    - "source .venv/bin/activate && python3 -m pytest tests/test_users_cli.py -v"
+  lint_commands:
+    - "source .venv/bin/activate && ruff check cli/ tests/test_users_cli.py"
+  security_commands: []
+  partial_credit:
+    - criterion: "users delete command exists with --id option"
+      points: 15
+      check: "grep -qE '@users\\.command.*delete|def delete_user' cli/users.py"
+    - criterion: "users update command exists with --id option"
+      points: 15
+      check: "grep -qE '@users\\.command.*update|def update_user' cli/users.py"
+    - criterion: "Option naming uses --id (not --user_id or --user-id)"
+      points: 20
+      check: "grep -qE \"'--id'|\\\"--id\\\"\" cli/users.py"
+    - criterion: "Error handling uses same try/except + sys.exit(1) pattern"
+      points: 20
+      check: "grep -c 'sys.exit(1)' cli/users.py | grep -qE '[34]'"
+    - criterion: "Tests verify option naming convention"
+      points: 10
+      check: "grep -qE '--id|option.*naming|convention' tests/test_users_cli.py"
+    - criterion: "Tests pass"
+      points: 20
+      check: "source .venv/bin/activate && python3 -m pytest tests/test_users_cli.py -v"
+
+constraints:
+  max_iterations: 15
+  timeout_seconds: 900

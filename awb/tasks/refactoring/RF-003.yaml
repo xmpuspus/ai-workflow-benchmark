@@ -1,0 +1,113 @@
+id: RF-003
+category: refactoring
+title: "Fix 12 planted ruff warnings in FastAPI handler while keeping all tests green"
+difficulty: medium
+estimated_minutes: 30
+languages: [python]
+tags: [fastapi, ruff, lint, refactoring, code-quality]
+capabilities: [refactoring_discipline, code_comprehension]
+
+repo:
+  url: "https://github.com/tiangolo/fastapi"
+  commit: "628c34e0cae200564d191c95d7edea78c88c4b5e"
+  setup_commands:
+    - "python3 -m venv .venv && source .venv/bin/activate && pip install -e '.[all]' && pip install pytest ruff"
+
+issue:
+  description: |
+    Create a FastAPI user handler file with exactly 12 planted ruff warnings,
+    then fix all of them without breaking the 15 accompanying tests.
+
+    Step 1 - Create handlers/user_handler.py (~180 lines) with these planted
+    issues (one per category unless count specified):
+
+      3x bare except (E722):
+        try: ... except: pass  (in three different helper functions)
+
+      2x unused imports (F401):
+        import os  (imported but never used)
+        from typing import Set  (imported but never used)
+
+      2x f-string with no placeholder (F541):
+        message = f"user created"  (no {variable} in the string)
+        label = f"processing"
+
+      2x re.compile() inside function body (instead of module level):
+        def validate_email(email): pattern = re.compile(r"[^@]+@[^@]+"); ...
+        def validate_username(name): pattern = re.compile(r"^[a-z]+$"); ...
+
+      1x mutable default argument (B006):
+        def get_users(filters: list = []):
+
+      1x shadowed builtin (A001):
+        def get_user(id: int, type: str = "admin"):  (type shadows builtin)
+
+      1x line too long (E501):
+        A comment or string that exceeds 88 characters on a single line
+
+    The file must define a FastAPI router with these endpoints:
+      GET /users - list users (uses get_users with filters)
+      GET /users/{id} - get single user (uses get_user)
+      POST /users - create user (uses validate_email, validate_username)
+      DELETE /users/{id} - delete user
+
+    Step 2 - Create tests/test_user_handler.py with 15 tests:
+      - List users returns 200
+      - Get existing user returns 200
+      - Get missing user returns 404
+      - Create user with valid data returns 201
+      - Create user with invalid email returns 422
+      - Create user with invalid username returns 422
+      - Delete existing user returns 204
+      - Delete missing user returns 404
+      - Email validation: valid formats pass
+      - Email validation: invalid formats fail
+      - Username validation: valid formats pass
+      - Username validation: invalid formats fail
+      - List with filter parameter returns subset
+      - Create user response includes id field
+      - Get user response includes all expected fields
+
+    Step 3 - Fix all 12 ruff warnings in handlers/user_handler.py:
+      - Replace bare except with specific exception types
+      - Remove unused imports
+      - Remove f-string prefix from strings with no placeholders
+      - Move re.compile() calls to module level
+      - Replace mutable default with None and handle inside function
+      - Rename the parameter shadowing builtin (e.g., type -> user_type)
+      - Break the long line
+
+    All 15 tests must still pass after the fixes. Zero ruff warnings.
+  files_to_examine:
+    - "fastapi/routing.py"
+    - "tests/"
+
+verification:
+  test_commands:
+    - "source .venv/bin/activate && ruff check handlers/user_handler.py && python3 -m pytest tests/test_user_handler.py -v"
+  lint_commands:
+    - "source .venv/bin/activate && ruff check handlers/user_handler.py"
+  security_commands: []
+  partial_credit:
+    - criterion: "Bare except replaced with specific exceptions"
+      points: 15
+      check: "! grep -qE '^\\s*except:\\s*$|^\\s*except:\\s*pass' handlers/user_handler.py"
+    - criterion: "Unused imports removed"
+      points: 10
+      check: "! grep -qE '^import os$|^from typing import Set' handlers/user_handler.py"
+    - criterion: "re.compile moved to module level"
+      points: 15
+      check: "! grep -qE 'def.*:\\s*$' handlers/user_handler.py || ! grep -A5 'def validate' handlers/user_handler.py | grep -q 're.compile'"
+    - criterion: "Mutable default argument fixed"
+      points: 10
+      check: "! grep -qE 'filters.*=.*\\[\\]' handlers/user_handler.py"
+    - criterion: "Zero ruff warnings"
+      points: 25
+      check: "source .venv/bin/activate && ruff check handlers/user_handler.py"
+    - criterion: "All 15 tests pass"
+      points: 25
+      check: "source .venv/bin/activate && python3 -m pytest tests/test_user_handler.py -v"
+
+constraints:
+  max_iterations: 20
+  timeout_seconds: 1200

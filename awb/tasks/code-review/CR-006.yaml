@@ -1,0 +1,115 @@
+id: CR-006
+category: code-review
+title: "Review error handlers that leak stack traces to API consumers"
+difficulty: medium
+estimated_minutes: 30
+languages: [python]
+tags: [fastapi, error-handling, security, information-disclosure, exception-handlers]
+capabilities: [security_awareness, framework_knowledge]
+
+repo:
+  url: "https://github.com/tiangolo/fastapi"
+  commit: "628c34e0cae200564d191c95d7edea78c88c4b5e"
+  setup_commands:
+    - "python3 -m venv .venv && source .venv/bin/activate && pip install -e '.[all]' && pip install pytest httpx"
+
+issue:
+  description: |
+    A FastAPI application has 4 exception handlers that return raw Python
+    tracebacks or exception strings in the HTTP response body. This leaks
+    internal file paths, library versions, and code structure to clients —
+    information that attackers use for targeted exploitation.
+
+    Create main.py with 4 exception handlers that leak internal details:
+
+      Handler 1 — Generic Exception:
+        @app.exception_handler(Exception)
+        async def generic_handler(request, exc):
+            return JSONResponse(
+                status_code=500,
+                content={"error": traceback.format_exc()}
+            )
+
+      Handler 2 — ValueError:
+        @app.exception_handler(ValueError)
+        async def value_error_handler(request, exc):
+            return JSONResponse(
+                status_code=400,
+                content={"error": str(exc), "traceback": traceback.format_exc()}
+            )
+
+      Handler 3 — KeyError:
+        @app.exception_handler(KeyError)
+        async def key_error_handler(request, exc):
+            import sys
+            return JSONResponse(
+                status_code=400,
+                content={"error": str(exc), "detail": str(sys.exc_info())}
+            )
+
+      Handler 4 — RuntimeError:
+        @app.exception_handler(RuntimeError)
+        async def runtime_error_handler(request, exc):
+            return JSONResponse(
+                status_code=500,
+                content={"detail": f"Internal error at {__file__}: {exc}"}
+            )
+
+    Also create 4 test endpoints that trigger each exception type.
+
+    Fix all 4 handlers so that:
+      - The HTTP response body contains only a generic, user-safe message
+        (e.g., {"error": "Internal server error"} or {"error": "Bad request"})
+      - No traceback, no str(exc), no file paths, no sys.exc_info() appear
+        in the response
+      - The full exception details are logged server-side using Python's
+        logging module (use logger.exception() or logger.error(..., exc_info=True))
+      - A DEBUG_MODE config flag (read from an environment variable) controls
+        whether the full error detail is added to the response in development
+
+    Create tests/test_error_handlers.py that:
+      - Hit each of the 4 error-triggering endpoints
+      - Assert the response body does NOT contain the word "Traceback" or
+        any file path pattern (e.g., "/Users/", "/home/", "site-packages")
+      - Assert the response body contains only the generic message
+      - Test that with DEBUG_MODE=false, no internal details leak
+
+    Your task:
+      1. Create main.py with 4 leaking exception handlers and 4 test routes.
+      2. Fix all 4 handlers to return generic messages and log internally.
+      3. Add a DEBUG_MODE toggle.
+      4. Create tests/test_error_handlers.py and confirm all tests pass.
+  files_to_examine:
+    - "main.py"
+    - "tests/test_error_handlers.py"
+
+verification:
+  test_commands:
+    - "source .venv/bin/activate && python3 -m pytest tests/test_error_handlers.py -v"
+  lint_commands:
+    - "source .venv/bin/activate && ruff check main.py"
+  security_commands:
+    - "source .venv/bin/activate && bandit -r . --exclude .venv -ll 2>/dev/null || true"
+  partial_credit:
+    - criterion: "No traceback.format_exc() in response content across all 4 handlers"
+      points: 20
+      check: "! grep -A5 'exception_handler' main.py | grep -q 'format_exc'"
+    - criterion: "Generic error messages used in all 4 handlers"
+      points: 15
+      check: "grep -cE '\"Internal server error\"|\"Bad request\"|\"An error occurred\"' main.py | awk '{if($1>=2) exit 0; else exit 1}'"
+    - criterion: "Server-side logging added to all handlers"
+      points: 15
+      check: "grep -q 'logger.exception\\|exc_info=True' main.py"
+    - criterion: "DEBUG_MODE toggle controls detail level"
+      points: 15
+      check: "grep -qiE 'DEBUG_MODE\\|debug_mode\\|DEBUG' main.py"
+    - criterion: "Tests assert no stack trace in responses"
+      points: 15
+      check: "grep -qiE 'Traceback|site-packages|/Users/|/home/' tests/test_error_handlers.py && grep -q 'not in\\|assert.*not' tests/test_error_handlers.py"
+    - criterion: "Tests pass"
+      points: 20
+      check: "source .venv/bin/activate && python3 -m pytest tests/test_error_handlers.py -v"
+
+constraints:
+  max_iterations: 20
+  timeout_seconds: 1200

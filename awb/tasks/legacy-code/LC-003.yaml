@@ -1,0 +1,155 @@
+id: LC-003
+category: legacy-code
+title: "Modernize test suite from unittest to pytest preserving 20 test cases"
+difficulty: medium
+estimated_minutes: 30
+languages: [python]
+tags: [pytest, unittest, modernization, testing]
+capabilities: [refactoring_discipline, test_writing, code_comprehension]
+
+repo:
+  url: "https://github.com/tiangolo/fastapi"
+  commit: "628c34e0cae200564d191c95d7edea78c88c4b5e"
+  setup_commands:
+    - "python3 -m venv .venv && source .venv/bin/activate && pip install -e '.[all]' && pip install pytest httpx"
+
+issue:
+  description: |
+    A legacy test suite uses the unittest style. Modernize it to idiomatic
+    pytest while preserving all 20 test cases.
+
+    Step 1 — Create tests/test_old_style.py with exactly 20 tests using the
+    unittest style. Use this exact content:
+
+      import unittest
+
+      # --- helpers used by tests ---
+      def add(a, b): return a + b
+      def divide(a, b): return a / b
+      def is_even(n): return n % 2 == 0
+      def to_upper(s): return s.upper()
+      def reverse(lst): return lst[::-1]
+
+      class TestMath(unittest.TestCase):
+          def setUp(self):
+              self.x = 10
+              self.y = 3
+
+          def tearDown(self):
+              pass
+
+          def test_add_positive(self):
+              self.assertEqual(add(self.x, self.y), 13)
+
+          def test_add_zero(self):
+              self.assertEqual(add(self.x, 0), self.x)
+
+          def test_add_negative(self):
+              self.assertEqual(add(self.x, -self.y), 7)
+
+          def test_divide_exact(self):
+              self.assertEqual(divide(9, 3), 3.0)
+
+          def test_divide_by_zero(self):
+              self.assertRaises(ZeroDivisionError, divide, self.x, 0)
+
+          def test_is_even_true(self):
+              self.assertTrue(is_even(self.x))
+
+          def test_is_even_false(self):
+              self.assertFalse(is_even(self.y))
+
+      class TestStrings(unittest.TestCase):
+          def setUp(self):
+              self.word = "hello"
+
+          def test_upper(self):
+              self.assertEqual(to_upper(self.word), "HELLO")
+
+          def test_upper_empty(self):
+              self.assertEqual(to_upper(""), "")
+
+          def test_upper_already(self):
+              self.assertEqual(to_upper("WORLD"), "WORLD")
+
+          def test_upper_mixed(self):
+              self.assertEqual(to_upper("hElLo"), "HELLO")
+
+      class TestList(unittest.TestCase):
+          def setUp(self):
+              self.nums = [1, 2, 3, 4, 5]
+
+          def test_reverse_list(self):
+              self.assertEqual(reverse(self.nums), [5, 4, 3, 2, 1])
+
+          def test_reverse_single(self):
+              self.assertEqual(reverse([42]), [42])
+
+          def test_reverse_empty(self):
+              self.assertEqual(reverse([]), [])
+
+          def test_list_length(self):
+              self.assertEqual(len(self.nums), 5)
+
+          def test_list_contains(self):
+              self.assertIn(3, self.nums)
+
+          def test_list_not_contains(self):
+              self.assertNotIn(6, self.nums)
+
+          def test_list_sum(self):
+              self.assertEqual(sum(self.nums), 15)
+
+          def test_list_max(self):
+              self.assertEqual(max(self.nums), 5)
+
+    Step 2 — Convert tests/test_old_style.py to pytest style in-place.
+    Rules:
+    - Remove all unittest imports and class inheritance.
+    - Convert setUp to pytest fixtures (use @pytest.fixture).
+    - Replace self.assertEqual(a, b) with assert a == b.
+    - Replace self.assertTrue(x) with assert x.
+    - Replace self.assertFalse(x) with assert not x.
+    - Replace self.assertIn(a, b) with assert a in b.
+    - Replace self.assertNotIn(a, b) with assert a not in b.
+    - Replace self.assertRaises(E, fn, *args) with pytest.raises(E).
+    - All 20 test functions must remain present (same names after removing
+      class prefix is fine, e.g. test_add_positive stays test_add_positive).
+    - No import unittest line may remain in the file.
+
+    Requirements:
+    - All 20 tests must pass under pytest after conversion.
+    - No unittest imports or TestCase subclasses may remain.
+    - Fixtures must replace setUp blocks where applicable.
+  files_to_examine:
+    - "tests/test_old_style.py"
+
+verification:
+  test_commands:
+    - "source .venv/bin/activate && python3 -m pytest tests/test_old_style.py -v"
+  lint_commands:
+    - "source .venv/bin/activate && ruff check tests/test_old_style.py"
+  security_commands: []
+  partial_credit:
+    - criterion: "No unittest imports remain"
+      points: 15
+      check: "! grep -q 'import unittest' tests/test_old_style.py"
+    - criterion: "pytest fixtures replace setUp"
+      points: 15
+      check: "grep -q '@pytest.fixture' tests/test_old_style.py"
+    - criterion: "assert replaces assertEqual/assertTrue/assertFalse"
+      points: 15
+      check: "! grep -qE 'self\\.(assert|assertEqual|assertTrue|assertFalse|assertIn)' tests/test_old_style.py"
+    - criterion: "pytest.raises replaces assertRaises"
+      points: 15
+      check: "grep -q 'pytest.raises' tests/test_old_style.py"
+    - criterion: "All 20 test functions present"
+      points: 15
+      check: "grep -c '^def test_' tests/test_old_style.py | awk '{exit ($1 < 20)}'"
+    - criterion: "All tests pass"
+      points: 25
+      check: "source .venv/bin/activate && python3 -m pytest tests/test_old_style.py -v"
+
+constraints:
+  max_iterations: 20
+  timeout_seconds: 1200

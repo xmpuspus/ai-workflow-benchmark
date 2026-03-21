@@ -1,0 +1,85 @@
+id: MF-004
+category: multi-file
+title: "Extract inline DB logic from 4 route handlers into a repository pattern"
+difficulty: medium
+estimated_minutes: 30
+languages: [python]
+tags: [fastapi, repository-pattern, refactoring, separation-of-concerns]
+capabilities: [multi_file_reasoning, refactoring_discipline]
+
+repo:
+  url: "https://github.com/tiangolo/fastapi"
+  commit: "628c34e0cae200564d191c95d7edea78c88c4b5e"
+  setup_commands:
+    - "python3 -m venv .venv && source .venv/bin/activate && pip install -e '.[all]' && pip install pytest httpx"
+
+issue:
+  description: |
+    A FastAPI application has four route handlers in routes/users.py, each
+    containing inline data access logic operating directly on a module-level
+    dict. This makes testing and swapping the data layer impossible without
+    touching the routes.
+
+    Your task:
+    1. Create routes/users.py with four endpoints that each contain inline
+       dict operations (simulating DB access) on a module-level USER_DB = {}:
+       - GET /users → returns list of all users.
+       - GET /users/{user_id} → returns user or 404.
+       - POST /users → creates user, assigns incremental id, returns created.
+       - DELETE /users/{user_id} → removes user or 404.
+       Each endpoint should contain the dict logic directly (no helper calls).
+
+    2. Create repos/user_repo.py with a UserRepository class that:
+       - Holds its own internal store (a dict or list).
+       - Has methods: get_all(), get(user_id), create(data), delete(user_id).
+       - Has ZERO imports from fastapi, starlette, or any HTTP layer.
+         HTTPException must NOT appear in this file.
+
+    3. Refactor routes/users.py so that:
+       - Each endpoint calls the corresponding UserRepository method.
+       - No inline dict operations remain in route handlers.
+       - The UserRepository is instantiated once and injected (module-level
+         instance or FastAPI Depends — either approach is acceptable).
+
+    4. Create app/main.py that includes the users router.
+
+    5. Create tests/test_users.py that:
+       - Tests all four endpoints via TestClient.
+       - Verifies behavior is unchanged after the refactor.
+       - Includes a test that creates a user and then retrieves it.
+       - Includes a test that returns 404 for unknown user_id.
+  files_to_examine:
+    - "routes/users.py"
+    - "repos/user_repo.py"
+    - "app/main.py"
+    - "tests/test_users.py"
+
+verification:
+  test_commands:
+    - "source .venv/bin/activate && python3 -m pytest tests/test_users.py -v"
+  lint_commands:
+    - "source .venv/bin/activate && ruff check routes/ repos/ app/ tests/test_users.py"
+  security_commands: []
+  partial_credit:
+    - criterion: "UserRepository class created with all four methods"
+      points: 15
+      check: "grep -qE 'get_all|get|create|delete' repos/user_repo.py"
+    - criterion: "Route handlers delegate to repository, no inline dict logic"
+      points: 20
+      check: "grep -qv 'USER_DB' routes/users.py"
+    - criterion: "No FastAPI or HTTPException imports in repos/user_repo.py"
+      points: 15
+      check: "grep -qv 'HTTPException' repos/user_repo.py"
+    - criterion: "All original endpoint behaviors preserved"
+      points: 15
+      check: "grep -qE '404|not found' routes/users.py"
+    - criterion: "Tests cover all four endpoints including 404 case"
+      points: 15
+      check: "grep -qE '404|not.*found' tests/test_users.py"
+    - criterion: "Tests pass"
+      points: 20
+      check: "source .venv/bin/activate && python3 -m pytest tests/test_users.py -v"
+
+constraints:
+  max_iterations: 20
+  timeout_seconds: 1200

@@ -1,0 +1,174 @@
+id: LC-006
+category: legacy-code
+title: "Migrate Flask function views to class-based MethodView"
+difficulty: hard
+estimated_minutes: 45
+languages: [python]
+tags: [flask, methodview, refactoring, routing]
+capabilities: [refactoring_discipline, framework_knowledge, multi_file_reasoning]
+
+repo:
+  url: "https://github.com/pallets/flask"
+  commit: "22d924701a6ae2e4cd01e9a15bbaf3946094af65"
+  setup_commands:
+    - "python3 -m venv .venv && source .venv/bin/activate && pip install -e '.[async]' && pip install pytest"
+
+issue:
+  description: |
+    Three route files use function-based views with individual @app.route
+    decorators. Migrate all of them to Flask MethodView classes registered
+    with as_view(). The URL patterns and behavior must remain identical.
+
+    Step 1 — Create these 3 route files using function-based views:
+
+    routes/users.py:
+      from flask import Blueprint, jsonify, request
+
+      users_bp = Blueprint("users", __name__)
+
+      @users_bp.route("/users", methods=["GET"])
+      def list_users():
+          return jsonify({"users": []})
+
+      @users_bp.route("/users/<int:user_id>", methods=["GET"])
+      def get_user(user_id):
+          return jsonify({"id": user_id})
+
+      @users_bp.route("/users", methods=["POST"])
+      def create_user():
+          data = request.get_json()
+          return jsonify({"created": data}), 201
+
+      @users_bp.route("/users/<int:user_id>", methods=["DELETE"])
+      def delete_user(user_id):
+          return jsonify({"deleted": user_id})
+
+    routes/items.py:
+      from flask import Blueprint, jsonify, request
+
+      items_bp = Blueprint("items", __name__)
+
+      @items_bp.route("/items", methods=["GET"])
+      def list_items():
+          return jsonify({"items": []})
+
+      @items_bp.route("/items/<int:item_id>", methods=["GET"])
+      def get_item(item_id):
+          return jsonify({"id": item_id})
+
+      @items_bp.route("/items", methods=["POST"])
+      def create_item():
+          data = request.get_json()
+          return jsonify({"created": data}), 201
+
+      @items_bp.route("/items/<int:item_id>", methods=["DELETE"])
+      def delete_item(item_id):
+          return jsonify({"deleted": item_id})
+
+    routes/orders.py:
+      from flask import Blueprint, jsonify, request
+
+      orders_bp = Blueprint("orders", __name__)
+
+      @orders_bp.route("/orders", methods=["GET"])
+      def list_orders():
+          return jsonify({"orders": []})
+
+      @orders_bp.route("/orders/<int:order_id>", methods=["GET"])
+      def get_order(order_id):
+          return jsonify({"id": order_id})
+
+      @orders_bp.route("/orders", methods=["POST"])
+      def create_order():
+          data = request.get_json()
+          return jsonify({"created": data}), 201
+
+      @orders_bp.route("/orders/<int:order_id>", methods=["DELETE"])
+      def delete_order(order_id):
+          return jsonify({"deleted": order_id})
+
+    Step 2 — Create app.py that registers all blueprints and tests/test_views.py
+    that exercises all endpoints via Flask test client.
+
+    tests/test_views.py:
+      import pytest
+      from app import create_app
+
+      @pytest.fixture
+      def client():
+          app = create_app()
+          app.config["TESTING"] = True
+          return app.test_client()
+
+      def test_list_users(client):
+          r = client.get("/users")
+          assert r.status_code == 200
+
+      def test_get_user(client):
+          r = client.get("/users/1")
+          assert r.status_code == 200
+
+      def test_create_user(client):
+          r = client.post("/users", json={"name": "Alice"})
+          assert r.status_code == 201
+
+      def test_delete_user(client):
+          r = client.delete("/users/1")
+          assert r.status_code == 200
+
+      def test_list_items(client):
+          r = client.get("/items")
+          assert r.status_code == 200
+
+      def test_list_orders(client):
+          r = client.get("/orders")
+          assert r.status_code == 200
+
+    Step 3 — Rewrite all 3 route files using flask.views.MethodView:
+    - Create one MethodView subclass for the collection endpoint (GET list, POST create).
+    - Create one MethodView subclass for the detail endpoint (GET detail, DELETE delete).
+    - Register both classes with blueprint.add_url_rule(..., view_func=Class.as_view("name")).
+    - Remove all @blueprint.route decorators.
+    - URL patterns must match exactly: /users, /users/<int:user_id>, etc.
+
+    Requirements:
+    - All 3 files must use MethodView (import from flask.views).
+    - All routes registered via as_view(), not @route decorators.
+    - Same URL patterns as before.
+    - All tests must pass.
+  files_to_examine:
+    - "routes/users.py"
+    - "routes/items.py"
+    - "routes/orders.py"
+    - "app.py"
+    - "tests/test_views.py"
+
+verification:
+  test_commands:
+    - "source .venv/bin/activate && python3 -m pytest tests/test_views.py -v"
+  lint_commands:
+    - "source .venv/bin/activate && ruff check routes/"
+  security_commands: []
+  partial_credit:
+    - criterion: "MethodView classes present in all 3 route files"
+      points: 15
+      check: "grep -rl 'MethodView' routes/users.py routes/items.py routes/orders.py | wc -l | awk '{exit ($1 < 3)}'"
+    - criterion: "GET, POST, DELETE methods defined on MethodView classes"
+      points: 15
+      check: "grep -rE '^\\s+def (get|post|delete)\\(' routes/ | wc -l | awk '{exit ($1 < 6)}'"
+    - criterion: "Routes registered with as_view()"
+      points: 15
+      check: "grep -r 'as_view' routes/ | wc -l | awk '{exit ($1 < 3)}'"
+    - criterion: "Same URL patterns preserved"
+      points: 15
+      check: "grep -rE '\"/users\"|\"/items\"|\"/orders\"' routes/ | wc -l | awk '{exit ($1 < 3)}'"
+    - criterion: "Function-based @route decorators removed"
+      points: 15
+      check: "! grep -rE '@(users_bp|items_bp|orders_bp)\\.route' routes/"
+    - criterion: "Tests pass"
+      points: 25
+      check: "source .venv/bin/activate && python3 -m pytest tests/test_views.py -v"
+
+constraints:
+  max_iterations: 25
+  timeout_seconds: 1800

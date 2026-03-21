@@ -1,0 +1,117 @@
+id: MF-006
+category: multi-file
+title: "Build a plugin system with abstract base class, 3 plugins, registry, and auto-loader"
+difficulty: hard
+estimated_minutes: 45
+languages: [python]
+tags: [fastapi, plugin-architecture, abc, dynamic-loading, importlib]
+capabilities: [multi_file_reasoning, code_comprehension]
+
+repo:
+  url: "https://github.com/tiangolo/fastapi"
+  commit: "628c34e0cae200564d191c95d7edea78c88c4b5e"
+  setup_commands:
+    - "python3 -m venv .venv && source .venv/bin/activate && pip install -e '.[all]' && pip install pytest httpx"
+
+issue:
+  description: |
+    Build a plugin system that allows new data format handlers to be added
+    without modifying the core application. The system uses an abstract base
+    class, a registry, and an auto-discovery loader. All 8 files must
+    interoperate cleanly.
+
+    Files to create:
+
+    plugins/base.py
+      - Abstract base class Plugin using abc.ABC and @abstractmethod.
+      - Required attributes (as abstract properties or enforced in __init__):
+          name: str — unique plugin identifier (e.g. "csv")
+          version: str — semver string (e.g. "1.0.0")
+      - Required abstract method: execute(data: dict) -> dict
+        Processes input data and returns transformed output.
+
+    plugins/csv_plugin.py
+      - Concrete Plugin subclass CsvPlugin.
+      - name = "csv", version = "1.0.0".
+      - execute() converts a dict to a CSV-like string representation and
+        returns {"format": "csv", "output": <string>}.
+
+    plugins/json_plugin.py
+      - Concrete Plugin subclass JsonPlugin.
+      - name = "json", version = "1.0.0".
+      - execute() serializes the dict to a JSON string and returns
+        {"format": "json", "output": <string>}.
+
+    plugins/xml_plugin.py
+      - Concrete Plugin subclass XmlPlugin.
+      - name = "xml", version = "1.0.0".
+      - execute() produces a minimal XML string from the dict and returns
+        {"format": "xml", "output": <string>}.
+
+    plugins/registry.py
+      - PluginRegistry class with:
+          register(plugin: Plugin) — stores plugin by name.
+          get(name: str) -> Plugin — returns plugin or raises KeyError.
+          list() -> list[str] — returns sorted list of registered names.
+
+    plugins/loader.py
+      - load_plugins(directory: str) -> PluginRegistry function.
+      - Uses importlib to discover and import all Python modules in the
+        given directory that are not base.py, registry.py, or loader.py.
+      - Instantiates any class that is a subclass of Plugin (but not Plugin
+        itself) and registers it.
+      - Returns the populated PluginRegistry.
+
+    app/main.py
+      - Creates the FastAPI app.
+      - Calls load_plugins("plugins/") on startup to populate a registry.
+      - GET /plugins → returns list of registered plugin names.
+      - POST /execute/{plugin_name} → calls plugin.execute() with request body
+        and returns the result.
+
+    tests/test_plugins.py
+      - Test: registry contains exactly "csv", "json", "xml" after loading.
+      - Test: each plugin's execute() returns the correct format key.
+      - Test: registry raises KeyError for unknown plugin name.
+      - Test: GET /plugins endpoint returns all three names.
+      - Test: POST /execute/json with {"key": "value"} returns valid JSON output.
+      - Test: a new Plugin subclass added to the plugins/ directory is
+        discovered automatically by load_plugins (simulate by creating a
+        fourth plugin in the test, loading from a temp directory).
+  files_to_examine:
+    - "plugins/"
+    - "app/main.py"
+    - "tests/test_plugins.py"
+
+verification:
+  test_commands:
+    - "source .venv/bin/activate && python3 -m pytest tests/test_plugins.py -v"
+  lint_commands:
+    - "source .venv/bin/activate && ruff check plugins/ app/ tests/test_plugins.py"
+  security_commands: []
+  partial_credit:
+    - criterion: "Plugin base class uses ABC with abstract execute method"
+      points: 10
+      check: "grep -qE 'ABC|abstractmethod' plugins/base.py"
+    - criterion: "All 3 concrete plugins inherit from Plugin and implement execute"
+      points: 15
+      check: "grep -qE 'class.*Plugin' plugins/csv_plugin.py plugins/json_plugin.py plugins/xml_plugin.py"
+    - criterion: "Registry register/get/list methods work correctly"
+      points: 15
+      check: "grep -qE 'def register|def get|def list' plugins/registry.py"
+    - criterion: "Loader uses importlib to auto-discover plugins"
+      points: 15
+      check: "grep -q 'importlib' plugins/loader.py"
+    - criterion: "All three plugins executable via POST /execute endpoint"
+      points: 10
+      check: "grep -qE '/execute' app/main.py"
+    - criterion: "Architecture clean: no circular imports, base has no plugin refs"
+      points: 10
+      check: "grep -qv 'csv_plugin' plugins/base.py"
+    - criterion: "Tests pass"
+      points: 25
+      check: "source .venv/bin/activate && python3 -m pytest tests/test_plugins.py -v"
+
+constraints:
+  max_iterations: 30
+  timeout_seconds: 2400

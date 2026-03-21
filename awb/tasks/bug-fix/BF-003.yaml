@@ -1,0 +1,85 @@
+id: BF-003
+category: bug-fix
+title: "Fix API client retry logic ignoring Retry-After header on 429 responses"
+difficulty: medium
+estimated_minutes: 30
+languages: [python]
+tags: [httpx, retry, rate-limiting, api-client]
+capabilities: [bug_diagnosis, framework_knowledge]
+
+repo:
+  url: "https://github.com/encode/httpx"
+  commit: "26d48e0634e6ee9cdc0533996db289ce4b430177"
+  setup_commands:
+    - "python3 -m venv .venv && source .venv/bin/activate && pip install -e '.[cli,http2]' && pip install pytest pytest-asyncio"
+
+issue:
+  description: |
+    Create a realistic API client wrapper with a retry bug, write a failing
+    test that exposes the bug, then fix it.
+
+    Your task:
+    1. Create client/config.py with a ClientConfig dataclass:
+       - base_url: str
+       - max_retries: int = 3
+       - default_backoff: float = 1.0  (seconds between retries)
+
+    2. Create client/retry.py with a RetryPolicy class:
+       - should_retry(response) -> bool: retry on 429 and 5xx
+       - get_wait_seconds(response) -> float: THE BUG IS HERE
+         - Current broken impl: always returns self.default_backoff
+         - It must parse the Retry-After header but doesn't
+         - Retry-After can be an integer (seconds) or HTTP-date format
+
+    3. Create client/api_client.py with an ApiClient class:
+       - Uses httpx.Client under the hood
+       - get(path, **kwargs) method with retry loop using RetryPolicy
+       - Respects the wait time from RetryPolicy.get_wait_seconds()
+
+    4. Create tests/test_retry_after.py with:
+       - A test using httpx.MockTransport (or similar) that serves 429
+         responses with Retry-After headers
+       - Test 1: Retry-After: 30 (integer seconds) -> client waits 30s
+         (mock time.sleep to capture the value, don't actually sleep)
+       - Test 2: Retry-After with HTTP-date format -> parsed correctly
+       - A FAILING test that proves the current broken impl uses
+         default_backoff instead of the header value
+       - After fixing get_wait_seconds, all tests should pass
+
+    The key fix is in client/retry.py get_wait_seconds():
+    - Parse response.headers.get("Retry-After")
+    - If it's digits: int(value)
+    - If it's an HTTP-date: parse with email.utils.parsedate_to_datetime
+      and compute seconds until that time
+    - Fall back to default_backoff if header is absent
+  files_to_examine:
+    - "httpx/_client.py"
+    - "httpx/_models.py"
+    - "tests/"
+
+verification:
+  test_commands:
+    - "source .venv/bin/activate && python3 -m pytest tests/test_retry_after.py -v"
+  lint_commands:
+    - "source .venv/bin/activate && ruff check client/ tests/test_retry_after.py"
+  security_commands: []
+  partial_credit:
+    - criterion: "Retry-After header is parsed in get_wait_seconds"
+      points: 20
+      check: "grep -qE 'Retry-After|retry.after|retry_after' client/retry.py"
+    - criterion: "Handles integer seconds format"
+      points: 15
+      check: "grep -qE 'isdigit|int\\(|\\d+' client/retry.py"
+    - criterion: "Handles HTTP-date format"
+      points: 15
+      check: "grep -qE 'parsedate|datetime|email\\.utils' client/retry.py"
+    - criterion: "Failing test exists that captures the bug"
+      points: 25
+      check: "grep -qE 'test_.*retry_after|retry.after.*header' tests/test_retry_after.py"
+    - criterion: "Tests pass"
+      points: 25
+      check: "source .venv/bin/activate && python3 -m pytest tests/test_retry_after.py -v"
+
+constraints:
+  max_iterations: 20
+  timeout_seconds: 1200

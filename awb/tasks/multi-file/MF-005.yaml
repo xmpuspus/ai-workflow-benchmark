@@ -1,0 +1,102 @@
+id: MF-005
+category: multi-file
+title: "Build a structured error handling chain across 5 coordinated files"
+difficulty: medium
+estimated_minutes: 30
+languages: [python]
+tags: [fastapi, error-handling, middleware, exception-handlers, pydantic]
+capabilities: [multi_file_reasoning, framework_knowledge]
+
+repo:
+  url: "https://github.com/tiangolo/fastapi"
+  commit: "628c34e0cae200564d191c95d7edea78c88c4b5e"
+  setup_commands:
+    - "python3 -m venv .venv && source .venv/bin/activate && pip install -e '.[all]' && pip install pytest httpx"
+
+issue:
+  description: |
+    Build a structured error handling system for a FastAPI application. The
+    system must map domain-specific exceptions to correct HTTP status codes
+    without coupling business logic to HTTP concerns.
+
+    Files to create:
+
+    exceptions/domain.py
+      - NotFoundError(Exception): raised when a resource does not exist.
+      - ValidationError(Exception): raised when input fails domain rules.
+      - AuthorizationError(Exception): raised when the caller lacks permission.
+      - Each exception should accept a message string.
+
+    exceptions/handlers.py
+      - Three async handler functions, one per domain exception type.
+      - NotFoundError → JSONResponse with status 404 and ErrorResponse body.
+      - ValidationError → JSONResponse with status 422 and ErrorResponse body.
+      - AuthorizationError → JSONResponse with status 403 and ErrorResponse body.
+      - Handlers must use the ErrorResponse schema from schemas/error.py.
+
+    schemas/error.py
+      - A Pydantic model ErrorResponse with fields:
+          error: str (the exception message)
+          code: str (e.g. "NOT_FOUND", "VALIDATION_ERROR", "FORBIDDEN")
+          status: int (the HTTP status code)
+
+    middleware/error_middleware.py
+      - An async middleware (BaseHTTPMiddleware or a simple ASGI middleware)
+        that catches any unhandled Exception not already handled by the
+        registered handlers.
+      - Logs the exception (using Python's logging module at ERROR level).
+      - Returns a JSONResponse with status 500 and body
+        {"error": "Internal server error", "code": "INTERNAL_ERROR", "status": 500}.
+
+    app/main.py
+      - Creates the FastAPI app.
+      - Registers all three domain exception handlers with add_exception_handler.
+      - Adds the error middleware.
+      - Includes at least three demo endpoints that raise each exception type
+        plus one that raises a generic RuntimeError (to test middleware catch).
+
+    tests/test_error_handling.py
+      - Test: endpoint raising NotFoundError returns 404 with correct body.
+      - Test: endpoint raising ValidationError returns 422 with correct body.
+      - Test: endpoint raising AuthorizationError returns 403 with correct body.
+      - Test: endpoint raising RuntimeError returns 500 with correct body.
+      - Test: error response body contains expected fields (error, code, status).
+  files_to_examine:
+    - "exceptions/"
+    - "schemas/error.py"
+    - "middleware/error_middleware.py"
+    - "app/main.py"
+    - "tests/test_error_handling.py"
+
+verification:
+  test_commands:
+    - "source .venv/bin/activate && python3 -m pytest tests/test_error_handling.py -v"
+  lint_commands:
+    - "source .venv/bin/activate && ruff check exceptions/ schemas/ middleware/ app/ tests/test_error_handling.py"
+  security_commands: []
+  partial_credit:
+    - criterion: "Domain exception classes created with message support"
+      points: 10
+      check: "grep -qE 'NotFoundError|ValidationError|AuthorizationError' exceptions/domain.py"
+    - criterion: "Handlers map each exception to correct HTTP status"
+      points: 15
+      check: "grep -qE '404|422|403' exceptions/handlers.py"
+    - criterion: "ErrorResponse schema used in all handlers"
+      points: 15
+      check: "grep -q 'ErrorResponse' exceptions/handlers.py"
+    - criterion: "Middleware catches unhandled exceptions and returns 500"
+      points: 15
+      check: "grep -q '500' middleware/error_middleware.py"
+    - criterion: "No bare HTTPException raised in domain exception handlers"
+      points: 15
+      check: "grep -qv 'raise HTTPException' exceptions/handlers.py"
+    - criterion: "Tests verify each exception maps to correct status code"
+      points: 10
+      check: "grep -qE 'assert.*404|assert.*422|assert.*403' tests/test_error_handling.py"
+    - criterion: "Tests pass"
+      points: 20
+      check: "source .venv/bin/activate && python3 -m pytest tests/test_error_handling.py -v"
+
+constraints:
+  max_iterations: 20
+  timeout_seconds: 1200

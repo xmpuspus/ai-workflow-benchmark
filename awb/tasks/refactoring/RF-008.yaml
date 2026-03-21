@@ -1,0 +1,108 @@
+id: RF-008
+category: refactoring
+title: "Migrate sync SQLAlchemy code to async across 4 files"
+difficulty: hard
+estimated_minutes: 45
+languages: [python]
+tags: [fastapi, sqlalchemy, async, migration, database]
+capabilities: [refactoring_discipline, framework_knowledge, multi_file_reasoning]
+
+repo:
+  url: "https://github.com/tiangolo/fastapi"
+  commit: "628c34e0cae200564d191c95d7edea78c88c4b5e"
+  setup_commands:
+    - "python3 -m venv .venv && source .venv/bin/activate && pip install -e '.[all]' && pip install pytest sqlalchemy[asyncio] aiosqlite pytest-asyncio"
+
+issue:
+  description: |
+    A FastAPI application was built with synchronous SQLAlchemy but now needs
+    to run fully async to avoid blocking the event loop. The migration touches
+    4 files.
+
+    Create these 4 files using synchronous SQLAlchemy:
+
+      db/sync_engine.py:
+        from sqlalchemy import create_engine
+        from sqlalchemy.orm import sessionmaker, Session
+        DATABASE_URL = "sqlite:///./items.db"
+        engine = create_engine(DATABASE_URL)
+        SessionLocal = sessionmaker(bind=engine)
+
+      models/item.py:
+        SQLAlchemy ORM model for an Item table with columns:
+          id (Integer, primary key, autoincrement)
+          name (String, not null)
+          price (Float, not null)
+
+      repos/item_repo.py:
+        Functions using a sync Session:
+          get_item(session, item_id) → Item | None
+          create_item(session, name, price) → Item
+          list_items(session) → list[Item]
+          delete_item(session, item_id) → bool
+
+      routes/items.py:
+        4 sync FastAPI route functions (not async def) that create a
+        SessionLocal(), call repo functions, and close the session.
+
+    Migrate ALL 4 files to async:
+
+      db/sync_engine.py → db/engine.py:
+        Use create_async_engine with "sqlite+aiosqlite:///./items.db"
+        Use async_sessionmaker yielding AsyncSession
+
+      models/item.py: keep the same model but use DeclarativeBase
+
+      repos/item_repo.py: make all 4 functions async, accept AsyncSession,
+        use await session.execute(...) and await session.commit()
+
+      routes/items.py: convert all route functions to async def, use
+        FastAPI Depends() for the AsyncSession, call repo functions with await
+
+    Create tests/test_items_async.py that:
+      - Use an in-memory aiosqlite database (sqlite+aiosqlite:///:memory:)
+      - Create and drop the schema around each test
+      - Test all 4 repo operations asynchronously with pytest-asyncio
+      - Mark tests with @pytest.mark.asyncio
+
+    Your task:
+      1. Create the 4 sync files as described.
+      2. Migrate to async versions in-place (same file paths, updated content).
+      3. Create tests/test_items_async.py proving async operations work.
+      4. All repo functions must use await — no sync SQLAlchemy calls remaining.
+  files_to_examine:
+    - "db/"
+    - "models/item.py"
+    - "repos/item_repo.py"
+    - "routes/items.py"
+    - "tests/test_items_async.py"
+
+verification:
+  test_commands:
+    - "source .venv/bin/activate && python3 -m pytest tests/test_items_async.py -v"
+  lint_commands:
+    - "source .venv/bin/activate && ruff check db/ repos/item_repo.py routes/items.py"
+  security_commands: []
+  partial_credit:
+    - criterion: "Async engine created with create_async_engine"
+      points: 15
+      check: "grep -rq 'create_async_engine' db/"
+    - criterion: "async_sessionmaker used for session factory"
+      points: 15
+      check: "grep -rq 'async_sessionmaker\\|AsyncSession' db/"
+    - criterion: "All repo functions are async def"
+      points: 15
+      check: "grep -c 'async def' repos/item_repo.py | awk '{if($1>=4) exit 0; else exit 1}'"
+    - criterion: "Route functions are async def with Depends session injection"
+      points: 15
+      check: "grep -q 'async def' routes/items.py && grep -q 'Depends' routes/items.py"
+    - criterion: "Session created per request (not module-level global)"
+      points: 15
+      check: "! grep -q 'SessionLocal()' routes/items.py"
+    - criterion: "Tests pass"
+      points: 25
+      check: "source .venv/bin/activate && python3 -m pytest tests/test_items_async.py -v"
+
+constraints:
+  max_iterations: 25
+  timeout_seconds: 1800

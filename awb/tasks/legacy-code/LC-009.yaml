@@ -1,0 +1,138 @@
+id: LC-009
+category: legacy-code
+title: "Move all re.compile calls from function bodies to module level"
+difficulty: easy
+estimated_minutes: 15
+languages: [python]
+tags: [regex, performance, refactoring, re-compile]
+capabilities: [code_comprehension, refactoring_discipline]
+
+repo:
+  url: "https://github.com/tiangolo/fastapi"
+  commit: "628c34e0cae200564d191c95d7edea78c88c4b5e"
+  setup_commands:
+    - "python3 -m venv .venv && source .venv/bin/activate && pip install -e '.[all]' && pip install pytest httpx"
+
+issue:
+  description: |
+    Four validator files call re.compile() inside function bodies. This
+    recompiles the regex on every function call, wasting CPU. Move all
+    re.compile() calls to module level as named constants.
+
+    Step 1 — Create these 4 files, each with re.compile() inside functions:
+
+    validators/email.py:
+      import re
+
+      def is_valid_email(address):
+          pattern = re.compile(r'^[a-zA-Z0-9_.+-]+@[a-zA-Z0-9-]+\.[a-zA-Z0-9-.]+$')
+          return bool(pattern.match(address))
+
+      def extract_domain(address):
+          pattern = re.compile(r'@([a-zA-Z0-9-]+\.[a-zA-Z0-9-.]+)$')
+          m = pattern.search(address)
+          return m.group(1) if m else None
+
+    validators/phone.py:
+      import re
+
+      def is_valid_phone(number):
+          pattern = re.compile(r'^\+?[\d\s\-().]{7,15}$')
+          return bool(pattern.match(number))
+
+      def normalize_phone(number):
+          pattern = re.compile(r'[\s\-().]')
+          return pattern.sub('', number)
+
+    validators/url.py:
+      import re
+
+      def is_valid_url(url):
+          pattern = re.compile(
+              r'^https?://'
+              r'(?:[a-zA-Z0-9-]+\.)+[a-zA-Z]{2,}'
+              r'(?:/[^\s]*)?$'
+          )
+          return bool(pattern.match(url))
+
+      def extract_scheme(url):
+          pattern = re.compile(r'^(https?)://')
+          m = pattern.match(url)
+          return m.group(1) if m else None
+
+    validators/date.py:
+      import re
+
+      def is_valid_iso_date(date_str):
+          pattern = re.compile(r'^\d{4}-\d{2}-\d{2}$')
+          return bool(pattern.match(date_str))
+
+      def is_valid_us_date(date_str):
+          pattern = re.compile(r'^\d{2}/\d{2}/\d{4}$')
+          return bool(pattern.match(date_str))
+
+    Step 2 — Create tests/test_validators.py covering all functions:
+
+      from validators.email import is_valid_email, extract_domain
+      from validators.phone import is_valid_phone, normalize_phone
+      from validators.url import is_valid_url, extract_scheme
+      from validators.date import is_valid_iso_date, is_valid_us_date
+
+      def test_valid_email(): assert is_valid_email("user@example.com")
+      def test_invalid_email(): assert not is_valid_email("notanemail")
+      def test_extract_domain(): assert extract_domain("user@example.com") == "example.com"
+      def test_valid_phone(): assert is_valid_phone("+1 555-1234")
+      def test_normalize_phone(): assert normalize_phone("+1 (555) 123-4567") == "+15551234567"
+      def test_valid_url(): assert is_valid_url("https://example.com/path")
+      def test_invalid_url(): assert not is_valid_url("not a url")
+      def test_extract_scheme(): assert extract_scheme("https://example.com") == "https"
+      def test_valid_iso_date(): assert is_valid_iso_date("2024-01-15")
+      def test_invalid_iso_date(): assert not is_valid_iso_date("01/15/2024")
+      def test_valid_us_date(): assert is_valid_us_date("01/15/2024")
+
+    Step 3 — Refactor all 4 files to move re.compile() to module level:
+    - Extract each re.compile() call into a module-level constant (e.g.,
+      _EMAIL_RE = re.compile(...) at the top of the file, after imports).
+    - Use the module-level constant inside the function instead.
+    - Use UPPER_SNAKE_CASE for the constant names.
+    - No re.compile() calls may remain inside any function body.
+
+    Requirements:
+    - All 8 re.compile() calls must be at module level.
+    - No re.compile() calls may remain inside function bodies.
+    - All 4 files must be fixed.
+    - Regex behavior must be identical (same patterns, same flags).
+    - Tests must pass.
+  files_to_examine:
+    - "validators/email.py"
+    - "validators/phone.py"
+    - "validators/url.py"
+    - "validators/date.py"
+    - "tests/test_validators.py"
+
+verification:
+  test_commands:
+    - "source .venv/bin/activate && python3 -m pytest tests/test_validators.py -v"
+  lint_commands:
+    - "source .venv/bin/activate && ruff check validators/"
+  security_commands: []
+  partial_credit:
+    - criterion: "No re.compile() calls inside any function body"
+      points: 25
+      check: "! grep -A5 'def ' validators/email.py validators/phone.py validators/url.py validators/date.py | grep 're\\.compile'"
+    - criterion: "Module-level constants created (UPPER_SNAKE_CASE)"
+      points: 20
+      check: "grep -rE '^[A-Z_]+ = re\\.compile' validators/ | wc -l | awk '{exit ($1 < 8)}'"
+    - criterion: "All 4 files fixed"
+      points: 20
+      check: "for f in validators/email.py validators/phone.py validators/url.py validators/date.py; do grep -q 're\\.compile' $f || exit 1; done; exit 0"
+    - criterion: "Regex behavior unchanged (patterns identical)"
+      points: 15
+      check: "source .venv/bin/activate && python3 -c \"from validators.email import is_valid_email; assert is_valid_email('a@b.com')\""
+    - criterion: "Tests pass"
+      points: 20
+      check: "source .venv/bin/activate && python3 -m pytest tests/test_validators.py -v"
+
+constraints:
+  max_iterations: 15
+  timeout_seconds: 900

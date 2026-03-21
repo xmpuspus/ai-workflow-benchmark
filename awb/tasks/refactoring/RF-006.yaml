@@ -1,0 +1,91 @@
+id: RF-006
+category: refactoring
+title: "Replace all os.path calls with pathlib.Path across 8 utility files"
+difficulty: medium
+estimated_minutes: 30
+languages: [python]
+tags: [fastapi, pathlib, refactoring, multi-file]
+capabilities: [refactoring_discipline, multi_file_reasoning]
+
+repo:
+  url: "https://github.com/tiangolo/fastapi"
+  commit: "628c34e0cae200564d191c95d7edea78c88c4b5e"
+  setup_commands:
+    - "python3 -m venv .venv && source .venv/bin/activate && pip install -e '.[all]' && pip install pytest"
+
+issue:
+  description: |
+    A FastAPI project contains 8 utility modules that each use the legacy
+    os.path API. The codebase needs a consistent migration to pathlib.Path,
+    which is more readable and composable.
+
+    Create these 8 files, each importing os and os.path and using the
+    following operations:
+
+      utils/file_handler.py   — os.path.join, os.path.exists, os.path.isfile
+      utils/config_loader.py  — os.path.join, os.path.dirname, os.path.exists
+      utils/template_engine.py — os.path.join, os.path.basename, os.path.isfile
+      utils/cache_manager.py  — os.path.join, os.path.exists, os.path.splitext
+      utils/log_rotator.py    — os.path.join, os.path.dirname, os.path.basename
+      utils/backup.py         — os.path.join, os.path.exists, os.path.isfile
+      utils/importer.py       — os.path.join, os.path.splitext, os.path.basename
+      utils/exporter.py       — os.path.join, os.path.exists, os.path.dirname
+
+    Each file should contain 1-3 small functions that perform real file
+    operations (reading, writing, checking existence) using os.path.
+
+    Migrate ALL 8 files to use pathlib.Path:
+      - os.path.join(a, b) → Path(a) / b
+      - os.path.exists(p) → Path(p).exists()
+      - os.path.isfile(p) → Path(p).is_file()
+      - os.path.dirname(p) → Path(p).parent
+      - os.path.basename(p) → Path(p).name
+      - os.path.splitext(p) → (Path(p).stem, Path(p).suffix)
+
+    Remove all `import os` and `import os.path` statements after migration.
+    The functions must accept the same arguments and return equivalent values.
+
+    Create tests/test_utils.py that:
+      - Test each utility file's functions using a temporary directory
+        (use pytest's tmp_path fixture)
+      - Verify file operations produce the same results as before
+      - Confirm no os.path references remain in any of the 8 files
+
+    Your task:
+      1. Create all 8 utils/*.py files using os.path as described.
+      2. Create tests/test_utils.py covering each file's functions.
+      3. Migrate all 8 files to pathlib.Path, removing os.path entirely.
+      4. Confirm tests still pass after migration.
+  files_to_examine:
+    - "utils/"
+    - "tests/test_utils.py"
+
+verification:
+  test_commands:
+    - "source .venv/bin/activate && python3 -m pytest tests/test_utils.py -v"
+  lint_commands:
+    - "source .venv/bin/activate && ruff check utils/"
+  security_commands: []
+  partial_credit:
+    - criterion: "No os.path imports remaining across all 8 files"
+      points: 20
+      check: "! grep -rl 'import os' utils/ | grep -qv '__pycache__'"
+    - criterion: "pathlib.Path used consistently across all 8 files"
+      points: 15
+      check: "grep -rl 'from pathlib import Path\\|import pathlib' utils/ | wc -l | awk '{if($1>=8) exit 0; else exit 1}'"
+    - criterion: "At least 6 of 8 files fully converted"
+      points: 15
+      check: "files=$(grep -rL 'os\\.path' utils/ | grep '\\.py$' | grep -v '__pycache__' | wc -l); [ \"$files\" -ge 6 ]"
+    - criterion: "All 8 files fully converted"
+      points: 15
+      check: "files=$(grep -rL 'os\\.path' utils/ | grep '\\.py$' | grep -v '__pycache__' | wc -l); [ \"$files\" -ge 8 ]"
+    - criterion: "Existing file operation behavior preserved"
+      points: 15
+      check: "source .venv/bin/activate && python3 -c 'import utils.file_handler, utils.config_loader, utils.backup, utils.exporter'"
+    - criterion: "Tests pass"
+      points: 20
+      check: "source .venv/bin/activate && python3 -m pytest tests/test_utils.py -v"
+
+constraints:
+  max_iterations: 20
+  timeout_seconds: 1200

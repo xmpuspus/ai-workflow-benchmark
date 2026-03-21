@@ -1,0 +1,87 @@
+id: RF-002
+category: refactoring
+title: "Replace 6 bare except clauses with specific exceptions across a Flask app"
+difficulty: easy
+estimated_minutes: 15
+languages: [python]
+tags: [flask, error-handling, exceptions, refactoring]
+capabilities: [refactoring_discipline, code_comprehension]
+
+repo:
+  url: "https://github.com/pallets/flask"
+  commit: "22d924701a6ae2e4cd01e9a15bbaf3946094af65"
+  setup_commands:
+    - "python3 -m venv .venv && source .venv/bin/activate && pip install -e '.[dev]' && pip install pytest"
+
+issue:
+  description: |
+    A Flask application has accumulated 6 handler functions that all use bare
+    `except:` clauses. Bare except catches BaseException (including
+    KeyboardInterrupt and SystemExit), masks errors silently, and makes
+    debugging impossible. Each handler needs a specific exception type that
+    matches the actual failure mode.
+
+    Create app/handlers.py with the following 6 functions, each containing a
+    bare except clause:
+
+      1. get_config_value(config, key) — accesses config[key], bare except
+         should be KeyError
+      2. parse_integer(value) — calls int(value), bare except should be
+         ValueError
+      3. coerce_type(obj, target_type) — calls target_type(obj), bare except
+         should be TypeError
+      4. read_file(path) — opens and reads a file, bare except should be
+         FileNotFoundError
+      5. parse_json(text) — calls json.loads(text), bare except should be
+         json.JSONDecodeError
+      6. connect_service(host) — simulates a connection call that raises
+         ConnectionError, bare except should be ConnectionError
+
+    Create tests/test_handlers.py with tests that:
+      - Call each handler with input that triggers its error path
+      - Assert the specific exception type is raised (not a broad Exception)
+      - Confirm that the bare except is no longer swallowing errors
+
+    Your task:
+      1. Create app/handlers.py with the 6 functions as described above, each
+         initially using bare `except:` that silently swallows the exception
+         (e.g., returns None or a default).
+      2. Create tests/test_handlers.py verifying each function raises the
+         correct specific exception when given bad input.
+      3. Fix all 6 bare excepts to catch only the appropriate specific
+         exception type and re-raise it (or let it propagate naturally).
+      4. Run the tests to confirm all 6 pass.
+
+    Each fixed handler must catch exactly one specific exception type. Do not
+    use `except Exception` as a replacement — use the narrowest type that
+    covers the actual failure.
+  files_to_examine:
+    - "app/handlers.py"
+    - "tests/test_handlers.py"
+
+verification:
+  test_commands:
+    - "source .venv/bin/activate && python3 -m pytest tests/test_handlers.py -v"
+  lint_commands:
+    - "source .venv/bin/activate && ruff check app/handlers.py tests/test_handlers.py"
+  security_commands: []
+  partial_credit:
+    - criterion: "No bare except: remaining in handlers.py"
+      points: 25
+      check: "! grep -q 'except:' app/handlers.py"
+    - criterion: "All 6 handlers use specific exception types"
+      points: 20
+      check: "grep -cE 'except (KeyError|ValueError|TypeError|FileNotFoundError|json\\.JSONDecodeError|ConnectionError)' app/handlers.py | grep -q '^6$'"
+    - criterion: "Each exception type matches its handler's failure mode"
+      points: 20
+      check: "grep -q 'except KeyError' app/handlers.py && grep -q 'except ValueError' app/handlers.py && grep -q 'except TypeError' app/handlers.py && grep -q 'except FileNotFoundError' app/handlers.py && grep -q 'except json.JSONDecodeError' app/handlers.py && grep -q 'except ConnectionError' app/handlers.py"
+    - criterion: "Tests assert specific exception types are raised"
+      points: 15
+      check: "grep -q 'pytest.raises' tests/test_handlers.py"
+    - criterion: "Tests pass"
+      points: 20
+      check: "source .venv/bin/activate && python3 -m pytest tests/test_handlers.py -v"
+
+constraints:
+  max_iterations: 15
+  timeout_seconds: 900

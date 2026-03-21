@@ -1,0 +1,124 @@
+id: FA-004
+category: feature-addition
+title: "Replace print statements with structured JSON logging across 5 modules"
+difficulty: medium
+estimated_minutes: 30
+languages: [python]
+tags: [fastapi, logging, refactoring, structured-logging, multi-file]
+capabilities: [multi_file_reasoning, refactoring_discipline]
+
+repo:
+  url: "https://github.com/tiangolo/fastapi"
+  commit: "628c34e0cae200564d191c95d7edea78c88c4b5e"
+  setup_commands:
+    - "python3 -m venv .venv && source .venv/bin/activate && pip install -e '.[all]' && pip install pytest httpx"
+
+issue:
+  description: |
+    Five modules use print() for debugging. Replace every print() call with
+    structured logging using Python's stdlib logging module configured with
+    a JSON formatter. All 5 files must use the same logger configuration —
+    no inconsistency between modules.
+
+    Step 1 - Create the 5 files with print() statements:
+
+    routes/users.py:
+      print(f"GET /users called")
+      print(f"Returning {len(users)} users")
+      print(f"User {user_id} not found")
+
+    routes/items.py:
+      print(f"GET /items called")
+      print(f"Creating item: {item_data}")
+      print(f"Item {item_id} deleted")
+
+    services/user_service.py:
+      print(f"Fetching user {user_id}")
+      print(f"User fetched successfully: {user_id}")
+      print(f"User {user_id} does not exist")
+
+    services/item_service.py:
+      print(f"Creating item with data: {data}")
+      print(f"Item {item_id} retrieved")
+      print(f"Deleting item {item_id}")
+
+    utils/helpers.py:
+      print(f"Validating input: {value}")
+      print(f"Validation passed")
+      print(f"Validation failed for: {value}")
+
+    Each file should have these prints inside functions that you define around
+    them — simple stubs are fine (functions that just log and return a constant).
+
+    Step 2 - Create logging/config.py with a shared JSON log formatter:
+      import logging
+      import json
+
+      class JsonFormatter(logging.Formatter):
+          def format(self, record: logging.LogRecord) -> str:
+              log_data = {
+                  "level": record.levelname,
+                  "logger": record.name,
+                  "message": record.getMessage(),
+                  "module": record.module,
+              }
+              return json.dumps(log_data)
+
+      def get_logger(name: str) -> logging.Logger:
+          logger = logging.getLogger(name)
+          if not logger.handlers:
+              handler = logging.StreamHandler()
+              handler.setFormatter(JsonFormatter())
+              logger.addHandler(handler)
+          logger.setLevel(logging.DEBUG)
+          return logger
+
+    Step 3 - Replace ALL print() calls in all 5 files:
+      - Each file creates its logger with: logger = get_logger(__name__)
+      - Replace informational prints with logger.info(...)
+      - Replace error/not-found prints with logger.warning(...)
+      - Zero print() calls must remain in any of the 5 files
+
+    Step 4 - Create tests/test_logging_migration.py:
+      - test_no_print_in_routes_users: read routes/users.py source, assert
+        "print(" does not appear
+      - test_no_print_in_routes_items: same for routes/items.py
+      - test_no_print_in_user_service: same for services/user_service.py
+      - test_no_print_in_item_service: same for services/item_service.py
+      - test_no_print_in_helpers: same for utils/helpers.py
+      - test_logs_are_valid_json: capture log output using logging.handlers or
+        io.StringIO, call one logged function, assert output is valid JSON
+      - test_json_log_has_required_fields: log entry has level, logger, message keys
+  files_to_examine:
+    - "fastapi/routing.py"
+    - "tests/"
+
+verification:
+  test_commands:
+    - "source .venv/bin/activate && python3 -m pytest tests/test_logging_migration.py -v"
+  lint_commands:
+    - "source .venv/bin/activate && ruff check routes/ services/ utils/ logging/ tests/test_logging_migration.py"
+  security_commands: []
+  partial_credit:
+    - criterion: "JsonFormatter created in logging/config.py"
+      points: 15
+      check: "test -f logging/config.py && grep -q 'JsonFormatter' logging/config.py"
+    - criterion: "print() removed from routes/ (both files)"
+      points: 15
+      check: "! grep -qE 'print\\(' routes/users.py routes/items.py"
+    - criterion: "print() removed from services/ (both files)"
+      points: 15
+      check: "! grep -qE 'print\\(' services/user_service.py services/item_service.py"
+    - criterion: "print() removed from utils/helpers.py"
+      points: 15
+      check: "! grep -q 'print(' utils/helpers.py"
+    - criterion: "All 5 files use get_logger(__name__) consistently"
+      points: 15
+      check: "grep -l 'get_logger' routes/users.py routes/items.py services/user_service.py services/item_service.py utils/helpers.py | wc -l | grep -q 5"
+    - criterion: "Tests pass"
+      points: 25
+      check: "source .venv/bin/activate && python3 -m pytest tests/test_logging_migration.py -v"
+
+constraints:
+  max_iterations: 20
+  timeout_seconds: 1200

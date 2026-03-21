@@ -1,0 +1,686 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI Workflow Benchmark - Leaderboard</title>
+    <link rel="stylesheet" href="static/style.css">
+</head>
+<body>
+    <header>
+        <h1>AI Workflow Benchmark</h1>
+        <p class="subtitle">Measuring tool+workflow performance, not just model capability</p>
+    </header>
+
+    <div class="container">
+        <div class="stats-bar">
+            <div class="stat">
+                <span class="stat-value">10</span>
+                <span class="stat-label">Total Runs</span>
+            </div>
+            <div class="stat">
+                <span class="stat-value">5</span>
+                <span class="stat-label">Tasks</span>
+            </div>
+            <div class="stat">
+                <span class="stat-value">2</span>
+                <span class="stat-label">Tools Compared</span>
+            </div>
+        </div>
+
+        
+        <div class="controls">
+            <input type="text" id="filter-input" placeholder="Filter by tool name..." class="filter-input">
+        </div>
+
+        <div class="table-wrapper">
+            <table id="leaderboard-table">
+                <thead>
+                    <tr>
+                        <th data-sort="rank">Rank</th>
+                        <th data-sort="tool">Tool</th>
+                        <th data-sort="model">Model</th>
+                        <th data-sort="composite" class="sort-active sort-desc">Composite</th>
+                        <th data-sort="success">Success %</th>
+                        <th data-sort="score">Avg Score %</th>
+                        <th data-sort="time">Avg Time (s)</th>
+                        <th data-sort="cost">Avg Cost ($)</th>
+                        <th data-sort="iterations">Avg Iterations</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    
+                    <tr data-tool="claude-code-custom">
+                        <td class="rank">1</td>
+                        <td class="tool-name">claude-code-custom</td>
+                        <td>claude-opus-4-6</td>
+                        <td><span class="score-badge score-mid" data-target="70.9">0</span></td>
+                        <td><span data-target="60.0">0</span>%</td>
+                        <td><span data-target="85.0">0</span>%</td>
+                        <td>260.4</td>
+                        <td>$0.63</td>
+                        <td>12.4</td>
+                    </tr>
+                    
+                    <tr data-tool="claude-code-vanilla">
+                        <td class="rank">2</td>
+                        <td class="tool-name">claude-code-vanilla</td>
+                        <td>claude-opus-4-6</td>
+                        <td><span class="score-badge score-mid" data-target="57.1">0</span></td>
+                        <td><span data-target="40.0">0</span>%</td>
+                        <td><span data-target="70.0">0</span>%</td>
+                        <td>338.5</td>
+                        <td>$0.88</td>
+                        <td>16.4</td>
+                    </tr>
+                    
+                </tbody>
+            </table>
+        </div>
+
+        <div class="chart-section">
+            <h2>Metric Comparison</h2>
+            <canvas id="radar-chart" width="500" height="500"></canvas>
+        </div>
+
+        
+        <div class="breakdown-section">
+            <h2>Per-Task Breakdown</h2>
+            
+            <details>
+                <summary>BF-001</summary>
+                <div class="task-detail">
+                    <table class="detail-table">
+                        <thead>
+                            <tr>
+                                <th>Tool</th>
+                                <th>Success</th>
+                                <th>Score</th>
+                                <th>Time (s)</th>
+                                <th>Cost ($)</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            
+                            <tr>
+                                <td>claude-code-custom</td>
+                                <td><span class="pass">PASS</span></td>
+                                <td>100/100</td>
+                                <td>187.3</td>
+                                <td>$0.38</td>
+                            </tr>
+                            
+                            <tr>
+                                <td>claude-code-vanilla</td>
+                                <td><span class="pass">PASS</span></td>
+                                <td>85/100</td>
+                                <td>243.5</td>
+                                <td>$0.53</td>
+                            </tr>
+                            
+                        </tbody>
+                    </table>
+                </div>
+            </details>
+            
+            <details>
+                <summary>BF-002</summary>
+                <div class="task-detail">
+                    <table class="detail-table">
+                        <thead>
+                            <tr>
+                                <th>Tool</th>
+                                <th>Success</th>
+                                <th>Score</th>
+                                <th>Time (s)</th>
+                                <th>Cost ($)</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            
+                            <tr>
+                                <td>claude-code-custom</td>
+                                <td><span class="fail">FAIL</span></td>
+                                <td>70/100</td>
+                                <td>342.1</td>
+                                <td>$0.89</td>
+                            </tr>
+                            
+                            <tr>
+                                <td>claude-code-vanilla</td>
+                                <td><span class="fail">FAIL</span></td>
+                                <td>55/100</td>
+                                <td>444.7</td>
+                                <td>$1.25</td>
+                            </tr>
+                            
+                        </tbody>
+                    </table>
+                </div>
+            </details>
+            
+            <details>
+                <summary>FA-001</summary>
+                <div class="task-detail">
+                    <table class="detail-table">
+                        <thead>
+                            <tr>
+                                <th>Tool</th>
+                                <th>Success</th>
+                                <th>Score</th>
+                                <th>Time (s)</th>
+                                <th>Cost ($)</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            
+                            <tr>
+                                <td>claude-code-custom</td>
+                                <td><span class="pass">PASS</span></td>
+                                <td>95/100</td>
+                                <td>203.7</td>
+                                <td>$0.45</td>
+                            </tr>
+                            
+                            <tr>
+                                <td>claude-code-vanilla</td>
+                                <td><span class="fail">FAIL</span></td>
+                                <td>80/100</td>
+                                <td>264.8</td>
+                                <td>$0.63</td>
+                            </tr>
+                            
+                        </tbody>
+                    </table>
+                </div>
+            </details>
+            
+            <details>
+                <summary>FA-002</summary>
+                <div class="task-detail">
+                    <table class="detail-table">
+                        <thead>
+                            <tr>
+                                <th>Tool</th>
+                                <th>Success</th>
+                                <th>Score</th>
+                                <th>Time (s)</th>
+                                <th>Cost ($)</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            
+                            <tr>
+                                <td>claude-code-custom</td>
+                                <td><span class="pass">PASS</span></td>
+                                <td>100/100</td>
+                                <td>156.2</td>
+                                <td>$0.31</td>
+                            </tr>
+                            
+                            <tr>
+                                <td>claude-code-vanilla</td>
+                                <td><span class="pass">PASS</span></td>
+                                <td>85/100</td>
+                                <td>203.1</td>
+                                <td>$0.43</td>
+                            </tr>
+                            
+                        </tbody>
+                    </table>
+                </div>
+            </details>
+            
+            <details>
+                <summary>RF-001</summary>
+                <div class="task-detail">
+                    <table class="detail-table">
+                        <thead>
+                            <tr>
+                                <th>Tool</th>
+                                <th>Success</th>
+                                <th>Score</th>
+                                <th>Time (s)</th>
+                                <th>Cost ($)</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            
+                            <tr>
+                                <td>claude-code-custom</td>
+                                <td><span class="fail">FAIL</span></td>
+                                <td>60/100</td>
+                                <td>412.8</td>
+                                <td>$1.12</td>
+                            </tr>
+                            
+                            <tr>
+                                <td>claude-code-vanilla</td>
+                                <td><span class="fail">FAIL</span></td>
+                                <td>45/100</td>
+                                <td>536.6</td>
+                                <td>$1.57</td>
+                            </tr>
+                            
+                        </tbody>
+                    </table>
+                </div>
+            </details>
+            
+        </div>
+        
+
+        
+    </div>
+
+    <footer>
+        <p><a href="METHODOLOGY.md">Methodology</a></p>
+    </footer>
+
+    <script>
+        const RESULTS_DATA = [
+  {
+    "task_id": "BF-001",
+    "tool": "claude-code-custom",
+    "tool_version": "1.0.42",
+    "model": "claude-opus-4-6",
+    "run_id": "2026-03-20_sample_run1",
+    "timestamp": "2026-03-20T14:30:00Z",
+    "outcome": {
+      "success": true,
+      "partial_credit_score": 100,
+      "partial_credit_max": 100,
+      "breakdown": []
+    },
+    "metrics": {
+      "wall_clock_seconds": 187.3,
+      "iteration_count": 8,
+      "human_interventions": 0,
+      "tool_calls": {
+        "Read": 5,
+        "Edit": 3,
+        "Bash": 8
+      },
+      "files_modified": 2,
+      "lines_changed": 25
+    },
+    "cost": {
+      "input_tokens": 38000,
+      "output_tokens": 7600,
+      "estimated_cost_usd": 0.38
+    },
+    "quality": {
+      "lint_delta": 0,
+      "security_delta": 0,
+      "test_regressions": 0
+    },
+    "environment": {
+      "os": "darwin",
+      "hardware": "Apple M3 Max 64GB"
+    }
+  },
+  {
+    "task_id": "BF-001",
+    "tool": "claude-code-vanilla",
+    "tool_version": "1.0.42",
+    "model": "claude-opus-4-6",
+    "run_id": "2026-03-20_sample_run1",
+    "timestamp": "2026-03-20T14:30:00Z",
+    "outcome": {
+      "success": true,
+      "partial_credit_score": 85,
+      "partial_credit_max": 100,
+      "breakdown": []
+    },
+    "metrics": {
+      "wall_clock_seconds": 243.5,
+      "iteration_count": 12,
+      "human_interventions": 0,
+      "tool_calls": {
+        "Read": 5,
+        "Edit": 3,
+        "Bash": 12
+      },
+      "files_modified": 2,
+      "lines_changed": 25
+    },
+    "cost": {
+      "input_tokens": 53199,
+      "output_tokens": 10639,
+      "estimated_cost_usd": 0.53
+    },
+    "quality": {
+      "lint_delta": 0,
+      "security_delta": 0,
+      "test_regressions": 0
+    },
+    "environment": {
+      "os": "darwin",
+      "hardware": "Apple M3 Max 64GB"
+    }
+  },
+  {
+    "task_id": "BF-002",
+    "tool": "claude-code-custom",
+    "tool_version": "1.0.42",
+    "model": "claude-opus-4-6",
+    "run_id": "2026-03-20_sample_run1",
+    "timestamp": "2026-03-20T14:30:00Z",
+    "outcome": {
+      "success": false,
+      "partial_credit_score": 70,
+      "partial_credit_max": 100,
+      "breakdown": []
+    },
+    "metrics": {
+      "wall_clock_seconds": 342.1,
+      "iteration_count": 15,
+      "human_interventions": 0,
+      "tool_calls": {
+        "Read": 5,
+        "Edit": 3,
+        "Bash": 15
+      },
+      "files_modified": 2,
+      "lines_changed": 25
+    },
+    "cost": {
+      "input_tokens": 89000,
+      "output_tokens": 17800,
+      "estimated_cost_usd": 0.89
+    },
+    "quality": {
+      "lint_delta": 0,
+      "security_delta": 0,
+      "test_regressions": 1
+    },
+    "environment": {
+      "os": "darwin",
+      "hardware": "Apple M3 Max 64GB"
+    }
+  },
+  {
+    "task_id": "BF-002",
+    "tool": "claude-code-vanilla",
+    "tool_version": "1.0.42",
+    "model": "claude-opus-4-6",
+    "run_id": "2026-03-20_sample_run1",
+    "timestamp": "2026-03-20T14:30:00Z",
+    "outcome": {
+      "success": false,
+      "partial_credit_score": 55,
+      "partial_credit_max": 100,
+      "breakdown": []
+    },
+    "metrics": {
+      "wall_clock_seconds": 444.7,
+      "iteration_count": 19,
+      "human_interventions": 0,
+      "tool_calls": {
+        "Read": 5,
+        "Edit": 3,
+        "Bash": 19
+      },
+      "files_modified": 2,
+      "lines_changed": 25
+    },
+    "cost": {
+      "input_tokens": 124600,
+      "output_tokens": 24920,
+      "estimated_cost_usd": 1.25
+    },
+    "quality": {
+      "lint_delta": 0,
+      "security_delta": 0,
+      "test_regressions": 1
+    },
+    "environment": {
+      "os": "darwin",
+      "hardware": "Apple M3 Max 64GB"
+    }
+  },
+  {
+    "task_id": "FA-001",
+    "tool": "claude-code-custom",
+    "tool_version": "1.0.42",
+    "model": "claude-opus-4-6",
+    "run_id": "2026-03-20_sample_run1",
+    "timestamp": "2026-03-20T14:30:00Z",
+    "outcome": {
+      "success": true,
+      "partial_credit_score": 95,
+      "partial_credit_max": 100,
+      "breakdown": []
+    },
+    "metrics": {
+      "wall_clock_seconds": 203.7,
+      "iteration_count": 10,
+      "human_interventions": 0,
+      "tool_calls": {
+        "Read": 5,
+        "Edit": 3,
+        "Bash": 10
+      },
+      "files_modified": 2,
+      "lines_changed": 25
+    },
+    "cost": {
+      "input_tokens": 45000,
+      "output_tokens": 9000,
+      "estimated_cost_usd": 0.45
+    },
+    "quality": {
+      "lint_delta": 0,
+      "security_delta": 0,
+      "test_regressions": 0
+    },
+    "environment": {
+      "os": "darwin",
+      "hardware": "Apple M3 Max 64GB"
+    }
+  },
+  {
+    "task_id": "FA-001",
+    "tool": "claude-code-vanilla",
+    "tool_version": "1.0.42",
+    "model": "claude-opus-4-6",
+    "run_id": "2026-03-20_sample_run1",
+    "timestamp": "2026-03-20T14:30:00Z",
+    "outcome": {
+      "success": false,
+      "partial_credit_score": 80,
+      "partial_credit_max": 100,
+      "breakdown": []
+    },
+    "metrics": {
+      "wall_clock_seconds": 264.8,
+      "iteration_count": 14,
+      "human_interventions": 0,
+      "tool_calls": {
+        "Read": 5,
+        "Edit": 3,
+        "Bash": 14
+      },
+      "files_modified": 2,
+      "lines_changed": 25
+    },
+    "cost": {
+      "input_tokens": 63000,
+      "output_tokens": 12600,
+      "estimated_cost_usd": 0.63
+    },
+    "quality": {
+      "lint_delta": 0,
+      "security_delta": 0,
+      "test_regressions": 0
+    },
+    "environment": {
+      "os": "darwin",
+      "hardware": "Apple M3 Max 64GB"
+    }
+  },
+  {
+    "task_id": "FA-002",
+    "tool": "claude-code-custom",
+    "tool_version": "1.0.42",
+    "model": "claude-opus-4-6",
+    "run_id": "2026-03-20_sample_run1",
+    "timestamp": "2026-03-20T14:30:00Z",
+    "outcome": {
+      "success": true,
+      "partial_credit_score": 100,
+      "partial_credit_max": 100,
+      "breakdown": []
+    },
+    "metrics": {
+      "wall_clock_seconds": 156.2,
+      "iteration_count": 7,
+      "human_interventions": 0,
+      "tool_calls": {
+        "Read": 5,
+        "Edit": 3,
+        "Bash": 7
+      },
+      "files_modified": 2,
+      "lines_changed": 25
+    },
+    "cost": {
+      "input_tokens": 31000,
+      "output_tokens": 6200,
+      "estimated_cost_usd": 0.31
+    },
+    "quality": {
+      "lint_delta": 0,
+      "security_delta": 0,
+      "test_regressions": 0
+    },
+    "environment": {
+      "os": "darwin",
+      "hardware": "Apple M3 Max 64GB"
+    }
+  },
+  {
+    "task_id": "FA-002",
+    "tool": "claude-code-vanilla",
+    "tool_version": "1.0.42",
+    "model": "claude-opus-4-6",
+    "run_id": "2026-03-20_sample_run1",
+    "timestamp": "2026-03-20T14:30:00Z",
+    "outcome": {
+      "success": true,
+      "partial_credit_score": 85,
+      "partial_credit_max": 100,
+      "breakdown": []
+    },
+    "metrics": {
+      "wall_clock_seconds": 203.1,
+      "iteration_count": 11,
+      "human_interventions": 0,
+      "tool_calls": {
+        "Read": 5,
+        "Edit": 3,
+        "Bash": 11
+      },
+      "files_modified": 2,
+      "lines_changed": 25
+    },
+    "cost": {
+      "input_tokens": 43400,
+      "output_tokens": 8680,
+      "estimated_cost_usd": 0.43
+    },
+    "quality": {
+      "lint_delta": 0,
+      "security_delta": 0,
+      "test_regressions": 0
+    },
+    "environment": {
+      "os": "darwin",
+      "hardware": "Apple M3 Max 64GB"
+    }
+  },
+  {
+    "task_id": "RF-001",
+    "tool": "claude-code-custom",
+    "tool_version": "1.0.42",
+    "model": "claude-opus-4-6",
+    "run_id": "2026-03-20_sample_run1",
+    "timestamp": "2026-03-20T14:30:00Z",
+    "outcome": {
+      "success": false,
+      "partial_credit_score": 60,
+      "partial_credit_max": 100,
+      "breakdown": []
+    },
+    "metrics": {
+      "wall_clock_seconds": 412.8,
+      "iteration_count": 22,
+      "human_interventions": 0,
+      "tool_calls": {
+        "Read": 5,
+        "Edit": 3,
+        "Bash": 22
+      },
+      "files_modified": 2,
+      "lines_changed": 25
+    },
+    "cost": {
+      "input_tokens": 112000,
+      "output_tokens": 22400,
+      "estimated_cost_usd": 1.12
+    },
+    "quality": {
+      "lint_delta": 0,
+      "security_delta": 0,
+      "test_regressions": 0
+    },
+    "environment": {
+      "os": "darwin",
+      "hardware": "Apple M3 Max 64GB"
+    }
+  },
+  {
+    "task_id": "RF-001",
+    "tool": "claude-code-vanilla",
+    "tool_version": "1.0.42",
+    "model": "claude-opus-4-6",
+    "run_id": "2026-03-20_sample_run1",
+    "timestamp": "2026-03-20T14:30:00Z",
+    "outcome": {
+      "success": false,
+      "partial_credit_score": 45,
+      "partial_credit_max": 100,
+      "breakdown": []
+    },
+    "metrics": {
+      "wall_clock_seconds": 536.6,
+      "iteration_count": 26,
+      "human_interventions": 0,
+      "tool_calls": {
+        "Read": 5,
+        "Edit": 3,
+        "Bash": 26
+      },
+      "files_modified": 2,
+      "lines_changed": 25
+    },
+    "cost": {
+      "input_tokens": 156800,
+      "output_tokens": 31360,
+      "estimated_cost_usd": 1.57
+    },
+    "quality": {
+      "lint_delta": 0,
+      "security_delta": 0,
+      "test_regressions": 0
+    },
+    "environment": {
+      "os": "darwin",
+      "hardware": "Apple M3 Max 64GB"
+    }
+  }
+];
+    </script>
+    <script src="static/leaderboard.js"></script>
+</body>
+</html>

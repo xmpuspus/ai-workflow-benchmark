@@ -1,0 +1,97 @@
+id: DB-002
+category: debugging
+title: "Diagnose intermittent amount=0 bug caused by dict.get None and bare except"
+difficulty: hard
+estimated_minutes: 35
+languages: [python]
+tags: [fastapi, pydantic, debugging, dict-get, bare-except, red-herring]
+capabilities: [bug_diagnosis, code_comprehension]
+
+repo:
+  url: "https://github.com/tiangolo/fastapi"
+  commit: "628c34e0cae200564d191c95d7edea78c88c4b5e"
+  setup_commands:
+    - "python3 -m venv .venv && source .venv/bin/activate && pip install -e '.[all]' && pip install pytest pytest-asyncio"
+
+issue:
+  description: |
+    Create a mini FastAPI application where POST /transactions intermittently
+    returns amount=0, trace the root cause through a red herring, fix both
+    underlying issues, and prove the fix with tests.
+
+    Step 1 - Create the buggy application:
+
+    models.py:
+      - TransactionRequest(BaseModel): amount: int = 0, description: str = ""
+      - TransactionResponse(BaseModel): id: str, amount: int, status: str
+
+    utils.py:
+      - def extract_amount(data: dict) -> int:
+            return data.get("amount", 0)
+        THE BUG: dict.get("amount", 0) returns None when amount key exists
+        but its value is None. The default only applies when the key is absent.
+
+    services.py:
+      - def process_transaction(raw: dict) -> dict:
+            try:
+                amount = extract_amount(raw)
+                result = amount * 100  # convert to cents
+                return {"id": "txn_123", "amount": result // 100, "status": "ok"}
+            except:
+                return {"id": "txn_err", "amount": 0, "status": "error"}
+        THE BUG: bare except catches TypeError when amount is None, returns 0
+
+    routes.py:
+      - POST /transactions: calls process_transaction(request.dict())
+
+    RED HERRING in models.py: amount: int = 0
+      This looks like the culprit (default value of 0), but it is not the
+      issue. Pydantic correctly validates the field and would reject None for
+      an int field. The bug occurs when raw dict data bypasses Pydantic
+      (e.g., the route passes request.dict() and utils processes it before
+      any re-validation, or when amount is explicitly set to None in the dict).
+
+    Step 2 - Create tests/test_transaction_fix.py with:
+      - A test demonstrating the bug: passing {"amount": None} to
+        extract_amount() returns None instead of 0
+      - A test showing bare except masks the TypeError from None * 100
+      - Tests for the fixed versions of both functions
+      - Edge case tests: amount=0 (valid), amount=-1 (valid negative),
+        amount key absent entirely
+      - A test that POST /transactions with a valid body returns correct amount
+
+    Step 3 - Fix both bugs:
+      - utils.py: use (data.get("amount") or 0) or explicit None check
+      - services.py: replace bare except with except TypeError
+
+    The fix must not change the behavior for valid inputs.
+  files_to_examine:
+    - "fastapi/routing.py"
+    - "tests/"
+
+verification:
+  test_commands:
+    - "source .venv/bin/activate && python3 -m pytest tests/test_transaction_fix.py -v"
+  lint_commands:
+    - "source .venv/bin/activate && ruff check models.py utils.py services.py routes.py tests/test_transaction_fix.py"
+  security_commands: []
+  partial_credit:
+    - criterion: "Identifies dict.get None issue in utils.py"
+      points: 20
+      check: "! grep -qE '^\\s*return data\\.get\\(\"amount\", 0\\)' utils.py"
+    - criterion: "Bare except replaced with specific exception in services.py"
+      points: 20
+      check: "! grep -qE 'except:' services.py"
+    - criterion: "Failing test exists demonstrating the bug"
+      points: 25
+      check: "grep -qE 'None.*amount|amount.*None' tests/test_transaction_fix.py"
+    - criterion: "Edge case tests for amount=0 and missing key"
+      points: 15
+      check: "grep -qE 'amount.*0|missing|absent|key' tests/test_transaction_fix.py"
+    - criterion: "Tests pass"
+      points: 20
+      check: "source .venv/bin/activate && python3 -m pytest tests/test_transaction_fix.py -v"
+
+constraints:
+  max_iterations: 20
+  timeout_seconds: 1200

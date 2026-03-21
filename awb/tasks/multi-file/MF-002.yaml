@@ -1,0 +1,106 @@
+id: MF-002
+category: multi-file
+title: "Add batch endpoint with asyncio.gather using per-coroutine AsyncSession"
+difficulty: hard
+estimated_minutes: 45
+languages: [python]
+tags: [fastapi, sqlalchemy, async, asyncio-gather, session-safety]
+capabilities: [multi_file_reasoning, refactoring_discipline]
+
+repo:
+  url: "https://github.com/tiangolo/fastapi"
+  commit: "628c34e0cae200564d191c95d7edea78c88c4b5e"
+  setup_commands:
+    - "python3 -m venv .venv && source .venv/bin/activate && pip install -e '.[all]' && pip install pytest pytest-asyncio sqlalchemy[asyncio] aiosqlite"
+
+issue:
+  description: |
+    An existing async FastAPI app uses SQLAlchemy AsyncSession. Add a
+    POST /batch endpoint that processes items concurrently. The trap: a
+    naive implementation passes a shared AsyncSession to all coroutines
+    gathered with asyncio.gather - this is unsafe. The correct implementation
+    creates a fresh AsyncSession per coroutine.
+
+    Step 1 - Create the existing app skeleton:
+
+    database.py:
+      - async_engine using aiosqlite (e.g., "sqlite+aiosqlite:///./test.db")
+      - AsyncSessionLocal = async_sessionmaker(async_engine, ...)
+      - async get_db() -> AsyncGenerator[AsyncSession, None]: dependency
+
+    models.py:
+      - Item(Base): id: int (primary key), name: str, value: float, processed: bool
+
+    repos/item_repo.py:
+      - async get_item(session: AsyncSession, item_id: int) -> Item | None
+      - async mark_processed(session: AsyncSession, item_id: int) -> Item | None
+
+    services/item_service.py:
+      - async process_item(session: AsyncSession, item_id: int) -> dict
+        Does: fetch item, mark processed, return {"id": ..., "value": ...}
+      - NO imports from fastapi or starlette
+
+    routes/items.py:
+      - GET /items/{id} using Depends(get_db)
+      - Single-item processing endpoint
+
+    Step 2 - Add the batch endpoint in routes/items.py:
+
+    POST /batch accepts {"item_ids": [1, 2, 3]}
+
+    THE TRAP - do NOT do this (shared session, unsafe):
+      results = await asyncio.gather(
+          *[item_service.process_item(db, id) for id in item_ids]
+      )
+
+    CORRECT implementation (per-coroutine session):
+      async def process_one(item_id: int) -> dict:
+          async with AsyncSessionLocal() as session:
+              return await item_service.process_item(session, item_id)
+      results = await asyncio.gather(*[process_one(id) for id in item_ids])
+
+    Step 3 - Create tests/test_batch.py:
+      - Test that POST /batch with multiple ids returns all results
+      - Test that each item is marked processed after batch call
+      - A test (or comment) explaining WHY shared session is unsafe
+        (interleaved coroutine execution with shared transaction state)
+      - Test that single GET /items/{id} still works after batch
+      - Tests must use an in-memory or test database
+
+    Architecture constraint: item_service.py must have zero fastapi imports.
+    The per-coroutine session creation belongs in the route layer, not the
+    service layer.
+  files_to_examine:
+    - "fastapi/routing.py"
+    - "fastapi/concurrency.py"
+    - "tests/"
+
+verification:
+  test_commands:
+    - "source .venv/bin/activate && python3 -m pytest tests/test_batch.py -v"
+  lint_commands:
+    - "source .venv/bin/activate && ruff check routes/ services/ repos/ tests/test_batch.py"
+  security_commands: []
+  partial_credit:
+    - criterion: "Batch endpoint created at POST /batch"
+      points: 10
+      check: "grep -qE 'post.*batch|batch.*post|/batch' routes/items.py"
+    - criterion: "item_service.py has no fastapi imports"
+      points: 15
+      check: "! grep -qE 'from fastapi|import fastapi' services/item_service.py"
+    - criterion: "asyncio.gather used in batch endpoint"
+      points: 15
+      check: "grep -q 'asyncio.gather' routes/items.py"
+    - criterion: "Per-coroutine sessions used (not shared session passed to gather)"
+      points: 20
+      check: "grep -qE 'AsyncSessionLocal|async with.*session' routes/items.py"
+    - criterion: "Tests pass"
+      points: 25
+      check: "source .venv/bin/activate && python3 -m pytest tests/test_batch.py -v"
+    - criterion: "Lint clean"
+      points: 15
+      check: "source .venv/bin/activate && ruff check routes/items.py services/item_service.py"
+
+constraints:
+  max_iterations: 25
+  timeout_seconds: 1800

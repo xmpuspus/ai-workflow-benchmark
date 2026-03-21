@@ -3,15 +3,13 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [project]
-name = "ai-workflow-benchmark"
-version = "0.1.0"
+name = "awb"
+version = "0.2.0"
 description = "Benchmark harness measuring AI coding tool+workflow performance, not just model capability"
 readme = "README.md"
 license = "MIT"
 requires-python = ">=3.11"
-authors = [
-    {name = "Xavier Puspus"},
-]
+authors = [{name = "Xavier Puspus"}]
 keywords = ["benchmark", "ai-coding", "claude-code", "developer-tools"]
 classifiers = [
     "Development Status :: 3 - Alpha",
@@ -37,13 +35,37 @@ dev = [
     "pytest-asyncio>=0.23.0,<1",
     "ruff>=0.3.0,<1",
 ]
+stats = [
+    "scipy>=1.12.0,<2",
+    "numpy>=1.26.0,<3",
+]
 
 [project.scripts]
-awb = "harness.cli:cli"
+awb = "awb.cli:cli"
+
+[project.entry-points."awb.adapters"]
+claude-code-vanilla = "awb.adapters.claude_code:ClaudeCodeVanillaAdapter"
+claude-code-custom = "awb.adapters.claude_code:ClaudeCodeCustomAdapter"
+cursor = "awb.adapters.cursor:CursorAdapter"
+aider = "awb.adapters.aider:AiderAdapter"
+
+[tool.hatch.build.targets.wheel]
+packages = ["awb"]
+
+[tool.hatch.build]
+include = [
+    "awb/**/*.py",
+    "awb/tasks/**/*.yaml",
+    "awb/tasks/**/*.json",
+    "awb/scoring/*.yaml",
+    "awb/leaderboard/templates/**",
+    "awb/leaderboard/static/**",
+]
 
 [tool.ruff]
 target-version = "py311"
 line-length = 100
+extend-exclude = ["demos/"]
 
 [tool.ruff.lint]
 select = ["E", "F", "W", "I", "N", "UP", "B", "A", "SIM"]

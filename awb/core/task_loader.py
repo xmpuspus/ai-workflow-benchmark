@@ -1,0 +1,111 @@
+from __future__ import annotations
+
+import json
+from pathlib import Path
+
+import yaml
+from jsonschema import ValidationError, validate
+
+from awb.core.config import (
+    TASK_SCHEMA_PATH,
+    TASKS_DIR,
+    PartialCreditCriterion,
+    TaskConstraints,
+    TaskDefinition,
+    TaskRepo,
+    TaskVerification,
+)
+
+
+def _load_schema() -> dict:
+    with TASK_SCHEMA_PATH.open() as f:
+        return json.load(f)
+
+
+def _parse_task(raw: dict) -> TaskDefinition:
+    repo_raw = raw["repo"]
+    repo = TaskRepo(
+        url=repo_raw["url"],
+        commit=repo_raw["commit"],
+        setup_commands=repo_raw.get("setup_commands") or [],
+    )
+
+    verif_raw = raw.get("verification") or {}
+    partial_credit = [
+        PartialCreditCriterion(
+            criterion=pc["criterion"],
+            points=pc["points"],
+            check=pc["check"],
+        )
+        for pc in (verif_raw.get("partial_credit") or [])
+    ]
+    verification = TaskVerification(
+        test_commands=verif_raw.get("test_commands") or [],
+        lint_commands=verif_raw.get("lint_commands") or [],
+        security_commands=verif_raw.get("security_commands") or [],
+        partial_credit=partial_credit,
+    )
+
+    constraints_raw = raw.get("constraints") or {}
+    constraints = TaskConstraints(
+        max_iterations=constraints_raw.get("max_iterations", 20),
+        timeout_seconds=constraints_raw.get("timeout_seconds", 1800),
+    )
+
+    issue_raw = raw.get("issue") or {}
+
+    return TaskDefinition(
+        id=raw["id"],
+        category=raw["category"],
+        title=raw["title"],
+        difficulty=raw["difficulty"],
+        estimated_minutes=raw["estimated_minutes"],
+        languages=raw["languages"],
+        tags=raw.get("tags") or [],
+        capabilities=raw.get("capabilities") or [],
+        repo=repo,
+        verification=verification,
+        constraints=constraints,
+        issue_description=issue_raw.get("description", ""),
+        files_to_examine=issue_raw.get("files_to_examine") or [],
+    )
+
+
+def load_task(path: Path) -> TaskDefinition:
+    with path.open() as f:
+        raw = yaml.safe_load(f)
+    schema = _load_schema()
+    validate(instance=raw, schema=schema)
+    return _parse_task(raw)
+
+
+def load_all_tasks(
+    tasks_dir: Path | None = None,
+    category: str | None = None,
+) -> list[TaskDefinition]:
+    root = tasks_dir or TASKS_DIR
+    paths = sorted(p for p in root.glob("**/*.yaml") if not p.name.startswith("_"))
+    tasks = []
+    for path in paths:
+        try:
+            task = load_task(path)
+        except (ValidationError, Exception):
+            continue
+        if category is None or task.category == category:
+            tasks.append(task)
+    return tasks
+
+
+def validate_task_yaml(path: Path) -> list[str]:
+    errors = []
+    try:
+        with path.open() as f:
+            raw = yaml.safe_load(f)
+    except yaml.YAMLError as e:
+        return [f"YAML parse error: {e}"]
+    schema = _load_schema()
+    try:
+        validate(instance=raw, schema=schema)
+    except ValidationError as e:
+        errors.append(e.message)
+    return errors

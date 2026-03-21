@@ -36,6 +36,15 @@
       "type": "array",
       "items": {"type": "string"}
     },
+    "capabilities": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "enum": ["code_comprehension", "bug_diagnosis", "multi_file_reasoning", "framework_knowledge", "test_writing", "refactoring_discipline", "security_awareness"]
+      },
+      "minItems": 1,
+      "maxItems": 3
+    },
     "repo": {
       "type": "object",
       "required": ["url", "commit"],

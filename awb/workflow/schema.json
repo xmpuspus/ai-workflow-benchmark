@@ -1,0 +1,38 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "AWB Workflow Descriptor",
+  "type": "object",
+  "required": ["spec", "name", "tool"],
+  "properties": {
+    "spec": {"type": "string", "const": "awb/v1"},
+    "name": {"type": "string", "minLength": 1},
+    "tool": {"type": "string", "enum": ["claude-code-vanilla", "claude-code-custom", "cursor", "aider"]},
+    "model": {"type": "string"},
+    "mode": {"type": "string", "enum": ["vanilla", "custom"]},
+    "config": {
+      "type": "object",
+      "properties": {
+        "max_turns": {"type": "integer", "minimum": 1},
+        "timeout_seconds": {"type": "integer", "minimum": 1},
+        "config_hash": {"type": "string"}
+      }
+    },
+    "environment": {
+      "type": "object",
+      "properties": {
+        "hooks_count": {"type": "integer"},
+        "agents_count": {"type": "integer"},
+        "skills_count": {"type": "integer"},
+        "claude_md_hash": {"type": "string"}
+      }
+    },
+    "metadata": {
+      "type": "object",
+      "properties": {
+        "author": {"type": "string"},
+        "created": {"type": "string", "format": "date-time"},
+        "description": {"type": "string"}
+      }
+    }
+  }
+}

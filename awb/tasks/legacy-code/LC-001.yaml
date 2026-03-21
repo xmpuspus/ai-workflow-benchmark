@@ -1,0 +1,104 @@
+id: LC-001
+category: legacy-code
+title: "Add type annotations to 5 untyped functions in legacy module without breaking callers"
+difficulty: easy
+estimated_minutes: 15
+languages: [python]
+tags: [typing, mypy, legacy, annotations]
+capabilities: [code_comprehension, refactoring_discipline]
+
+repo:
+  url: "https://github.com/tiangolo/fastapi"
+  commit: "628c34e0cae200564d191c95d7edea78c88c4b5e"
+  setup_commands:
+    - "python3 -m venv .venv && source .venv/bin/activate && pip install -e '.[all]' && pip install pytest httpx mypy"
+
+issue:
+  description: |
+    You have a legacy utility module with 5 functions that have no type
+    annotations. Your task is to add complete, correct type annotations to
+    all 5 functions so that mypy passes without errors.
+
+    Step 1 — Create the file legacy/utils.py with these 5 functions (no
+    annotations, exactly as shown):
+
+      def process_data(items, multiplier):
+          return [x * multiplier for x in items]
+
+      def validate_input(value, min_val, max_val):
+          return min_val <= value <= max_val
+
+      def format_output(data, prefix, separator):
+          return separator.join(f"{prefix}{item}" for item in data)
+
+      def merge_configs(base, override):
+          result = dict(base)
+          result.update(override)
+          return result
+
+      def parse_date(date_str, fmt):
+          from datetime import datetime
+          return datetime.strptime(date_str, fmt)
+
+    Step 2 — Create the file tests/test_legacy_utils.py that imports and
+    calls all 5 functions:
+
+      from legacy.utils import process_data, validate_input, format_output, merge_configs, parse_date
+
+      def test_process_data():
+          assert process_data([1, 2, 3], 2) == [2, 4, 6]
+
+      def test_validate_input():
+          assert validate_input(5, 1, 10) is True
+          assert validate_input(0, 1, 10) is False
+
+      def test_format_output():
+          assert format_output(["a", "b"], "x_", ", ") == "x_a, x_b"
+
+      def test_merge_configs():
+          assert merge_configs({"a": 1}, {"b": 2}) == {"a": 1, "b": 2}
+
+      def test_parse_date():
+          from datetime import datetime
+          result = parse_date("2024-01-15", "%Y-%m-%d")
+          assert result == datetime(2024, 1, 15)
+
+    Step 3 — Add type annotations to all 5 functions in legacy/utils.py.
+    The annotations must match the actual usage in the tests above. Use
+    modern Python 3.10+ syntax (list[int] not List[int]).
+
+    Requirements:
+    - All 5 functions must have annotated parameters and return types.
+    - mypy legacy/utils.py must pass with no errors.
+    - All tests in tests/test_legacy_utils.py must pass.
+    - Do not change the logic of any function, only add annotations.
+  files_to_examine:
+    - "legacy/utils.py"
+    - "tests/test_legacy_utils.py"
+
+verification:
+  test_commands:
+    - "source .venv/bin/activate && python3 -m pytest tests/test_legacy_utils.py -v"
+  lint_commands:
+    - "source .venv/bin/activate && ruff check legacy/utils.py"
+  security_commands: []
+  partial_credit:
+    - criterion: "All 5 functions have annotations"
+      points: 25
+      check: "grep -cE 'def .+\\(.+:.+\\).+->' legacy/utils.py | grep -q '^5$'"
+    - criterion: "Annotations match actual usage in tests"
+      points: 20
+      check: "source .venv/bin/activate && mypy legacy/utils.py --ignore-missing-imports"
+    - criterion: "mypy passes with no errors"
+      points: 20
+      check: "source .venv/bin/activate && mypy legacy/utils.py --ignore-missing-imports 2>&1 | grep -q 'Success'"
+    - criterion: "Existing function logic unchanged"
+      points: 15
+      check: "grep -q 'x \\* multiplier' legacy/utils.py"
+    - criterion: "Tests pass"
+      points: 20
+      check: "source .venv/bin/activate && python3 -m pytest tests/test_legacy_utils.py -v"
+
+constraints:
+  max_iterations: 15
+  timeout_seconds: 900

@@ -1,0 +1,106 @@
+id: CR-005
+category: code-review
+title: "Fix CORS wildcard misconfiguration and missing auth on admin endpoints"
+difficulty: medium
+estimated_minutes: 30
+languages: [python]
+tags: [fastapi, cors, authentication, security, middleware]
+capabilities: [security_awareness, code_comprehension]
+
+repo:
+  url: "https://github.com/tiangolo/fastapi"
+  commit: "628c34e0cae200564d191c95d7edea78c88c4b5e"
+  setup_commands:
+    - "python3 -m venv .venv && source .venv/bin/activate && pip install -e '.[all]' && pip install pytest httpx"
+
+issue:
+  description: |
+    A FastAPI application has two security issues that are commonly introduced
+    during rapid development and forgotten before production:
+
+      Issue 1 — CORS wildcard:
+        The app uses CORSMiddleware with allow_origins=["*"], which permits
+        any origin to make credentialed cross-origin requests. In production
+        this must be restricted to known origins.
+
+      Issue 2 — Unauthenticated admin endpoints:
+        Three admin endpoints (DELETE /admin/users/{id}, POST /admin/reset,
+        GET /admin/logs) have no authentication dependency. Any client that
+        knows the URL can call them without a token.
+
+    Create main.py with:
+      from fastapi.middleware.cors import CORSMiddleware
+      app.add_middleware(
+          CORSMiddleware,
+          allow_origins=["*"],
+          allow_credentials=True,
+          allow_methods=["*"],
+          allow_headers=["*"],
+      )
+
+    And 3 admin endpoints without auth:
+      @app.delete("/admin/users/{user_id}")
+      async def delete_user(user_id: int): ...
+
+      @app.post("/admin/reset")
+      async def reset_system(): ...
+
+      @app.get("/admin/logs")
+      async def get_logs(): ...
+
+    Fix Issue 1: replace allow_origins=["*"] with a specific list, e.g.:
+      ALLOWED_ORIGINS = ["https://app.example.com", "https://admin.example.com"]
+
+    Fix Issue 2: create an auth dependency in auth/dependencies.py:
+      async def require_admin_token(x_admin_token: str = Header(...)):
+          if x_admin_token != ADMIN_TOKEN:
+              raise HTTPException(status_code=401, detail="Unauthorized")
+
+    Add Depends(require_admin_token) to all 3 admin endpoints.
+
+    Create tests/test_security.py that:
+      - Verify that the CORS allow_origins setting is not ["*"] by inspecting
+        the middleware stack
+      - Test that GET /admin/logs without the admin token returns 401 or 422
+      - Test that GET /admin/logs WITH a valid token returns 200
+      - Test that DELETE /admin/users/1 without auth returns 401 or 422
+      - Test that POST /admin/reset without auth returns 401 or 422
+      - Use httpx.AsyncClient for async tests
+
+    Your task:
+      1. Create main.py with the wildcard CORS and unprotected admin endpoints.
+      2. Create auth/dependencies.py with the admin auth dependency.
+      3. Fix main.py: restrict CORS origins and add auth to all 3 admin endpoints.
+      4. Create tests/test_security.py and confirm all tests pass.
+  files_to_examine:
+    - "main.py"
+    - "auth/dependencies.py"
+    - "tests/test_security.py"
+
+verification:
+  test_commands:
+    - "source .venv/bin/activate && python3 -m pytest tests/test_security.py -v"
+  lint_commands:
+    - "source .venv/bin/activate && ruff check main.py auth/"
+  security_commands:
+    - "source .venv/bin/activate && bandit -r . -ll --exclude .venv 2>/dev/null || true"
+  partial_credit:
+    - criterion: "CORS allow_origins is not wildcard ['*']"
+      points: 20
+      check: "! grep -q 'allow_origins=\\[\"\\*\"\\]' main.py"
+    - criterion: "All 3 admin endpoints have Depends(require_admin_token)"
+      points: 25
+      check: "count=$(grep -c 'Depends' main.py); [ \"$count\" -ge 3 ]"
+    - criterion: "Tests for unauthorized access return 401/422"
+      points: 20
+      check: "grep -qE '401|422|Unauthorized' tests/test_security.py"
+    - criterion: "CORS origin restriction tested"
+      points: 15
+      check: "grep -qiE 'cors|allow_origins|origin' tests/test_security.py"
+    - criterion: "Tests pass"
+      points: 20
+      check: "source .venv/bin/activate && python3 -m pytest tests/test_security.py -v"
+
+constraints:
+  max_iterations: 20
+  timeout_seconds: 1200

@@ -1,0 +1,106 @@
+id: CR-001
+category: code-review
+title: "Review and fix 3 OWASP Top 10 issues in a Flask login flow"
+difficulty: medium
+estimated_minutes: 30
+languages: [python]
+tags: [flask, security, sql-injection, password-hashing, session-fixation, owasp]
+capabilities: [security_awareness, code_comprehension]
+
+repo:
+  url: "https://github.com/pallets/flask"
+  commit: "22d924701a6ae2e4cd01e9a15bbaf3946094af65"
+  setup_commands:
+    - "python3 -m venv .venv && source .venv/bin/activate && pip install -e '.[dev]' && pip install pytest bcrypt"
+
+issue:
+  description: |
+    A Flask authentication module has been written quickly and contains 3
+    well-known OWASP Top 10 vulnerabilities that must be identified and fixed.
+
+    Create auth/login.py with the following intentional flaws:
+
+      Flaw 1 — SQL Injection:
+        The user lookup builds its query with an f-string:
+          query = f"SELECT * FROM users WHERE username = '{username}'"
+          cursor.execute(query)
+        A username like "admin' OR '1'='1" bypasses authentication entirely.
+
+      Flaw 2 — Weak password hashing:
+        Passwords are stored and compared using MD5:
+          import hashlib
+          stored_hash = hashlib.md5(password.encode()).hexdigest()
+        MD5 is cryptographically broken and unsuitable for passwords.
+
+      Flaw 3 — Session token in URL (session fixation risk):
+        After successful login, the session token is appended to the redirect
+        URL as a query parameter:
+          return redirect(f"/dashboard?token={session_token}")
+        This exposes the token in browser history, server logs, and the
+        Referer header.
+
+    The module should also contain helper functions simulate_db_lookup() and
+    set_session() so the code is runnable in tests without a real database.
+
+    Create review/findings.md documenting each of the 3 vulnerabilities:
+      - Vulnerability name and OWASP category
+      - The exact lines in auth/login.py that are flawed
+      - Recommended fix
+
+    Fix all 3 vulnerabilities in auth/login.py:
+      - Replace f-string SQL with a parameterized query:
+          cursor.execute("SELECT * FROM users WHERE username = ?", (username,))
+      - Replace MD5 with bcrypt:
+          import bcrypt
+          hashed = bcrypt.hashpw(password.encode(), bcrypt.gensalt())
+          bcrypt.checkpw(password.encode(), stored_hash)
+      - Move the session token from the URL query param to an httponly cookie
+        or the Flask session object. The redirect URL must not contain the token.
+
+    Create tests/test_login.py that:
+      - Test that an injection-style username ("admin' OR '1'='1") does NOT
+        return a valid user from the lookup function
+      - Test that MD5 hashes are no longer used (bcrypt hashes start with "$2b$")
+      - Test that the response to a successful login does NOT contain the
+        session token in the Location header's query string
+
+    Your task:
+      1. Create auth/login.py with all 3 flaws.
+      2. Create review/findings.md documenting all 3 issues.
+      3. Fix all 3 in auth/login.py.
+      4. Create tests/test_login.py and confirm all tests pass.
+  files_to_examine:
+    - "auth/login.py"
+    - "review/findings.md"
+    - "tests/test_login.py"
+
+verification:
+  test_commands:
+    - "source .venv/bin/activate && python3 -m pytest tests/test_login.py -v"
+  lint_commands:
+    - "source .venv/bin/activate && ruff check auth/login.py"
+  security_commands:
+    - "source .venv/bin/activate && bandit -r auth/ -ll 2>/dev/null || true"
+  partial_credit:
+    - criterion: "SQL injection fixed with parameterized query"
+      points: 20
+      check: "! grep -q \"f\\\"SELECT\" auth/login.py && grep -qE 'execute\\(.*(\\?,|:username)' auth/login.py"
+    - criterion: "Password hashing upgraded from MD5 to bcrypt"
+      points: 20
+      check: "! grep -q 'hashlib.md5' auth/login.py && grep -q 'bcrypt' auth/login.py"
+    - criterion: "Session token removed from URL query parameters"
+      points: 15
+      check: "! grep -qE 'redirect.*token=' auth/login.py"
+    - criterion: "findings.md documents all 3 vulnerabilities"
+      points: 15
+      check: "test -f review/findings.md && grep -qi 'injection' review/findings.md && grep -qi 'md5\\|hash' review/findings.md && grep -qi 'session\\|token\\|url' review/findings.md"
+    - criterion: "Tests verify each fix"
+      points: 10
+      check: "grep -c 'def test_' tests/test_login.py | awk '{if($1>=3) exit 0; else exit 1}'"
+    - criterion: "Tests pass"
+      points: 20
+      check: "source .venv/bin/activate && python3 -m pytest tests/test_login.py -v"
+
+constraints:
+  max_iterations: 20
+  timeout_seconds: 1200

@@ -1,0 +1,78 @@
+id: BF-010
+category: bug-fix
+title: "Fix off-by-one in cursor pagination returning duplicate items at page boundary"
+difficulty: easy
+estimated_minutes: 15
+languages: [python]
+tags: [fastapi, pagination, api-design, off-by-one]
+capabilities: [bug_diagnosis, test_writing]
+
+repo:
+  url: "https://github.com/tiangolo/fastapi"
+  commit: "628c34e0cae200564d191c95d7edea78c88c4b5e"
+  setup_commands:
+    - "python3 -m venv .venv && source .venv/bin/activate && pip install -e '.[all]' && pip install pytest httpx"
+
+issue:
+  description: |
+    A cursor-based paginator returns the correct page contents but computes
+    the next cursor wrong — it points to the last item of the current page
+    instead of the first item of the next page. Callers who iterate all pages
+    will see the last item of each page repeated as the first item of the next.
+
+    Your task:
+    1. Create utils/pagination.py with:
+       def paginate(items: list, cursor: int, page_size: int) -> tuple:
+           page = items[cursor:cursor + page_size]
+           next_cursor = cursor + page_size - 1   # BUG: off by one
+           has_more = next_cursor < len(items)
+           return page, next_cursor if has_more else None
+
+       The bug: next_cursor should be cursor + page_size (the first index of
+       the next page). Setting it to cursor + page_size - 1 makes the next
+       call start one position back, returning the last item of the current
+       page again as the first item of the next page.
+
+    2. Create tests/test_pagination.py with:
+       - test_first_page: paginate([0..9], cursor=0, page_size=3) returns
+         ([0, 1, 2], 3) — page contains first 3 items, next cursor is 3
+       - test_second_page_no_overlap: paginate([0..9], cursor=3, page_size=3)
+         returns ([3, 4, 5], 6) — no overlap with first page
+       - test_last_page_returns_none: paginate([0..9], cursor=9, page_size=3)
+         returns ([9], None) — next_cursor is None when at end
+       - test_full_iteration_no_duplicates: iterate all pages starting at
+         cursor=0 with page_size=3 over items list(range(10)), collect all
+         returned items, assert len == 10 and no duplicates
+         (the key test — fails before fix, passes after)
+       - test_exact_multiple: list(range(9)) with page_size=3 — 3 full pages,
+         last next_cursor is None
+
+    The fix in utils/pagination.py:
+       next_cursor = cursor + page_size   # remove the -1
+  files_to_examine:
+    - "fastapi/routing.py"
+    - "tests/"
+
+verification:
+  test_commands:
+    - "source .venv/bin/activate && python3 -m pytest tests/test_pagination.py -v"
+  lint_commands:
+    - "source .venv/bin/activate && ruff check utils/pagination.py tests/test_pagination.py"
+  security_commands: []
+  partial_credit:
+    - criterion: "Off-by-one fixed: next_cursor = cursor + page_size"
+      points: 25
+      check: "grep -qE 'cursor \\+ page_size$|cursor\\+page_size$' utils/pagination.py"
+    - criterion: "Test iterates all pages collecting every item"
+      points: 25
+      check: "grep -qE 'while|for.*page|collect|all_items' tests/test_pagination.py"
+    - criterion: "Test asserts no duplicate items across pages"
+      points: 25
+      check: "grep -qE 'duplicate|set\\(|len.*==|assert.*10' tests/test_pagination.py"
+    - criterion: "Tests pass"
+      points: 25
+      check: "source .venv/bin/activate && python3 -m pytest tests/test_pagination.py -v"
+
+constraints:
+  max_iterations: 15
+  timeout_seconds: 900

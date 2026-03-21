@@ -1,0 +1,70 @@
+id: DB-003
+category: debugging
+title: "Trace why API returns 200 but response body is missing expected fields"
+difficulty: easy
+estimated_minutes: 15
+languages: [python]
+tags: [fastapi, pydantic, response-model, field-stripping]
+capabilities: [bug_diagnosis, framework_knowledge]
+
+repo:
+  url: "https://github.com/tiangolo/fastapi"
+  commit: "628c34e0cae200564d191c95d7edea78c88c4b5e"
+  setup_commands:
+    - "python3 -m venv .venv && source .venv/bin/activate && pip install -e '.[all]' && pip install pytest httpx"
+
+issue:
+  description: |
+    A FastAPI endpoint returns HTTP 200 but the client is only seeing two
+    fields in the response body when it expects four. No error is raised and
+    the developer is confused why data silently disappears.
+
+    Your task:
+    1. Create app/main.py with:
+       - A Pydantic response model UserPublic that declares only `id` and
+         `username`.
+       - A GET /users/{user_id} endpoint that uses UserPublic as its
+         response_model and returns a dict with four keys: id, username,
+         email, and role.
+    2. Reproduce the issue: call the endpoint and observe that email and role
+       are absent from the response body despite the handler returning them.
+    3. Identify that FastAPI uses the response_model to serialize the response,
+       silently excluding any fields not declared in the model.
+    4. Fix the issue using one of these approaches:
+       - Add email and role fields to UserPublic.
+       - Use response_model_exclude_unset=True and ensure the model includes
+         all fields (not a fix for stripping — clarify the right approach).
+       - Set response_model=None if no filtering is desired.
+       The preferred fix is adding the missing fields to UserPublic.
+    5. Create tests/test_users.py that:
+       - Calls GET /users/1 via TestClient.
+       - Asserts status code 200.
+       - Asserts all four fields (id, username, email, role) are present in
+         the response JSON.
+  files_to_examine:
+    - "app/main.py"
+    - "tests/test_users.py"
+
+verification:
+  test_commands:
+    - "source .venv/bin/activate && python3 -m pytest tests/test_users.py -v"
+  lint_commands:
+    - "source .venv/bin/activate && ruff check app/ tests/test_users.py"
+  security_commands: []
+  partial_credit:
+    - criterion: "response_model identified as the cause of field stripping"
+      points: 25
+      check: "grep -q 'response_model' app/main.py"
+    - criterion: "Response model updated to include all four fields or model removed"
+      points: 25
+      check: "grep -qE 'email|response_model=None' app/main.py"
+    - criterion: "Test asserts all four fields present in response"
+      points: 25
+      check: "grep -qE 'email.*role|role.*email' tests/test_users.py"
+    - criterion: "Tests pass"
+      points: 25
+      check: "source .venv/bin/activate && python3 -m pytest tests/test_users.py -v"
+
+constraints:
+  max_iterations: 15
+  timeout_seconds: 900

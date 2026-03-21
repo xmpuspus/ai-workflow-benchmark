@@ -1,0 +1,86 @@
+id: DB-007
+category: debugging
+title: "Trace data corruption through a 3-stage ETL pipeline to find the dropping stage"
+difficulty: hard
+estimated_minutes: 45
+languages: [python]
+tags: [etl, data-pipeline, none-handling, python-gotchas]
+capabilities: [bug_diagnosis, multi_file_reasoning, code_comprehension]
+
+repo:
+  url: "https://github.com/tiangolo/fastapi"
+  commit: "628c34e0cae200564d191c95d7edea78c88c4b5e"
+  setup_commands:
+    - "python3 -m venv .venv && source .venv/bin/activate && pip install -e '.[all]' && pip install pytest"
+
+issue:
+  description: |
+    An ETL pipeline processes records through three stages: extract, transform,
+    and load. Input contains 10 records but only 7 reach the database. No
+    exception is raised. The developer suspects one stage silently drops rows.
+
+    The bug is in the transform stage. The filter condition reads:
+        if row.get("amount") > 0
+    When `amount` is None (missing from some records), Python raises
+    TypeError: '>' not supported between instances of 'NoneType' and 'int'
+    — but the pipeline wraps the transform call in a broad except that swallows
+    the error and skips the row. When `amount` is absent entirely,
+    `dict.get("amount")` returns None, which has the same effect.
+
+    The correct guard is: `if (row.get("amount") or 0) > 0`
+
+    Your task:
+    1. Create etl/extract.py with a function extract(path) that reads a CSV
+       file and returns a list of dicts. The CSV will have columns: id, name,
+       amount. Some rows have amount="" or amount missing entirely.
+    2. Create etl/transform.py with a function transform(rows) that filters
+       rows where amount > 0 and adds an "enriched" key. Include the buggy
+       condition as described above inside a try/except that silently skips
+       failing rows.
+    3. Create etl/load.py with a function load(rows) that appends each row
+       to an in-memory list DB = [] and returns the count inserted.
+    4. Create etl/pipeline.py with a function run(path) that calls extract →
+       transform → load in sequence and returns the count of rows loaded.
+    5. Create tests/test_pipeline.py that:
+       - Creates a temporary CSV with 10 rows: 7 with valid positive amounts,
+         2 with amount=None/empty, 1 with amount=0.
+       - Calls run() and asserts 7 rows are loaded (the 3 edge cases drop).
+       - Traces through each stage individually to pinpoint transform as the
+         dropping stage.
+       - After fixing the bug, asserts the None/empty rows are handled
+         correctly (treated as 0, not dropped by TypeError).
+       - Covers edge cases: amount=0 (should be excluded), amount=None
+         (should not raise), amount key absent (should not raise).
+  files_to_examine:
+    - "etl/extract.py"
+    - "etl/transform.py"
+    - "etl/load.py"
+    - "etl/pipeline.py"
+    - "tests/test_pipeline.py"
+
+verification:
+  test_commands:
+    - "source .venv/bin/activate && python3 -m pytest tests/test_pipeline.py -v"
+  lint_commands:
+    - "source .venv/bin/activate && ruff check etl/ tests/test_pipeline.py"
+  security_commands: []
+  partial_credit:
+    - criterion: "Transform stage identified as the row-dropping stage"
+      points: 20
+      check: "grep -qE 'transform|etl/transform' tests/test_pipeline.py"
+    - criterion: "None-safe amount comparison applied"
+      points: 20
+      check: "grep -qE 'or 0|is None|not None' etl/transform.py"
+    - criterion: "Test traces through all three stages individually"
+      points: 20
+      check: "grep -qE 'extract|transform|load' tests/test_pipeline.py"
+    - criterion: "Edge cases covered: amount=0, amount=None, amount absent"
+      points: 15
+      check: "grep -qE 'amount.*0|amount.*None|None.*amount' tests/test_pipeline.py"
+    - criterion: "Tests pass"
+      points: 25
+      check: "source .venv/bin/activate && python3 -m pytest tests/test_pipeline.py -v"
+
+constraints:
+  max_iterations: 25
+  timeout_seconds: 1800

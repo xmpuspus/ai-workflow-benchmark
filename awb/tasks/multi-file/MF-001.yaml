@@ -1,0 +1,80 @@
+id: MF-001
+category: multi-file
+title: "Add in-memory response cache with TTL to httpx client"
+difficulty: hard
+estimated_minutes: 45
+languages: [python]
+tags: [httpx, caching, multi-file, ttl, async]
+capabilities: [multi_file_reasoning, test_writing, framework_knowledge]
+
+repo:
+  url: "https://github.com/encode/httpx"
+  commit: "26d48e0634e6ee9cdc0533996db289ce4b430177"
+  setup_commands:
+    - "python3 -m venv .venv && source .venv/bin/activate && pip install -e '.[cli,http2]' && pip install pytest pytest-asyncio pytest-trio trustme"
+
+issue:
+  description: |
+    Add an in-memory HTTP response cache with TTL support to httpx. The cache
+    must work with both sync (Client) and async (AsyncClient) clients without
+    adding any new external dependencies.
+
+    Your task:
+    1. Create httpx/_cache.py with:
+       - A ResponseCache class with configurable max_size and default_ttl
+       - Cache key generation from request method + URL + sorted query params
+       - TTL-based expiration (entries expire after ttl seconds)
+       - LRU eviction when max_size is reached
+       - Thread-safe for sync usage, async-safe for async usage
+       - Only cache GET requests with 200 status codes
+       - Respect Cache-Control: no-cache and no-store headers
+    2. Modify httpx/_config.py to add cache configuration:
+       - Add optional cache parameter to client config
+       - Default: no caching (backward compatible)
+    3. Create tests/test_response_cache.py with:
+       - Unit tests for the cache class (set, get, expiry, eviction)
+       - Integration tests showing cached responses are returned
+       - Tests for cache miss on POST, non-200, expired entries
+       - Tests for Cache-Control header respect
+       - Both sync and async test variants
+    4. No external dependencies - use only stdlib (time, threading, asyncio,
+       collections, hashlib)
+
+    Architecture constraint: The cache module must be self-contained in
+    _cache.py. The config change should be minimal (adding an optional param).
+    The client integration can be done via a transport wrapper or middleware.
+  files_to_examine:
+    - "httpx/_config.py"
+    - "httpx/_client.py"
+    - "httpx/_models.py"
+    - "tests/"
+
+verification:
+  test_commands:
+    - "source .venv/bin/activate && python3 -m pytest tests/test_response_cache.py -v"
+  lint_commands:
+    - "source .venv/bin/activate && ruff check httpx/_cache.py tests/test_response_cache.py"
+  security_commands: []
+  partial_credit:
+    - criterion: "Cache module created with TTL support"
+      points: 20
+      check: "grep -qE 'ttl|TTL|expire' httpx/_cache.py && grep -qE 'class.*Cache' httpx/_cache.py"
+    - criterion: "LRU eviction implemented"
+      points: 15
+      check: "grep -qiE 'lru|evict|max_size|OrderedDict' httpx/_cache.py"
+    - criterion: "No external dependencies (only stdlib imports)"
+      points: 10
+      check: "! grep -qE '^from [a-z]|^import [a-z]' httpx/_cache.py || grep -qE '^import (time|threading|asyncio|collections|hashlib|typing)' httpx/_cache.py"
+    - criterion: "Cache-Control header handling"
+      points: 15
+      check: "grep -qiE 'cache.control|no.cache|no.store' httpx/_cache.py"
+    - criterion: "Tests cover sync and async"
+      points: 15
+      check: "grep -qE 'async.*def.*test' tests/test_response_cache.py && grep -qE 'def test_' tests/test_response_cache.py"
+    - criterion: "Tests pass"
+      points: 25
+      check: "source .venv/bin/activate && python3 -m pytest tests/test_response_cache.py -v"
+
+constraints:
+  max_iterations: 30
+  timeout_seconds: 2400

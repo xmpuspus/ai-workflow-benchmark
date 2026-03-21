@@ -1,0 +1,98 @@
+id: BF-011
+category: bug-fix
+title: "Fix retry transport retrying 401 responses it should treat as final"
+difficulty: easy
+estimated_minutes: 15
+languages: [python]
+tags: [httpx, retry, transport, http-status]
+capabilities: [bug_diagnosis, framework_knowledge]
+
+repo:
+  url: "https://github.com/encode/httpx"
+  commit: "26d48e0634e6ee9cdc0533996db289ce4b430177"
+  setup_commands:
+    - "python3 -m venv .venv && source .venv/bin/activate && pip install -e '.[cli,http2]' && pip install pytest"
+
+issue:
+  description: |
+    A custom httpx transport wrapper retries on ALL non-200 responses,
+    including 401 Unauthorized and 404 Not Found. Auth failures and
+    missing resources are not transient — retrying them wastes time and
+    can trigger account lockouts on some APIs.
+
+    Your task:
+    1. Create client/retry_transport.py with:
+       import httpx
+
+       RETRYABLE_STATUS_CODES = {200}  # BUG: only 200 is "success", everything
+                                        # else is retried — this is inverted logic
+
+       class RetryTransport(httpx.BaseTransport):
+           def __init__(self, wrapped: httpx.BaseTransport, max_retries: int = 3):
+               self.wrapped = wrapped
+               self.max_retries = max_retries
+
+           def handle_request(self, request: httpx.Request) -> httpx.Response:
+               for attempt in range(self.max_retries + 1):
+                   response = self.wrapped.handle_request(request)
+                   if response.status_code in RETRYABLE_STATUS_CODES:
+                       return response
+                   if attempt < self.max_retries:
+                       continue   # retry everything not in RETRYABLE_STATUS_CODES
+               return response
+
+       THE BUG: The logic retries whenever status is NOT 200. It should only
+       retry on transient server errors: 429, 500, 502, 503, 504. Client
+       errors (4xx except 429) and redirects are final responses.
+
+    2. Create tests/test_retry_transport.py with:
+       Use httpx.MockTransport to simulate server responses without network.
+       Create a helper that builds a MockTransport returning a fixed sequence
+       of status codes, e.g., [503, 503, 200] simulates two transient failures
+       then success.
+
+       - test_401_not_retried: MockTransport returns 401 on first call.
+         Assert handle_request is called exactly once (no retry).
+         Assert returned response status is 401.
+       - test_404_not_retried: same but with 404.
+       - test_503_retried: MockTransport returns [503, 200].
+         Assert handle_request called twice and final status is 200.
+       - test_429_retried: MockTransport returns [429, 429, 200].
+         Assert called 3 times and final status is 200.
+       - test_max_retries_exhausted: MockTransport always returns 503.
+         After max_retries+1 attempts, returns 503 (does not raise).
+
+    The fix: replace RETRYABLE_STATUS_CODES with RETRYABLE_STATUS_CODES:
+       RETRYABLE_STATUS_CODES = {429, 500, 502, 503, 504}
+
+    And invert the retry condition:
+       if response.status_code not in RETRYABLE_STATUS_CODES:
+           return response
+  files_to_examine:
+    - "httpx/_transports/default.py"
+    - "httpx/_client.py"
+    - "tests/"
+
+verification:
+  test_commands:
+    - "source .venv/bin/activate && python3 -m pytest tests/test_retry_transport.py -v"
+  lint_commands:
+    - "source .venv/bin/activate && ruff check client/retry_transport.py tests/test_retry_transport.py"
+  security_commands: []
+  partial_credit:
+    - criterion: "RETRYABLE_STATUS_CODES contains 429, 500, 502, 503, 504"
+      points: 25
+      check: "grep -qE '429.*503|503.*429|RETRYABLE.*5[0-9][0-9]' client/retry_transport.py"
+    - criterion: "Test proves 401 is not retried"
+      points: 25
+      check: "grep -qE '401.*not_retried|test_401|assert.*401' tests/test_retry_transport.py"
+    - criterion: "Test proves 503 is retried"
+      points: 25
+      check: "grep -qE '503.*retried|test_503|503.*200' tests/test_retry_transport.py"
+    - criterion: "Tests pass"
+      points: 25
+      check: "source .venv/bin/activate && python3 -m pytest tests/test_retry_transport.py -v"
+
+constraints:
+  max_iterations: 15
+  timeout_seconds: 900

@@ -1,0 +1,100 @@
+id: MF-003
+category: multi-file
+title: "Add a complete JWT authentication system across 7 coordinated files"
+difficulty: hard
+estimated_minutes: 45
+languages: [python]
+tags: [fastapi, jwt, auth, bcrypt, pydantic, dependency-injection]
+capabilities: [multi_file_reasoning, framework_knowledge, test_writing]
+
+repo:
+  url: "https://github.com/tiangolo/fastapi"
+  commit: "628c34e0cae200564d191c95d7edea78c88c4b5e"
+  setup_commands:
+    - "python3 -m venv .venv && source .venv/bin/activate && pip install -e '.[all]' && pip install pytest httpx pyjwt 'passlib[bcrypt]'"
+
+issue:
+  description: |
+    Build a complete JWT authentication system for a FastAPI application.
+    All seven files must work together end-to-end. No file may import from
+    another in a way that creates circular dependencies.
+
+    Files to create:
+
+    auth/models.py
+      - An in-memory user store (a dict mapping username → user record).
+      - A User dataclass or TypedDict with fields: id, username, hashed_password.
+
+    auth/schemas.py
+      - Pydantic models: RegisterRequest (username, password),
+        LoginRequest (username, password), TokenResponse (access_token,
+        token_type), UserResponse (id, username).
+
+    auth/security.py
+      - hash_password(plain: str) -> str using passlib bcrypt.
+      - verify_password(plain: str, hashed: str) -> bool.
+      - create_token(username: str) -> str using PyJWT (HS256, 30-minute exp).
+      - decode_token(token: str) -> dict, raising ValueError on invalid/expired.
+
+    auth/dependencies.py
+      - get_current_user(token: str = Depends(oauth2_scheme)) -> UserResponse.
+      - Calls decode_token, looks up user in the store, raises 401 if not found.
+
+    auth/router.py
+      - POST /register: hashes password, stores user, returns UserResponse.
+      - POST /login: verifies password, returns TokenResponse.
+      - GET /me: protected by get_current_user dependency, returns UserResponse.
+
+    app/main.py
+      - Creates the FastAPI app and includes the auth router with prefix /auth.
+
+    tests/test_auth.py
+      - Test: register a new user → 201, username in response.
+      - Test: login with correct password → 200, access_token in response.
+      - Test: GET /auth/me with valid token → 200, correct username.
+      - Test: GET /auth/me with invalid token → 401.
+      - Test: register duplicate username → 400.
+
+    The SECRET_KEY for JWT should be read from an environment variable
+    AUTH_SECRET_KEY (default to a fixed test string if not set, but never
+    hardcode a production key in source).
+  files_to_examine:
+    - "auth/"
+    - "app/main.py"
+    - "tests/test_auth.py"
+
+verification:
+  test_commands:
+    - "source .venv/bin/activate && python3 -m pytest tests/test_auth.py -v"
+  lint_commands:
+    - "source .venv/bin/activate && ruff check auth/ app/ tests/test_auth.py"
+  security_commands: []
+  partial_credit:
+    - criterion: "User model and in-memory store created"
+      points: 10
+      check: "grep -qE 'hashed_password|USER_STORE|user_store' auth/models.py"
+    - criterion: "JWT create and decode utilities work"
+      points: 10
+      check: "grep -qE 'create_token|decode_token' auth/security.py"
+    - criterion: "Password hashing uses bcrypt"
+      points: 10
+      check: "grep -q 'bcrypt' auth/security.py"
+    - criterion: "get_current_user dependency raises 401 on invalid token"
+      points: 10
+      check: "grep -qE '401|status_code=401' auth/dependencies.py"
+    - criterion: "Register endpoint stores user and returns UserResponse"
+      points: 10
+      check: "grep -q 'register' auth/router.py"
+    - criterion: "Login endpoint returns access_token"
+      points: 10
+      check: "grep -q 'access_token' auth/router.py"
+    - criterion: "GET /me endpoint protected by dependency"
+      points: 10
+      check: "grep -qE 'get_current_user|Depends' auth/router.py"
+    - criterion: "Tests pass"
+      points: 30
+      check: "source .venv/bin/activate && python3 -m pytest tests/test_auth.py -v"
+
+constraints:
+  max_iterations: 30
+  timeout_seconds: 2400

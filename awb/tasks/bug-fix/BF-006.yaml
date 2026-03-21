@@ -1,0 +1,104 @@
+id: BF-006
+category: bug-fix
+title: "Fix async generator leaking database connections when service raises"
+difficulty: hard
+estimated_minutes: 45
+languages: [python]
+tags: [fastapi, async, database, resource-management, generator]
+capabilities: [bug_diagnosis, code_comprehension]
+
+repo:
+  url: "https://github.com/tiangolo/fastapi"
+  commit: "628c34e0cae200564d191c95d7edea78c88c4b5e"
+  setup_commands:
+    - "python3 -m venv .venv && source .venv/bin/activate && pip install -e '.[all]' && pip install pytest httpx pytest-asyncio"
+
+issue:
+  description: |
+    A FastAPI dependency uses an async generator to manage database sessions.
+    When the route handler raises an exception, the generator's cleanup code
+    never runs, leaking the connection. Simulate and fix the leak.
+
+    Your task:
+    1. Create db/connection.py with a connection pool simulator and async
+       generator dependency:
+
+       class FakePool:
+           def __init__(self):
+               self.checked_out = 0
+               self.closed = 0
+
+           def acquire(self):
+               self.checked_out += 1
+               return self
+
+           def release(self):
+               self.closed += 1
+
+       pool = FakePool()
+
+       async def get_db():
+           session = pool.acquire()
+           yield session          # BUG: no try/finally — release never called on error
+           pool.release()
+
+    2. Create services/user_service.py with:
+       async def get_user(user_id: int, db):
+           if user_id <= 0:
+               raise ValueError("user_id must be positive")
+           return {"id": user_id, "name": "Alice"}
+
+    3. Create tests/test_db_cleanup.py with:
+       - test_cleanup_on_success: uses get_db() generator normally and verifies
+         pool.closed == pool.checked_out after the call
+       - test_leak_on_error_before_fix: demonstrates the bug — when the consumer
+         of get_db() raises inside the async with block, pool.closed is less than
+         pool.checked_out (connection leaked)
+       - test_cleanup_on_error_after_fix: after fixing get_db() with try/finally,
+         even when the consumer raises, pool.closed == pool.checked_out
+
+    The fix is to wrap the yield in try/finally:
+       async def get_db():
+           session = pool.acquire()
+           try:
+               yield session
+           finally:
+               pool.release()
+
+    Write the test for the error path using an async generator consumer that
+    throws an exception after receiving the session:
+       async def consume_with_error(gen):
+           async for session in gen:
+               raise RuntimeError("simulated error")
+
+    Run the generator with asyncio.run() or pytest-asyncio @pytest.mark.asyncio.
+  files_to_examine:
+    - "fastapi/dependencies/utils.py"
+    - "tests/"
+
+verification:
+  test_commands:
+    - "source .venv/bin/activate && python3 -m pytest tests/test_db_cleanup.py -v"
+  lint_commands:
+    - "source .venv/bin/activate && ruff check db/ services/ tests/test_db_cleanup.py"
+  security_commands: []
+  partial_credit:
+    - criterion: "try/finally added to get_db generator"
+      points: 25
+      check: "grep -qE 'try|finally' db/connection.py"
+    - criterion: "pool.release() is in the finally block"
+      points: 20
+      check: "grep -A3 'finally' db/connection.py | grep -q 'release'"
+    - criterion: "Test for error path exists"
+      points: 20
+      check: "grep -qE 'error|raise|exception' tests/test_db_cleanup.py"
+    - criterion: "Test verifies pool checked_out equals closed after error"
+      points: 15
+      check: "grep -qE 'checked_out|closed' tests/test_db_cleanup.py"
+    - criterion: "Tests pass"
+      points: 20
+      check: "source .venv/bin/activate && python3 -m pytest tests/test_db_cleanup.py -v"
+
+constraints:
+  max_iterations: 25
+  timeout_seconds: 1800
