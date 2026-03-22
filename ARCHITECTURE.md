@@ -2,6 +2,8 @@
 
 ## System Overview
 
+AWB is a CLI tool with six primary commands. The diagram below shows how each command maps to its backend engine. Commands are color-coded by function: blue for benchmark execution and comparison, amber for analysis and submission workflows, and green for validation and reporting utilities. This separation matters because benchmark execution (blue path) is the hot path that must handle timeouts, subprocess management, and async I/O, while analysis (amber path) operates on saved results and can run without any tool installed.
+
 ```mermaid
 %%{init: {'theme': 'base', 'themeVariables': {'primaryColor': '#2563eb', 'primaryTextColor': '#ffffff', 'primaryBorderColor': '#1d4ed8', 'secondaryColor': '#f59e0b', 'secondaryTextColor': '#1f2937', 'tertiaryColor': '#10b981', 'tertiaryTextColor': '#ffffff', 'lineColor': '#6b7280', 'fontSize': '14px'}}}%%
 graph TB
@@ -25,7 +27,17 @@ graph TB
 
 ## Benchmark Run Pipeline
 
-The core execution flow from task selection to scored result:
+This is the core of what AWB does. Every benchmark run follows this exact five-stage pipeline, and understanding it is essential to understanding why scores come out the way they do.
+
+**Stage 1 (Prepare)** clones the target repo at a pinned commit SHA and runs setup commands (venv creation, dependency installation). This ensures every tool starts from identical state — no run inherits artifacts from a previous one.
+
+**Stage 2 (Baseline)** counts lint warnings and security findings *before* the AI tool touches anything. This baseline is compared against post-run counts to measure whether the tool improved or degraded code quality, rather than penalizing tools for pre-existing issues in the repo.
+
+**Stage 3 (Execute)** hands the task prompt to the tool adapter, which runs the AI tool as a subprocess. Stream events (token counts, tool calls, model info) are parsed in real-time to capture cost and iteration metrics without waiting for the tool to finish.
+
+**Stage 4 (Verify)** runs the test suite, evaluates partial credit criteria, and re-counts lint/security issues. This is completely tool-agnostic — every tool is measured by the same test commands and rubric, ensuring fair comparison.
+
+**Stage 5 (Score)** normalizes all raw metrics through sigmoid curves with per-task baselines, then produces both a weighted composite score and a capability profile mapping results to the 8 capability dimensions.
 
 ```mermaid
 %%{init: {'theme': 'base', 'themeVariables': {'primaryColor': '#2563eb', 'primaryTextColor': '#fff', 'lineColor': '#6b7280', 'fontSize': '13px'}}}%%
@@ -82,6 +94,12 @@ flowchart LR
 ```
 
 ## Module Dependency Graph
+
+This diagram shows how AWB's 7 packages depend on each other. The architecture follows a strict layered pattern: the CLI layer at the top orchestrates everything but contains no logic itself; the Core layer owns execution and data; Adapters, Verification, and Scoring are peer modules that the Core layer calls; Analysis and Submission sit on top of Scoring and operate on saved results.
+
+The key design constraint visible here is that **Scoring never depends on Core** (no circular dependency). Scoring modules only know about dataclasses defined in `config.py`, not about the runner or adapters. This means scoring can be tested and used independently — you can score an externally submitted JSON file without any AI tool installed.
+
+The Adapter inheritance is also visible: `ClaudeCodeCustomAdapter` extends `ClaudeCodeVanillaAdapter`, adding the user's `~/.claude` configuration on top of the vanilla baseline. This inheritance is what makes the vanilla-vs-custom comparison fair — they share all execution logic and differ only in configuration.
 
 ```mermaid
 %%{init: {'theme': 'base', 'themeVariables': {'fontSize': '13px', 'lineColor': '#6b7280'}}}%%
@@ -176,6 +194,12 @@ graph TD
 
 ## Scoring Pipeline
 
+This diagram traces how a single task's raw metrics become a composite score. It is the most important diagram for understanding AWB's scoring system and why it produces the scores it does.
+
+The pipeline has four layers. **Raw Metrics** (gray) are the direct measurements: did tests pass, how many partial credit points were earned, how much did it cost, how long did it take. **Per-Task Baselines** (blue) are derived from the task's difficulty level — a hard task costing $2.00 is scored differently than an easy task costing $2.00, because the baselines are $1.00/$3.00 for hard vs $0.05/$0.30 for easy. **Sigmoid Normalization** (purple) maps each raw metric to a 0-100 score using the formula `score = 100 / (1 + exp(k * (value - baseline)))`, which produces ~95 at the optimal value, ~50 at the baseline, and smoothly decays toward 0 for worse values without ever going negative. **Weights** (amber) apply the configured importance of each dimension — correctness at 55% dominates because a tool that gets the wrong answer fast and cheap should not outscore one that gets it right.
+
+The composite score at the bottom is the final number that appears on the leaderboard. It ranges from 0 to 100 and is directly comparable across tools, models, and configurations.
+
 ```mermaid
 %%{init: {'theme': 'base', 'themeVariables': {'fontSize': '13px'}}}%%
 flowchart TD
@@ -244,6 +268,14 @@ flowchart TD
 
 ## Task Schema
 
+This class diagram shows the data model for a single benchmark task. Every task YAML is validated against a JSON Schema and then parsed into these dataclasses.
+
+The design captures three concerns separately. **TaskRepo** pins the exact code state (URL + commit SHA + setup commands) so every tool starts from identical source. **TaskVerification** defines how success is measured — test commands for binary pass/fail, partial credit criteria for graduated scoring, and lint/security commands for quality deltas. **TaskConstraints** sets the resource limits (max iterations, timeout) so no tool can brute-force its way to a solution by running indefinitely.
+
+**TaskBaselines** is derived at scoring time, not stored in the YAML. It computes per-task scoring baselines from the difficulty level and constraints, ensuring that a 45-minute hard task and a 15-minute easy task are scored on appropriate scales rather than against a single global baseline.
+
+The `capabilities` field on `TaskDefinition` is what enables capability profiling — each task declares which 1-3 skills it tests (e.g., `bug_diagnosis`, `multi_file_reasoning`), and aggregate scores per capability reveal where a workflow is strong or weak.
+
 ```mermaid
 %%{init: {'theme': 'base', 'themeVariables': {'fontSize': '12px'}}}%%
 classDiagram
@@ -304,6 +336,14 @@ classDiagram
 ```
 
 ## Result Data Model
+
+This class diagram shows what AWB records for each benchmark run and how raw results flow into scored outputs.
+
+**RunResult** is the primary record written to disk as JSON after each task execution. It captures everything needed to reproduce and analyze the run: which task, which tool, which model, the outcome (pass/fail + partial credit breakdown), performance metrics (time, iterations, tool calls), cost (tokens + estimated USD), quality deltas (lint/security changes), and environment (OS, hardware). The `workflow` field optionally captures the tool's configuration hash for reproducibility verification.
+
+**RunOutcome** separates binary success from graduated partial credit. A tool that writes correct code but whose tests fail gets `success=false` but may still earn 80/100 partial credit points — this distinction is critical for gap analysis, which classifies failures differently based on how far the tool got.
+
+**TaskScore** is computed at analysis time (not stored on disk). It holds the sigmoid-normalized per-metric scores and the difficulty-weighted composite. **CapabilityProfile** aggregates TaskScores across all tasks that test a given capability, producing the radar chart data. The `confidence` field on each CapabilityScore reflects sample size — a capability tested by 2 tasks has lower confidence than one tested by 20.
 
 ```mermaid
 %%{init: {'theme': 'base', 'themeVariables': {'fontSize': '12px'}}}%%
@@ -374,6 +414,14 @@ classDiagram
 
 ## Gap Analysis Flow
 
+This diagram shows what happens when you run `awb gap`. Unlike scoring (which produces numbers), gap analysis produces *explanations* — it tells you why your workflow scored the way it did and what to change.
+
+The flow has three stages. **Classify Failures** categorizes each non-passing task into one of four failure modes: `timeout` (tool ran out of time), `test_error` (tool wrote code but tests fail — the most common failure mode), `partial_completion` (some criteria pass but not all), and `code_error` (zero partial credit — the tool went completely wrong). This classification matters because each failure mode suggests different improvements.
+
+**Pattern Detection** looks across all failures for systematic weaknesses. It checks whether the tool fails 70%+ of tasks testing a specific capability (e.g., "fails all multi_file_reasoning tasks"), whether there's a difficulty cliff (passes easy, fails hard), and whether the tool burns tokens on tasks it ultimately fails (spending >$1 on a failed task suggests the tool should have stopped earlier).
+
+**Gap Report** synthesizes everything into actionable output: a capability radar showing per-dimension scores, ranked improvement actions based on frequency across failures, and rule-based workflow suggestions mapped to (failure_category, capability) pairs. The suggestions are deterministic (not LLM-generated) so they're reproducible across runs.
+
 ```mermaid
 %%{init: {'theme': 'base', 'themeVariables': {'fontSize': '13px'}}}%%
 flowchart LR
@@ -414,6 +462,12 @@ flowchart LR
 ```
 
 ## Tool Adapter Interface
+
+This class diagram shows how AWB integrates with different AI coding tools. The `ToolAdapter` abstract base class defines the contract every tool must implement: `execute()` to run the tool on a task, `check_available()` to verify the tool is installed, and `get_config_hash()` to fingerprint the tool's configuration for reproducibility.
+
+The inheritance hierarchy reveals the vanilla-vs-custom comparison design. `ClaudeCodeVanillaAdapter` runs Claude Code with an isolated config directory (`/tmp/awb-vanilla-claude`) and `CLAUDE_SKIP_HOOKS=1`, stripping all workflow customization. `ClaudeCodeCustomAdapter` extends it to use the user's real `~/.claude` directory with all their hooks, agents, skills, and CLAUDE.md intact. Both adapters share the same execution logic — the only difference is the configuration environment. This is what makes the benchmark measure workflow contribution rather than tool capability.
+
+`CursorAdapter` and `AiderAdapter` are stubs awaiting community implementation. The ABC ensures any new adapter will be compatible with the full benchmark pipeline without modifications to the runner, scorer, or CLI.
 
 ```mermaid
 %%{init: {'theme': 'base', 'themeVariables': {'fontSize': '12px'}}}%%
@@ -467,7 +521,7 @@ classDiagram
 ```
 ai-workflow-benchmark/
 ├── awb/
-│   ├── cli.py                    # Click CLI (run, gap, compare, submit, validate, leaderboard)
+│   ├── cli.py                    # Click CLI (run, gap, compare, export, submit, quickstart, info, etc.)
 │   ├── core/
 │   │   ├── config.py             # Dataclasses, METRIC_WEIGHTS, paths
 │   │   ├── task_loader.py        # YAML + JSON Schema validation
@@ -528,7 +582,6 @@ ai-workflow-benchmark/
 │   ├── submission-schema.json    # External submission schema
 │   └── runs/                     # Run outputs (gitignored)
 ├── scripts/                      # Utility scripts
-├── demos/                        # Demo GIFs
 ├── README.md
 ├── METHODOLOGY.md
 ├── ARCHITECTURE.md
