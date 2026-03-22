@@ -111,19 +111,19 @@ Tasks are drawn from real open-source repositories at pinned commits. Synthetic 
 
 | Category | Count | Rationale |
 |----------|-------|-----------|
-| bug-fix | 10 | Most common real-world task |
-| feature-addition | 8 | Tests reasoning about extension points and conventions |
-| refactoring | 10 | Tests semantic preservation across multi-file changes |
-| code-review | 7 | Tests security awareness and systematic analysis |
-| debugging | 7 | Tests hypothesis generation and root cause tracing |
-| multi-file | 8 | Tests cross-module reasoning and architectural consistency |
-| legacy-code | 10 | Tests modernization patterns and deprecation knowledge |
+| bug-fix | 14 | Most common real-world task; includes test-first diagnosis and performance bugs |
+| feature-addition | 12 | Extension points, ambiguous requirements, infrastructure, documentation |
+| refactoring | 12 | Semantic preservation, performance optimization, CI/CD config |
+| code-review | 10 | Security review (report-only), concurrency analysis, migration guides |
+| debugging | 11 | Hypothesis generation, regression bisection, profiling, stack traces |
+| multi-file | 10 | Cross-module reasoning, merge conflicts, dependency migration |
+| legacy-code | 12 | Modernization, large codebase navigation, deprecation patterns |
 
 ### Difficulty levels
 
-- **easy** (16 tasks) - Single file, under 50 lines changed, obvious fix
-- **medium** (24 tasks) - 1-3 files, moderate reasoning required
-- **hard** (20 tasks) - Multiple files, non-obvious root cause, architectural decisions
+- **easy** (19 tasks) - Single file, under 50 lines changed, obvious fix
+- **medium** (29 tasks) - 1-3 files, moderate reasoning required
+- **hard** (32 tasks) - Multiple files, non-obvious root cause, architectural decisions
 
 ### Capability mapping
 
@@ -131,13 +131,13 @@ Each task maps to 1-3 capabilities from a fixed taxonomy. This enables capabilit
 
 | Capability | Tasks | What it measures |
 |------------|-------|-----------------|
-| code_comprehension | 27 | Understanding existing code before modifying |
-| framework_knowledge | 26 | Knowing API patterns (Pydantic v2, async SQLAlchemy, etc.) |
-| refactoring_discipline | 23 | Changing code without breaking behavior |
-| multi_file_reasoning | 20 | Coordinating changes across multiple files |
-| bug_diagnosis | 17 | Structured root cause analysis |
-| test_writing | 8 | Writing correct, meaningful tests |
-| security_awareness | 8 | Identifying and fixing security vulnerabilities |
+| code_comprehension | 41 | Understanding existing code before modifying |
+| framework_knowledge | 35 | Knowing API patterns (Pydantic v2, async SQLAlchemy, etc.) |
+| bug_diagnosis | 26 | Structured root cause analysis, test-first diagnosis |
+| refactoring_discipline | 26 | Changing code without breaking behavior |
+| multi_file_reasoning | 23 | Coordinating changes across multiple files |
+| test_writing | 10 | Writing correct, meaningful tests |
+| security_awareness | 10 | Identifying and fixing security vulnerabilities |
 | cost_discipline | derived | Token efficiency across all tasks |
 
 ### Language distribution
@@ -185,6 +185,14 @@ default:
 - **Confidence intervals**: t-distribution based (no scipy required). Reports mean, 95% CI lower/upper, standard deviation, and sufficiency flag.
 - **Significance testing**: Sign test for paired comparison of two tools on shared tasks. Reports p-value, Cohen's d effect size, and interpretation.
 - **Integrity checks**: Contamination detection (completions <10s with success), variance anomalies (identical times/tokens across runs suggesting cached replay).
+
+## Workflow Lift Score
+
+The primary benchmark output when comparing vanilla vs custom. Computed as the mean per-task score difference (custom minus vanilla) across all tasks, with statistical significance testing.
+
+The lift is broken down by capability dimension, showing where the workflow's hooks, CLAUDE.md patterns, and automation actually help vs add overhead. This is a direct measurement of workflow contribution — not two independent scores to eyeball, but one number with a p-value.
+
+Workflow hooks that affect coding behavior (frustration detection, stop continuation, file-count escalation) fire on custom runs but not vanilla runs (which use `CLAUDE_SKIP_HOOKS=1`). This delta IS what the benchmark measures.
 
 ## Gap Analysis
 

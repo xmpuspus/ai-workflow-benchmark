@@ -551,6 +551,7 @@ ai-workflow-benchmark/
 │   │   ├── statistics.py         # CI, significance testing
 │   │   ├── integrity.py          # Contamination detection
 │   │   ├── report.py             # ScoreReport + printing
+│   │   ├── workflow_lift.py      # Workflow Lift Score (custom vs vanilla)
 │   │   └── weights.yaml          # 3 weight profiles
 │   ├── analysis/
 │   │   ├── gap_analysis.py       # FailureAnalysis, GapReport
@@ -569,13 +570,13 @@ ai-workflow-benchmark/
 │   └── tasks/
 │       ├── schema.json           # Task YAML JSON Schema
 │       ├── _template.yaml        # Task template
-│       ├── bug-fix/              # 10 tasks (BF-001 to BF-011)
-│       ├── feature-addition/     # 8 tasks (FA-001 to FA-008)
-│       ├── refactoring/          # 10 tasks (RF-001 to RF-010)
-│       ├── code-review/          # 7 tasks (CR-001 to CR-007)
-│       ├── debugging/            # 7 tasks (DB-001 to DB-007)
-│       ├── multi-file/           # 8 tasks (MF-001 to MF-008)
-│       └── legacy-code/          # 10 tasks (LC-001 to LC-010)
+│       ├── bug-fix/              # 14 tasks (BF-001 to BF-014)
+│       ├── feature-addition/     # 12 tasks (FA-001 to FA-012)
+│       ├── refactoring/          # 12 tasks (RF-001 to RF-012)
+│       ├── code-review/          # 10 tasks (CR-001 to CR-010)
+│       ├── debugging/            # 11 tasks (DB-001 to DB-011)
+│       ├── multi-file/           # 10 tasks (MF-001 to MF-010)
+│       └── legacy-code/          # 12 tasks (LC-001 to LC-012)
 ├── tests/                        # pytest suite (71 tests)
 ├── results/
 │   ├── schema.json               # Result JSON Schema

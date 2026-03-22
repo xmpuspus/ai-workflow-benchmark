@@ -82,18 +82,18 @@ Real open-source repos, pinned to release tag SHAs. Setup runs in under 15 secon
 
 | Category | Count | Easy / Med / Hard | What It Tests |
 |----------|-------|-------------------|---------------|
-| bug-fix | 10 | 3 / 3 / 2 | Root cause analysis, None handling, async bugs, race conditions |
-| feature-addition | 8 | 2 / 3 / 2 | Convention adherence, middleware patterns, cross-cutting features |
-| refactoring | 10 | 2 / 3 / 2 | Multi-file consistency, pattern extraction, async migration |
-| code-review | 7 | 2 / 3 / 1 | Security awareness, OWASP, concurrency bugs, CORS/auth |
-| debugging | 7 | 2 / 1 / 3 | Hypothesis testing, connection leaks, pipeline tracing |
-| multi-file | 8 | 0 / 3 / 3 | Cross-module architecture, plugin systems, auth chains |
-| legacy-code | 10 | 4 / 4 / 2 | Modernization, migration, dead code removal, type annotations |
+| bug-fix | 14 | 3 / 5 / 4 | Root cause analysis, test-first diagnosis, N+1 queries, race conditions |
+| feature-addition | 12 | 4 / 5 / 2 | Convention adherence, ambiguous requirements, Dockerfiles, documentation, TypeScript typing |
+| refactoring | 12 | 4 / 3 / 2 | Multi-file consistency, O(n^2) optimization, CI/CD config, async migration |
+| code-review | 10 | 2 / 5 / 2 | Security review (report-only), concurrency analysis, migration guides, OWASP |
+| debugging | 11 | 2 / 3 / 5 | Performance profiling, regression bisection, stack trace diagnosis, environment bugs |
+| multi-file | 10 | 0 / 4 / 4 | Merge conflicts, Pydantic v1->v2 migration, plugin systems, auth chains |
+| legacy-code | 12 | 4 / 4 / 4 | SQLAlchemy 2.0 migration, 20-file codebase navigation, dead code removal |
 
 **Repos used:** FastAPI, httpx, Flask, Starlette, Click, Pydantic, SQLAlchemy 2.0, Hono
 
 **Task IDs:**
-`BF-001–011` · `FA-001–008` · `RF-001–010` · `CR-001–007` · `DB-001–007` · `MF-001–008` · `LC-001–010`
+`BF-001–014` · `FA-001–012` · `RF-001–012` · `CR-001–010` · `DB-001–011` · `MF-001–010` · `LC-001–012`
 
 ## Capability Profiles
 
@@ -101,13 +101,13 @@ Each task maps to 1–3 capabilities, producing a radar chart of tool strengths:
 
 | Capability | Tasks | What It Measures |
 |------------|-------|-----------------|
-| code_comprehension | 27 | Understanding existing code before modifying |
-| framework_knowledge | 26 | Knowing API patterns (Pydantic v2, async SQLAlchemy, etc.) |
-| refactoring_discipline | 23 | Changing code without breaking behavior |
-| multi_file_reasoning | 20 | Coordinating changes across multiple files |
-| bug_diagnosis | 17 | Structured root cause analysis |
-| test_writing | 8 | Writing correct, meaningful tests |
-| security_awareness | 8 | Identifying and fixing vulnerabilities |
+| code_comprehension | 41 | Understanding existing code before modifying |
+| framework_knowledge | 35 | Knowing API patterns (Pydantic v2, async SQLAlchemy, etc.) |
+| bug_diagnosis | 26 | Structured root cause analysis, test-first diagnosis |
+| refactoring_discipline | 26 | Changing code without breaking behavior |
+| multi_file_reasoning | 23 | Coordinating changes across multiple files |
+| test_writing | 10 | Writing correct, meaningful tests |
+| security_awareness | 10 | Identifying and fixing vulnerabilities |
 | cost_discipline | derived | Token efficiency across all tasks |
 
 Example `awb gap` output:
@@ -135,6 +135,30 @@ Top Suggestions
 2. Add repo-level CLAUDE.md with architecture overview (impact: medium)
 3. Use --think flag for debugging tasks (impact: medium)
 ```
+
+## Workflow Lift Score
+
+When `awb run` executes both vanilla and custom (the default), it produces a **Workflow Lift** — a single number measuring how much your workflow configuration improves over the raw model:
+
+```
+Workflow Lift: +4.2 pts  (p=0.031, significant)
+  Pass rate: vanilla 62% vs custom 68%
+  Wins: custom 8 / vanilla 3 / ties 69
+
+  Where your workflow helps:
+    bug diagnosis             +12.3 pts  (17 tasks)
+    multi file reasoning       +8.1 pts  (20 tasks)
+    security awareness         +5.4 pts  (10 tasks)
+
+  Where it hurts:
+    cost discipline            -4.2 pts  (80 tasks)
+
+  Biggest task-level differences:
+    BF-014   +40  (V=35 C=75)
+    LC-012   +15  (V=65 C=80)
+```
+
+The lift is computed per-task (custom score minus vanilla score), averaged across all tasks, and tested for statistical significance. Capability-level breakdowns show where the workflow's hooks, CLAUDE.md patterns, and automation actually help vs. add overhead.
 
 ## CLI Reference
 
