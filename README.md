@@ -158,7 +158,7 @@ Workflow Lift: +4.2 pts  (p=0.031, significant)
     LC-012   +15  (V=65 C=80)
 ```
 
-The lift is computed per-task (custom score minus vanilla score), averaged across all tasks, and tested for statistical significance. Capability-level breakdowns show where the workflow's hooks, CLAUDE.md patterns, and automation actually help vs. add overhead.
+The lift is computed per-task (configured score minus vanilla score), averaged across all tasks, and tested for statistical significance. Capability-level breakdowns show where your workflow configuration actually helps vs. adds overhead.
 
 ## CLI Reference
 

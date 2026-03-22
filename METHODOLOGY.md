@@ -188,11 +188,11 @@ default:
 
 ## Workflow Lift Score
 
-The primary benchmark output when comparing vanilla vs custom. Computed as the mean per-task score difference (custom minus vanilla) across all tasks, with statistical significance testing.
+The primary benchmark output when comparing a configured tool against its vanilla baseline. Computed as the mean per-task score difference (configured minus vanilla) across all tasks, with statistical significance testing.
 
-The lift is broken down by capability dimension, showing where the workflow's hooks, CLAUDE.md patterns, and automation actually help vs add overhead. This is a direct measurement of workflow contribution — not two independent scores to eyeball, but one number with a p-value.
+The lift is broken down by capability dimension, showing where the workflow's configuration (CLAUDE.md patterns, hooks, agents, custom settings) actually helps vs adds overhead. This is a direct measurement of workflow contribution — not two independent scores to eyeball, but one number with a p-value.
 
-Workflow hooks that affect coding behavior (frustration detection, stop continuation, file-count escalation) fire on custom runs but not vanilla runs (which use `CLAUDE_SKIP_HOOKS=1`). This delta IS what the benchmark measures.
+The vanilla adapter runs the tool with no custom configuration. The custom adapter runs with the user's full setup. Any hooks, automation, or context the user has configured will fire on custom runs but not vanilla. The difference between the two IS the workflow's contribution.
 
 ## Gap Analysis
 
