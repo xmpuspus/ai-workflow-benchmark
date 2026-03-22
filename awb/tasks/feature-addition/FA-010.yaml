@@ -1,0 +1,92 @@
+id: FA-010
+category: feature-addition
+title: "Write a Dockerfile for an existing Python FastAPI application"
+difficulty: easy
+estimated_minutes: 15
+languages: [python, dockerfile]
+tags: [fastapi, docker, infrastructure, layer-caching]
+capabilities: [framework_knowledge, code_comprehension]
+
+repo:
+  url: "https://github.com/tiangolo/fastapi"
+  commit: "628c34e0cae200564d191c95d7edea78c88c4b5e"
+  setup_commands:
+    - "python3 -m venv .venv && source .venv/bin/activate && pip install -e '.[all]'"
+
+issue:
+  description: |
+    An existing FastAPI application needs a Dockerfile so it can be containerized
+    and deployed. Your job is to write the Dockerfile — you do NOT need to build
+    or run it, just produce a correct file.
+
+    Step 1 - Create the application files:
+
+    app/main.py:
+      from fastapi import FastAPI
+
+      app = FastAPI()
+
+      @app.get("/")
+      def root():
+          return {"status": "ok"}
+
+      @app.get("/health")
+      def health():
+          return {"healthy": True}
+
+    requirements.txt (at the repo root):
+      fastapi==0.115.0
+      uvicorn==0.30.6
+
+    Step 2 - Write a Dockerfile at the repo root that:
+      - Uses python:3.12-slim as the base image
+      - Sets a working directory inside the container (e.g. /app)
+      - Copies requirements.txt before copying the rest of the source
+        (this ordering is intentional — it enables Docker layer caching so
+        dependencies are not reinstalled on every code change)
+      - Runs pip install -r requirements.txt (with --no-cache-dir for a smaller image)
+      - Copies the application source into the container
+      - Exposes port 8000
+      - Sets the CMD to run uvicorn app.main:app on host 0.0.0.0 port 8000
+
+    The Dockerfile must follow best practices:
+      - Separate COPY steps for requirements vs. source (layer caching)
+      - No unnecessary packages installed
+      - CMD uses the exec form (JSON array), not shell form
+  files_to_examine:
+    - "fastapi/applications.py"
+
+verification:
+  test_commands:
+    - "test -f Dockerfile"
+  lint_commands: []
+  security_commands: []
+  partial_credit:
+    - criterion: "Dockerfile exists"
+      points: 15
+      check: "test -f Dockerfile"
+    - criterion: "Uses python:3.12-slim base image"
+      points: 15
+      check: "grep -qE '^FROM python:3\\.12-slim' Dockerfile"
+    - criterion: "Copies requirements.txt before application source"
+      points: 20
+      check: "python3 -c \"
+lines = open('Dockerfile').read().splitlines()
+copy_req = next((i for i, l in enumerate(lines) if 'requirements.txt' in l and l.strip().startswith('COPY')), None)
+copy_src = next((i for i, l in enumerate(lines) if l.strip().startswith('COPY') and 'requirements.txt' not in l), None)
+assert copy_req is not None and copy_src is not None and copy_req < copy_src, 'requirements.txt must be copied before source'
+print('layer caching order ok')
+\""
+    - criterion: "Installs dependencies with pip install"
+      points: 15
+      check: "grep -qE 'pip install.*requirements' Dockerfile"
+    - criterion: "Exposes port 8000"
+      points: 10
+      check: "grep -qE '^EXPOSE 8000' Dockerfile"
+    - criterion: "CMD runs uvicorn on 0.0.0.0:8000"
+      points: 25
+      check: "grep -qE 'CMD.*uvicorn.*app\\.main:app.*0\\.0\\.0\\.0.*8000|CMD.*uvicorn.*0\\.0\\.0\\.0.*8000.*app\\.main:app' Dockerfile"
+
+constraints:
+  max_iterations: 15
+  timeout_seconds: 900

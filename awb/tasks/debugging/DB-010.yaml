@@ -1,0 +1,122 @@
+id: DB-010
+category: debugging
+title: "Profile and fix the slowest endpoint in a FastAPI app with 5 endpoints"
+difficulty: hard
+estimated_minutes: 45
+languages: [python]
+tags: [fastapi, performance, async, profiling, sleep, batching]
+capabilities: [bug_diagnosis, framework_knowledge]
+
+repo:
+  url: "https://github.com/tiangolo/fastapi"
+  commit: "628c34e0cae200564d191c95d7edea78c88c4b5e"
+  setup_commands:
+    - "python3 -m venv .venv && source .venv/bin/activate && pip install -e '.[all]' && pip install pytest pytest-asyncio httpx"
+
+issue:
+  description: |
+    Create a FastAPI application with 5 endpoints. One endpoint has a serious
+    performance problem. You must identify which endpoint is slow, diagnose why,
+    fix it, and document your findings.
+
+    Step 1 - Create app/main.py with 5 endpoints:
+
+      from fastapi import FastAPI
+      import asyncio
+      import time
+
+      app = FastAPI()
+
+      PRODUCTS = {i: {"id": i, "name": f"Product {i}", "price": i * 9.99} for i in range(1, 101)}
+      CATEGORIES = {1: "Electronics", 2: "Books", 3: "Clothing"}
+      USERS = {i: {"id": i, "username": f"user{i}"} for i in range(1, 51)}
+
+      @app.get("/health")
+      async def health():
+          return {"status": "ok"}
+
+      @app.get("/products/{product_id}")
+      async def get_product(product_id: int):
+          return PRODUCTS.get(product_id, {})
+
+      @app.get("/categories/{category_id}")
+      async def get_category(category_id: int):
+          return CATEGORIES.get(category_id, {})
+
+      @app.get("/users/{user_id}")
+      async def get_user(user_id: int):
+          return USERS.get(user_id, {})
+
+      @app.get("/reports/summary")
+      async def get_summary():
+          # PERFORMANCE BUG: calls time.sleep() inside a synchronous loop
+          # 100 iterations * 0.01s = ~1 second total latency
+          results = []
+          for product_id in range(1, 101):
+              time.sleep(0.01)  # simulates a slow per-item operation
+              results.append(PRODUCTS[product_id]["price"])
+          return {"total": sum(results), "count": len(results)}
+
+    THE BUG:
+      GET /reports/summary uses time.sleep() inside a loop of 100 iterations.
+      time.sleep() is synchronous and blocks the event loop, causing the entire
+      endpoint to take ~1 second to respond. The fix is to either:
+        (a) batch the computation (remove the sleep, process all items at once), or
+        (b) use asyncio.sleep() with asyncio.gather() if the sleep represents real
+            async I/O, or
+        (c) offload to a thread pool with asyncio.to_thread() if the operation
+            is truly blocking.
+
+    Step 2 - Create tests/test_performance.py that measures all 5 endpoints:
+
+      Use httpx.AsyncClient with the app directly (via ASGITransport). For each
+      endpoint, measure wall-clock response time and assert it completes in < 200ms.
+      The /reports/summary endpoint will fail this assertion before the fix.
+
+      Include these test functions:
+        - test_health_response_time
+        - test_product_response_time
+        - test_category_response_time
+        - test_user_response_time
+        - test_summary_response_time  (this one fails before fix)
+
+    Step 3 - Fix GET /reports/summary:
+      Remove the time.sleep() and process items efficiently. The endpoint must
+      return the same {total, count} response. Response time must be < 200ms.
+
+    Step 4 - Create debug/performance_report.md documenting:
+      - Which endpoint was slow and measured latency before fix
+      - Root cause: time.sleep() in a synchronous loop, blocking the event loop
+      - The fix applied (batching or async approach)
+      - Confirmation that all endpoints now pass the 200ms threshold
+
+  files_to_examine:
+    - "fastapi/"
+    - "tests/"
+
+verification:
+  test_commands:
+    - "source .venv/bin/activate && python3 -m pytest tests/test_performance.py -v"
+  lint_commands:
+    - "source .venv/bin/activate && ruff check app/main.py tests/test_performance.py"
+  security_commands: []
+  partial_credit:
+    - criterion: "Identifies /reports/summary as the slow endpoint"
+      points: 15
+      check: "grep -qi 'summary\\|reports' debug/performance_report.md"
+    - criterion: "Identifies the loop with time.sleep() as the cause"
+      points: 20
+      check: "grep -qiE 'sleep|loop|block' debug/performance_report.md"
+    - criterion: "Fix removes time.sleep() and uses batching or async approach"
+      points: 20
+      check: "! grep -q 'time.sleep' app/main.py"
+    - criterion: "Performance report created with root cause and fix"
+      points: 15
+      check: "test -f debug/performance_report.md && grep -qi 'fix\\|root.cause\\|cause' debug/performance_report.md"
+    - criterion: "All 5 endpoints pass 200ms timing assertions"
+      points: 30
+      check: "source .venv/bin/activate && python3 -m pytest tests/test_performance.py -v"
+
+constraints:
+  max_iterations: 25
+  timeout_seconds: 1800

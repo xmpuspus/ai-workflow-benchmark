@@ -1,0 +1,99 @@
+id: BF-012
+category: bug-fix
+title: "Fix failing test by tracing discount calculation bug back to production code"
+difficulty: medium
+estimated_minutes: 30
+languages: [python]
+tags: [fastapi, pricing, arithmetic, test-driven-diagnosis]
+capabilities: [bug_diagnosis, test_writing]
+
+repo:
+  url: "https://github.com/tiangolo/fastapi"
+  commit: "628c34e0cae200564d191c95d7edea78c88c4b5e"
+  setup_commands:
+    - "python3 -m venv .venv && source .venv/bin/activate && pip install -e '.[all]' && pip install pytest"
+
+issue:
+  description: |
+    A pricing service has a pre-written test that is failing. Your job is to
+    read the failing test, understand what it expects, trace the failure back
+    to the production code, and fix the production code — not the test.
+
+    Create services/pricing.py with the following implementation (this is the
+    buggy version you must fix):
+
+      def calculate_discount(price: float, discount_pct: float) -> float:
+          """Apply a percentage discount to a price.
+
+          Args:
+              price: Original price in dollars.
+              discount_pct: Discount percentage (e.g. 15 means 15%).
+
+          Returns:
+              Discounted price after applying the percentage.
+          """
+          # BUG: multiplies by the raw percentage instead of its decimal form.
+          # 15% off $100 should be $85, but this returns $100 - $100*15 = -$1400.
+          discount_amount = price * discount_pct
+          return price - discount_amount
+
+    Create tests/test_pricing.py with the following tests (do NOT modify these):
+
+      import pytest
+      from services.pricing import calculate_discount
+
+      def test_fifteen_percent_off_hundred():
+          result = calculate_discount(100.0, 15)
+          assert result == pytest.approx(85.0), f"Expected 85.0, got {result}"
+
+      def test_zero_discount():
+          result = calculate_discount(50.0, 0)
+          assert result == pytest.approx(50.0)
+
+      def test_full_discount():
+          result = calculate_discount(200.0, 100)
+          assert result == pytest.approx(0.0)
+
+      def test_small_price_large_discount():
+          result = calculate_discount(9.99, 10)
+          assert result == pytest.approx(8.991, rel=1e-3)
+
+      def test_discount_cannot_exceed_price():
+          result = calculate_discount(50.0, 15)
+          assert result >= 0.0, "Discounted price must not be negative"
+
+    Run the tests — they will fail because of the bug in services/pricing.py.
+    Fix services/pricing.py so that all tests pass. The fix is a single line:
+    divide discount_pct by 100 before multiplying.
+
+    Do NOT modify tests/test_pricing.py. The fix belongs in the production code.
+  files_to_examine:
+    - "services/pricing.py"
+    - "tests/test_pricing.py"
+
+verification:
+  test_commands:
+    - "source .venv/bin/activate && python3 -m pytest tests/test_pricing.py -v"
+  lint_commands:
+    - "source .venv/bin/activate && ruff check services/pricing.py"
+  security_commands: []
+  partial_credit:
+    - criterion: "Identifies the calculation bug (multiplies by pct not pct/100)"
+      points: 20
+      check: "grep -qE 'discount_pct\\s*/\\s*100|/ 100|/100' services/pricing.py"
+    - criterion: "Fix is in pricing.py, not in the test file"
+      points: 25
+      check: "grep -qE 'discount_pct\\s*/\\s*100|/ 100' services/pricing.py && ! grep -qE '/ 100|/100' tests/test_pricing.py"
+    - criterion: "Test file is unchanged (original assertions preserved)"
+      points: 15
+      check: "grep -q 'pytest.approx(85.0)' tests/test_pricing.py && grep -q 'test_discount_cannot_exceed_price' tests/test_pricing.py"
+    - criterion: "Fix handles edge cases (zero and full discount)"
+      points: 15
+      check: "source .venv/bin/activate && python3 -m pytest tests/test_pricing.py::test_zero_discount tests/test_pricing.py::test_full_discount -v"
+    - criterion: "All tests pass"
+      points: 25
+      check: "source .venv/bin/activate && python3 -m pytest tests/test_pricing.py -v"
+
+constraints:
+  max_iterations: 20
+  timeout_seconds: 1200

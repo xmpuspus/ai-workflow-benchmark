@@ -1,0 +1,160 @@
+id: LC-011
+category: legacy-code
+title: "Migrate 4 files from SQLAlchemy 1.4 deprecated patterns to 2.0 style"
+difficulty: hard
+estimated_minutes: 45
+languages: [python]
+tags: [sqlalchemy, migration, database, orm, deprecation]
+capabilities: [framework_knowledge, multi_file_reasoning, refactoring_discipline]
+
+repo:
+  url: "https://github.com/tiangolo/fastapi"
+  commit: "628c34e0cae200564d191c95d7edea78c88c4b5e"
+  setup_commands:
+    - "python3 -m venv .venv && source .venv/bin/activate && pip install -e '.[all]' && pip install pytest ruff 'sqlalchemy[asyncio]' aiosqlite"
+
+issue:
+  description: |
+    The codebase uses SQLAlchemy 1.4 patterns that are deprecated or removed
+    in SQLAlchemy 2.0. Create 4 files with the legacy patterns, write tests
+    that catch the deprecation warnings (treated as errors), then migrate all
+    4 files to SQLAlchemy 2.0 style.
+
+    Step 1 - Create these 4 files using 1.4-style patterns:
+
+    db/engine.py — uses engine.execute() which was removed in 2.0:
+      from sqlalchemy import create_engine, text
+
+      engine = create_engine("sqlite:///./test.db", future=False)
+
+      def run_query(sql: str):
+          # engine.execute() was removed in SQLAlchemy 2.0
+          result = engine.execute(text(sql))
+          return result.fetchall()
+
+    models/user.py — uses Column without mapped_column (1.4 declarative style):
+      from sqlalchemy import Column, Integer, String
+      from sqlalchemy.orm import declarative_base
+
+      Base = declarative_base()
+
+      class User(Base):
+          __tablename__ = "users"
+          id = Column(Integer, primary_key=True)
+          name = Column(String(100), nullable=False)
+          email = Column(String(200), nullable=False, unique=True)
+
+    repos/user_repo.py — uses Session.query() legacy API:
+      from sqlalchemy.orm import Session
+      from models.user import User
+
+      def get_user(session: Session, user_id: int):
+          # session.query() is the legacy 1.x API
+          return session.query(User).filter(User.id == user_id).first()
+
+      def list_users(session: Session):
+          return session.query(User).all()
+
+    routes/users.py — passes a raw Session class instead of using sessionmaker:
+      from sqlalchemy.orm import Session
+      from db.engine import engine
+      from repos.user_repo import get_user, list_users
+
+      def get_all_users():
+          # Creating Session(engine) directly is deprecated
+          with Session(engine) as session:
+              return list_users(session)
+
+      def get_one_user(user_id: int):
+          with Session(engine) as session:
+              return get_user(session, user_id)
+
+    Step 2 - Create tests/test_legacy_migration.py that exercises all 4 files.
+    Configure pytest to treat SQLAlchemy deprecation warnings as errors by
+    adding a conftest.py with:
+      import warnings
+      import sqlalchemy.exc
+      def pytest_configure(config):
+          warnings.filterwarnings("error", category=sqlalchemy.exc.LegacyAPIWarning)
+          warnings.filterwarnings("error", category=sqlalchemy.exc.RemovedIn20Warning)
+
+    Write tests for:
+      - run_query executes a simple SELECT and returns rows
+      - User model can be instantiated and has id/name/email attributes
+      - get_user returns None for a missing id
+      - get_user returns the correct User for a known id
+      - list_users returns all inserted rows
+      - get_all_users and get_one_user work end-to-end
+
+    These tests must fail initially due to deprecation warnings (or the removed
+    engine.execute() API raising AttributeError).
+
+    Step 3 - Migrate all 4 files to SQLAlchemy 2.0 patterns:
+
+      db/engine.py:
+        Use engine.connect() as a context manager and conn.execute():
+          with engine.connect() as conn:
+              result = conn.execute(text(sql))
+              return result.fetchall()
+        Set future=True (or omit it, as 2.0 engines default to future mode).
+
+      models/user.py:
+        Switch to mapped_column with Mapped type annotations:
+          from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
+          class Base(DeclarativeBase): pass
+          class User(Base):
+              __tablename__ = "users"
+              id: Mapped[int] = mapped_column(primary_key=True)
+              name: Mapped[str] = mapped_column(String(100))
+              email: Mapped[str] = mapped_column(String(200), unique=True)
+
+      repos/user_repo.py:
+        Replace session.query() with select():
+          from sqlalchemy import select
+          def get_user(session: Session, user_id: int):
+              return session.execute(select(User).where(User.id == user_id)).scalar_one_or_none()
+          def list_users(session: Session):
+              return session.execute(select(User)).scalars().all()
+
+      routes/users.py:
+        Use sessionmaker to create a proper Session factory:
+          from sqlalchemy.orm import sessionmaker
+          SessionLocal = sessionmaker(bind=engine)
+          def get_all_users():
+              with SessionLocal() as session:
+                  return list_users(session)
+
+    All tests must pass with zero deprecation warnings after the migration.
+  files_to_examine:
+    - "fastapi/dependencies.py"
+    - "docs_src/sql_databases/"
+
+verification:
+  test_commands:
+    - "source .venv/bin/activate && python3 -m pytest tests/test_legacy_migration.py -v -W error::DeprecationWarning"
+  lint_commands:
+    - "source .venv/bin/activate && ruff check db/ models/ repos/ routes/"
+  security_commands: []
+  partial_credit:
+    - criterion: "engine.execute() replaced with engine.connect() context manager"
+      points: 15
+      check: "! grep -q 'engine.execute' db/engine.py && grep -q 'engine.connect' db/engine.py"
+    - criterion: "mapped_column with Mapped type annotations used in User model"
+      points: 15
+      check: "grep -qE 'mapped_column|Mapped\\[' models/user.py"
+    - criterion: "select() used instead of session.query() in user_repo"
+      points: 20
+      check: "grep -q 'select(' repos/user_repo.py && ! grep -q 'session.query' repos/user_repo.py"
+    - criterion: "sessionmaker used in routes instead of Session(engine) directly"
+      points: 15
+      check: "grep -q 'sessionmaker' routes/users.py"
+    - criterion: "No SQLAlchemy deprecation warnings emitted during tests"
+      points: 10
+      check: "source .venv/bin/activate && python3 -m pytest tests/test_legacy_migration.py -v -W error::DeprecationWarning 2>&1 | grep -q '0 warnings'"
+    - criterion: "All migration tests pass"
+      points: 25
+      check: "source .venv/bin/activate && python3 -m pytest tests/test_legacy_migration.py -v"
+
+constraints:
+  max_iterations: 25
+  timeout_seconds: 1800

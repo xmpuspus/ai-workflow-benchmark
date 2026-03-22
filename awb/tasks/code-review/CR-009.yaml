@@ -1,0 +1,133 @@
+id: CR-009
+category: code-review
+title: "Analyse async concurrency bugs in FastAPI code — written analysis only"
+difficulty: hard
+estimated_minutes: 45
+languages: [python]
+tags: [fastapi, asyncio, concurrency, race-condition, sqlalchemy, async-generator]
+capabilities: [security_awareness, bug_diagnosis, code_comprehension]
+
+repo:
+  url: "https://github.com/tiangolo/fastapi"
+  commit: "628c34e0cae200564d191c95d7edea78c88c4b5e"
+  setup_commands:
+    - "python3 -m venv .venv && source .venv/bin/activate && pip install -e '.[all]' && pip install pytest sqlalchemy[asyncio] aiosqlite"
+
+issue:
+  description: |
+    You are a concurrency reviewer. Read three files containing subtle async
+    bugs and write an analysis to review/concurrency_analysis.md.
+    Do NOT modify any source file.
+
+    Create app/counter.py — shared mutable dict accessed without a lock:
+
+      import asyncio
+      from fastapi import FastAPI
+
+      app = FastAPI()
+
+      # Shared state mutated by concurrent requests without any lock.
+      # asyncio is single-threaded but coroutine interleaving (at every await)
+      # means check-then-act sequences on this dict are NOT atomic.
+      _counters: dict[str, int] = {}
+
+      @app.post("/increment/{key}")
+      async def increment(key: str):
+          current = _counters.get(key, 0)
+          await asyncio.sleep(0)          # yields control — another request can run here
+          _counters[key] = current + 1    # overwrites the value written by the concurrent request
+          return {"key": key, "value": _counters[key]}
+
+    Create app/session_gen.py — async generator that yields from a shared session:
+
+      from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine, async_sessionmaker
+      from sqlalchemy import text
+
+      engine = create_async_engine("sqlite+aiosqlite:///./shared.db")
+      SessionLocal = async_sessionmaker(engine, expire_on_commit=False)
+
+      # BUG: a single session instance is shared across yields.
+      # If two callers gather over this generator, they share transaction state.
+      # SQLAlchemy AsyncSession is not safe for interleaved coroutine access.
+      _shared_session: AsyncSession | None = None
+
+      async def get_records(table: str):
+          global _shared_session
+          if _shared_session is None:
+              _shared_session = SessionLocal()
+          result = await _shared_session.execute(text(f"SELECT * FROM {table}"))
+          for row in result:
+              yield row   # caller may interleave with another caller on the same session
+
+    Create app/background.py — fire-and-forget task that swallows exceptions:
+
+      import asyncio
+      import logging
+      from fastapi import FastAPI, BackgroundTasks
+
+      app = FastAPI()
+      logger = logging.getLogger(__name__)
+
+      async def _send_notification(user_id: int, message: str) -> None:
+          # Simulates an async operation that can raise.
+          await asyncio.sleep(0.1)
+          raise RuntimeError(f"Notification service unavailable for user {user_id}")
+
+      @app.post("/notify/{user_id}")
+      async def notify(user_id: int, message: str, background_tasks: BackgroundTasks):
+          # BUG: _send_notification is scheduled as a fire-and-forget coroutine.
+          # If it raises, the exception is silently dropped — no log, no retry,
+          # no way for the caller to know the notification was never sent.
+          asyncio.create_task(_send_notification(user_id, message))
+          return {"status": "queued"}
+
+    Your task:
+      1. Read app/counter.py, app/session_gen.py, and app/background.py.
+      2. Write review/concurrency_analysis.md. For each of the three files,
+         explain:
+           a. What the concurrency bug is.
+           b. Under what conditions it manifests (interleaving, gather, etc.).
+           c. The recommended fix.
+      3. Do NOT modify any source file.
+
+    The analysis must correctly describe all three bugs:
+      - counter.py: check-then-act race on shared dict across coroutine yield points
+        (fix: asyncio.Lock around the read-modify-write sequence)
+      - session_gen.py: shared AsyncSession instance across concurrent callers
+        (fix: create a new session per caller, never share sessions across coroutines)
+      - background.py: fire-and-forget asyncio.create_task swallows exceptions silently
+        (fix: add a done-callback or use BackgroundTasks.add_task which logs errors,
+         or await the coroutine and handle exceptions explicitly)
+  files_to_examine:
+    - "app/counter.py"
+    - "app/session_gen.py"
+    - "app/background.py"
+
+verification:
+  test_commands:
+    - "test -f review/concurrency_analysis.md"
+  lint_commands: []
+  security_commands: []
+  partial_credit:
+    - criterion: "Analysis file exists at review/concurrency_analysis.md"
+      points: 10
+      check: "test -f review/concurrency_analysis.md"
+    - criterion: "Identifies shared dict race condition in counter.py (check-then-act across yield)"
+      points: 20
+      check: "grep -qiE 'race|check.?then.?act|interleav|atomic|lock|asyncio\\.sleep.*yield' review/concurrency_analysis.md"
+    - criterion: "Identifies shared AsyncSession bug in session_gen.py"
+      points: 20
+      check: "grep -qiE 'session.*shar|shar.*session|shared.*asyncsession|asyncsession.*not.*safe|per.?caller|global.*session' review/concurrency_analysis.md"
+    - criterion: "Identifies fire-and-forget exception swallowing in background.py"
+      points: 15
+      check: "grep -qiE 'fire.?and.?forget|swallow|create_task.*exception|exception.*create_task|silent.*fail|done.?callback' review/concurrency_analysis.md"
+    - criterion: "Explanations are technically correct (mentions asyncio event loop interleaving or session safety)"
+      points: 10
+      check: "grep -qiE 'event.?loop|coroutine|interleav|transaction.?state|not.?safe' review/concurrency_analysis.md"
+    - criterion: "All three source files are unchanged"
+      points: 25
+      check: "grep -q 'asyncio.sleep(0)' app/counter.py && grep -q '_shared_session' app/session_gen.py && grep -q 'asyncio.create_task' app/background.py"
+
+constraints:
+  max_iterations: 25
+  timeout_seconds: 1800

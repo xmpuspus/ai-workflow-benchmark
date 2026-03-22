@@ -1,0 +1,115 @@
+id: FA-009
+category: feature-addition
+title: "Add caching to a slow FastAPI endpoint — vague requirement, AI decides approach"
+difficulty: medium
+estimated_minutes: 30
+languages: [python]
+tags: [fastapi, caching, ttl, in-memory, ambiguity, decision-making]
+capabilities: [framework_knowledge, code_comprehension]
+
+repo:
+  url: "https://github.com/tiangolo/fastapi"
+  commit: "628c34e0cae200564d191c95d7edea78c88c4b5e"
+  setup_commands:
+    - "python3 -m venv .venv && source .venv/bin/activate && pip install -e '.[all]' && pip install pytest pytest-asyncio httpx"
+
+issue:
+  description: |
+    The GET /products/{id} endpoint is slow. Add caching so repeated requests
+    for the same product are fast.
+
+    Background - Create app/main.py with this initial application:
+
+      from fastapi import FastAPI, HTTPException
+
+      app = FastAPI()
+
+      # Tracks how many times the underlying lookup has been called (not the endpoint)
+      call_counter = {"count": 0}
+
+      def _lookup_product(product_id: int) -> dict:
+          """Simulates a slow data source. Increments call_counter each invocation."""
+          call_counter["count"] += 1
+          if product_id < 1 or product_id > 100:
+              return {}
+          return {"id": product_id, "name": f"Product {product_id}", "price": product_id * 4.99}
+
+      @app.get("/products/{product_id}")
+      async def get_product(product_id: int):
+          product = _lookup_product(product_id)
+          if not product:
+              raise HTTPException(status_code=404, detail="Product not found")
+          return product
+
+      @app.get("/cache/reset")
+      async def reset_counter():
+          """Test helper — resets the call counter. Do not cache this."""
+          call_counter["count"] = 0
+          return {"reset": True}
+
+    The requirement (intentionally vague):
+      "The GET /products/{id} endpoint is slow. Add caching so repeated requests
+      for the same product are fast."
+
+    What is NOT specified (you must decide):
+      - Cache type (in-memory dict, functools.lru_cache, cachetools, etc.)
+      - TTL / expiry duration
+      - Cache invalidation strategy
+      - Whether to use cache-control headers
+      - Per-product vs. global cache key strategy
+
+    Your implementation must satisfy these observable behaviors, which the tests
+    will verify:
+
+      1. A second request for the same product_id does NOT call _lookup_product()
+         again (call_counter stays at 1 after two identical requests).
+      2. Requests for different product IDs are cached independently (product 1
+         and product 2 each trigger exactly one _lookup_product() call).
+      3. The cache has some expiry or TTL mechanism — demonstrate this in tests
+         by either: (a) using a short TTL and asserting the counter increments
+         after expiry, or (b) showing the cache can be explicitly cleared.
+      4. Cached and uncached responses return identical JSON bodies.
+      5. 404 responses for invalid product IDs are NOT cached (a retry for an
+         invalid ID should be allowed to succeed if the product later exists).
+
+    Create tests/test_caching.py that verifies all 5 behaviors above. Use
+    httpx.AsyncClient with ASGITransport to call the app directly (no live server).
+    Reset call_counter["count"] to 0 between test cases using the /cache/reset
+    endpoint or by directly resetting the dict.
+
+    Document your caching design decisions in a brief comment block at the top of
+    app/main.py (3-5 lines explaining what approach you chose and why).
+
+  files_to_examine:
+    - "fastapi/"
+    - "tests/"
+
+verification:
+  test_commands:
+    - "source .venv/bin/activate && python3 -m pytest tests/test_caching.py -v"
+  lint_commands:
+    - "source .venv/bin/activate && ruff check app/main.py tests/test_caching.py"
+  security_commands: []
+  partial_credit:
+    - criterion: "Cache implemented (any approach)"
+      points: 15
+      check: "grep -qiE 'cache|lru_cache|cachetools|ttl' app/main.py"
+    - criterion: "Second request for same ID does not call _lookup_product() again"
+      points: 20
+      check: "grep -qE 'call_counter|count.*1|counter' tests/test_caching.py"
+    - criterion: "Different IDs are cached independently"
+      points: 15
+      check: "grep -qE 'product.*1.*product.*2|two.*product|separate.*id' tests/test_caching.py"
+    - criterion: "Some TTL or expiry mechanism present"
+      points: 15
+      check: "grep -qiE 'ttl|expire|maxage|max_age|clear|evict' app/main.py"
+    - criterion: "Tests for caching behavior exist and cover multiple scenarios"
+      points: 15
+      check: "grep -cE 'def test_' tests/test_caching.py | grep -qE '[3-9]|[1-9][0-9]'"
+    - criterion: "All tests pass"
+      points: 20
+      check: "source .venv/bin/activate && python3 -m pytest tests/test_caching.py -v"
+
+constraints:
+  max_iterations: 20
+  timeout_seconds: 1200

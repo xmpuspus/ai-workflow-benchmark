@@ -1,0 +1,119 @@
+id: LC-012
+category: legacy-code
+title: "Find and fix a soft-delete bug buried in a 20-file mini application"
+difficulty: hard
+estimated_minutes: 45
+languages: [python]
+tags: [bug-diagnosis, codebase-navigation, database, soft-delete]
+capabilities: [code_comprehension, bug_diagnosis]
+
+repo:
+  url: "https://github.com/tiangolo/fastapi"
+  commit: "628c34e0cae200564d191c95d7edea78c88c4b5e"
+  setup_commands:
+    - "python3 -m venv .venv && source .venv/bin/activate && pip install -e '.[all]' && pip install pytest ruff sqlalchemy aiosqlite"
+
+issue:
+  description: |
+    A 20-file mini application has a bug: when a user is deleted, their
+    associated orders are being hard-deleted instead of soft-deleted. The task
+    description tells you only this:
+
+      "When a user is deleted, their orders should be soft-deleted (status set
+      to 'cancelled') but they're being hard-deleted instead. Find and fix this."
+
+    You must navigate the codebase to locate the bug and make the minimal
+    targeted fix. Do not refactor other files.
+
+    The application structure to create:
+
+      models/user.py          — User model (id, name, email, is_deleted bool)
+      models/order.py         — Order model (id, user_id, total, status str)
+      models/product.py       — Product model (id, name, price)
+      models/category.py      — Category model (id, name)
+
+      repos/user_repo.py      — CRUD for users (create, get, list, delete)
+      repos/order_repo.py     — CRUD for orders — THIS FILE CONTAINS THE BUG:
+                                delete_by_user_id calls session.delete(order)
+                                instead of setting order.status = "cancelled"
+      repos/product_repo.py   — CRUD for products
+      repos/category_repo.py  — CRUD for categories
+
+      services/user_service.py    — user business logic; calls order_repo.delete_by_user_id
+                                    then user_repo.delete when a user is deleted
+      services/order_service.py   — order business logic
+      services/product_service.py — product business logic
+      services/category_service.py — category business logic
+
+      routes/users.py     — FastAPI router for /users endpoints
+      routes/orders.py    — FastAPI router for /orders endpoints
+      routes/products.py  — FastAPI router for /products endpoints
+      routes/categories.py — FastAPI router for /categories endpoints
+
+      middleware/auth.py    — stub auth middleware (always passes)
+      middleware/logging.py — request logging middleware
+
+      config.py — database URL and app settings
+      main.py   — FastAPI app wiring all routers and middleware
+
+    The bug is specifically in repos/order_repo.py. The delete_by_user_id
+    method currently does:
+
+      def delete_by_user_id(session: Session, user_id: int) -> None:
+          orders = session.query(Order).filter(Order.user_id == user_id).all()
+          for order in orders:
+              session.delete(order)  # BUG: hard delete removes the row
+          session.commit()
+
+    It should instead soft-delete by setting status:
+
+      def delete_by_user_id(session: Session, user_id: int) -> None:
+          orders = session.query(Order).filter(Order.user_id == user_id).all()
+          for order in orders:
+              order.status = "cancelled"
+          session.commit()
+
+    Create tests/test_soft_delete.py that:
+      - Sets up an in-memory SQLite database with all models
+      - Creates a user with 3 orders in various statuses
+      - Calls the user delete flow (user_service.delete_user)
+      - Asserts the orders still exist in the database (not hard-deleted)
+      - Asserts each order's status is "cancelled"
+      - Asserts the user row is marked deleted (is_deleted=True or removed)
+
+    The test must fail with the buggy implementation (orders disappear from
+    the DB) and pass after the fix (orders exist with status="cancelled").
+
+    Fix only repos/order_repo.py. Leave all other files unchanged.
+  files_to_examine:
+    - "fastapi/routing.py"
+
+verification:
+  test_commands:
+    - "source .venv/bin/activate && python3 -m pytest tests/test_soft_delete.py -v"
+  lint_commands:
+    - "source .venv/bin/activate && ruff check repos/ services/ routes/ models/"
+  security_commands: []
+  partial_credit:
+    - criterion: "Correctly identifies repos/order_repo.py as the file to change"
+      points: 20
+      check: "git diff --name-only 2>/dev/null | grep -q 'repos/order_repo.py' || grep -q 'order_repo' repos/order_repo.py"
+    - criterion: "Identifies session.delete() as the hard-delete call"
+      points: 15
+      check: "! grep -q 'session.delete' repos/order_repo.py"
+    - criterion: "Replaces hard delete with a status field assignment"
+      points: 20
+      check: "grep -qE 'order\\.status\\s*=' repos/order_repo.py"
+    - criterion: "Status is set to the string 'cancelled'"
+      points: 15
+      check: "grep -q '\"cancelled\"' repos/order_repo.py || grep -q \"'cancelled'\" repos/order_repo.py"
+    - criterion: "No other files were modified"
+      points: 5
+      check: "git diff --name-only 2>/dev/null | grep -v 'repos/order_repo.py' | grep -qvE '^$' && exit 1 || exit 0"
+    - criterion: "Soft-delete tests pass"
+      points: 25
+      check: "source .venv/bin/activate && python3 -m pytest tests/test_soft_delete.py -v"
+
+constraints:
+  max_iterations: 30
+  timeout_seconds: 2400

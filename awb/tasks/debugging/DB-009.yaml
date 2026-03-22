@@ -1,0 +1,111 @@
+id: DB-009
+category: debugging
+title: "Find which of 3 recent changes introduced a rounding regression"
+difficulty: hard
+estimated_minutes: 45
+languages: [python]
+tags: [fastapi, rounding, regression, bisect, isolation, decimal]
+capabilities: [bug_diagnosis, code_comprehension]
+
+repo:
+  url: "https://github.com/tiangolo/fastapi"
+  commit: "628c34e0cae200564d191c95d7edea78c88c4b5e"
+  setup_commands:
+    - "python3 -m venv .venv && source .venv/bin/activate && pip install -e '.[all]' && pip install pytest"
+
+issue:
+  description: |
+    Three modules were added as part of a recent refactor. One of them contains a
+    regression. The test suite is failing. You must isolate which module is
+    responsible, explain the defect, fix it, and write a regression report.
+
+    Step 1 - Create the three modules:
+
+    utils/formatter.py (correct):
+      from decimal import Decimal
+
+      def format_currency(amount: Decimal, symbol: str = "$") -> str:
+          """Format a Decimal amount as a currency string."""
+          return f"{symbol}{amount:.2f}"
+
+    utils/validator.py (correct):
+      from decimal import Decimal
+
+      def validate_range(amount: Decimal, min_val: Decimal, max_val: Decimal) -> bool:
+          """Return True if amount is within [min_val, max_val] inclusive."""
+          if not isinstance(amount, Decimal):
+              raise TypeError(f"amount must be Decimal, got {type(amount)}")
+          return min_val <= amount <= max_val
+
+    utils/calculator.py (BUGGY):
+      from decimal import Decimal
+
+      def compute_total(items: list[Decimal]) -> Decimal:
+          """Return the total of all items, rounded to 2 decimal places."""
+          # BUG: rounds each item before summing, causing accumulated penny errors
+          return sum(round(item, 2) for item in items) # type: ignore
+
+      The correct implementation is:
+          return round(sum(items), 2)
+
+      Example of the bug:
+          items = [Decimal("1.005"), Decimal("1.005"), Decimal("1.005")]
+          buggy result:  Decimal("3.00")  (rounds 1.005 -> 1.00 per item, sums to 3.00)
+          correct result: Decimal("3.02") (sums to 3.015, rounds to 3.02)
+
+    Step 2 - Create tests/test_regression.py that tests the full pipeline:
+
+      - test_pipeline_formats_correctly: format_currency works as expected.
+      - test_pipeline_validates_range: validate_range works as expected.
+      - test_pipeline_computes_total: compute_total([Decimal("1.005")] * 3) == Decimal("3.02").
+        This test FAILS with the buggy implementation.
+      - test_pipeline_end_to_end: chains all three — validate each item, sum them,
+        format the result. Fails because compute_total is wrong.
+
+    Step 3 - Test each module in isolation to pinpoint the regression:
+
+      Test formatter.py independently and confirm it passes.
+      Test validator.py independently and confirm it passes.
+      Test calculator.py independently and confirm it fails.
+      Document this isolation process as comments in tests/test_regression.py or
+      in a separate tests/test_isolation.py.
+
+    Step 4 - Fix utils/calculator.py:
+      Replace the per-item rounding with sum-then-round.
+
+    Step 5 - Create debug/regression_report.md:
+      - Which module contained the regression and why
+      - The specific inputs that expose the bug (show the penny discrepancy)
+      - The fix applied
+      - Confirmation that all tests now pass
+
+  files_to_examine:
+    - "fastapi/"
+    - "tests/"
+
+verification:
+  test_commands:
+    - "source .venv/bin/activate && python3 -m pytest tests/test_regression.py -v"
+  lint_commands:
+    - "source .venv/bin/activate && ruff check utils/formatter.py utils/validator.py utils/calculator.py tests/test_regression.py"
+  security_commands: []
+  partial_credit:
+    - criterion: "Each module tested in isolation (formatter, validator, calculator)"
+      points: 15
+      check: "grep -qE 'formatter|format_currency' tests/test_regression.py && grep -qE 'validator|validate_range' tests/test_regression.py && grep -qE 'calculator|compute_total' tests/test_regression.py"
+    - criterion: "calculator.py identified as the culprit"
+      points: 25
+      check: "grep -qi 'calculator' debug/regression_report.md"
+    - criterion: "Rounding order issue explained (round-per-item vs sum-then-round)"
+      points: 15
+      check: "grep -qiE 'round.*sum|sum.*round|per.item|order' debug/regression_report.md"
+    - criterion: "compute_total fixed to sum before rounding"
+      points: 20
+      check: "grep -qE 'round\\(sum\\(' utils/calculator.py"
+    - criterion: "All tests pass after fix"
+      points: 25
+      check: "source .venv/bin/activate && python3 -m pytest tests/test_regression.py -v"
+
+constraints:
+  max_iterations: 25
+  timeout_seconds: 1800

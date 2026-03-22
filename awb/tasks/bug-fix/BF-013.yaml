@@ -1,0 +1,113 @@
+id: BF-013
+category: bug-fix
+title: "Fix linear backoff bug in httpx retry transport to use exponential backoff"
+difficulty: hard
+estimated_minutes: 45
+languages: [python]
+tags: [httpx, retry, transport, backoff, concurrency]
+capabilities: [bug_diagnosis, code_comprehension]
+
+repo:
+  url: "https://github.com/encode/httpx"
+  commit: "26d48e0634e6ee9cdc0533996db289ce4b430177"
+  setup_commands:
+    - "python3 -m venv .venv && source .venv/bin/activate && pip install -e '.[cli,http2]' && pip install pytest"
+
+issue:
+  description: |
+    A retry transport wrapper for httpx uses linear backoff instead of
+    exponential backoff. Under sustained server errors the client hammers
+    the server with rapidly-spaced retries rather than backing off
+    geometrically, which can make overload conditions worse.
+
+    Create transports/retry.py that wraps httpx's BaseTransport. Study
+    httpx/_transports/default.py and httpx/_client.py to understand how
+    BaseTransport is integrated before writing the wrapper.
+
+      import time
+      import httpx
+
+      class RetryTransport(httpx.BaseTransport):
+          """Wraps an httpx transport to add retry-with-backoff behavior."""
+
+          RETRYABLE = {429, 500, 502, 503, 504}
+
+          def __init__(
+              self,
+              wrapped: httpx.BaseTransport,
+              max_retries: int = 3,
+              backoff_factor: float = 1.0,
+          ):
+              self.wrapped = wrapped
+              self.max_retries = max_retries
+              self.backoff_factor = backoff_factor
+
+          def handle_request(self, request: httpx.Request) -> httpx.Response:
+              for attempt in range(self.max_retries + 1):
+                  response = self.wrapped.handle_request(request)
+                  if response.status_code not in self.RETRYABLE:
+                      return response
+                  if attempt < self.max_retries:
+                      # BUG: linear backoff — should be exponential.
+                      # delay grows as: 1, 2, 3, 4 (linear)
+                      # correct formula: backoff_factor * (2 ** attempt)
+                      # which grows as: 1, 2, 4, 8 (exponential)
+                      delay = self.backoff_factor * (attempt + 1)
+                      time.sleep(delay)
+              return response
+
+    Create tests/test_retry_backoff.py that patches time.sleep to capture
+    delay values without actually sleeping. Tests must import from the real
+    httpx package and use httpx.MockTransport (introduced in httpx 0.20) to
+    simulate server responses without network calls.
+
+    Required tests:
+      - test_backoff_is_exponential: MockTransport returns [503, 503, 503, 200].
+        Capture sleep calls. Assert delays are [1.0, 2.0, 4.0] (not [1, 2, 3]).
+      - test_backoff_factor_scales: Use backoff_factor=2.0, same response sequence.
+        Assert delays are [2.0, 4.0, 8.0].
+      - test_no_sleep_on_first_attempt: MockTransport returns 200 immediately.
+        Assert time.sleep was never called.
+      - test_non_retryable_no_sleep: MockTransport returns 404.
+        Assert time.sleep was never called and response status is 404.
+      - test_max_retries_exhausted: MockTransport always returns 503.
+        With max_retries=2, assert sleep called exactly twice then returns 503.
+
+    Fix the backoff formula in transports/retry.py:
+      delay = self.backoff_factor * (2 ** attempt)
+
+    The tests must import RetryTransport from transports.retry and use it
+    with a real httpx.Client via the transport= parameter to confirm the
+    wrapper integrates with httpx's actual client interface.
+  files_to_examine:
+    - "httpx/_transports/default.py"
+    - "httpx/_client.py"
+    - "transports/retry.py"
+    - "tests/test_retry_backoff.py"
+
+verification:
+  test_commands:
+    - "source .venv/bin/activate && python3 -m pytest tests/test_retry_backoff.py -v"
+  lint_commands:
+    - "source .venv/bin/activate && ruff check transports/retry.py tests/test_retry_backoff.py"
+  security_commands: []
+  partial_credit:
+    - criterion: "Demonstrates understanding of httpx transport layer (uses BaseTransport, handle_request)"
+      points: 15
+      check: "grep -q 'httpx.BaseTransport' transports/retry.py && grep -q 'handle_request' transports/retry.py"
+    - criterion: "Backoff formula fixed to exponential (2 ** attempt)"
+      points: 25
+      check: "grep -qE '2\\s*\\*\\*\\s*attempt|pow\\(2.*attempt\\)' transports/retry.py"
+    - criterion: "Tests patch time.sleep to capture delay values without sleeping"
+      points: 20
+      check: "grep -qE 'patch.*time\\.sleep|mock.*sleep|sleep.*mock' tests/test_retry_backoff.py"
+    - criterion: "Tests use httpx.Client with transport= parameter"
+      points: 15
+      check: "grep -qE 'httpx\\.Client.*transport|Client\\(.*transport' tests/test_retry_backoff.py"
+    - criterion: "All tests pass"
+      points: 25
+      check: "source .venv/bin/activate && python3 -m pytest tests/test_retry_backoff.py -v"
+
+constraints:
+  max_iterations: 25
+  timeout_seconds: 1800

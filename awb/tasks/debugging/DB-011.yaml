@@ -1,0 +1,137 @@
+id: DB-011
+category: debugging
+title: "Follow a stack trace through 4 modules to find a Decimal serialization bug"
+difficulty: medium
+estimated_minutes: 30
+languages: [python]
+tags: [fastapi, json, decimal, serialization, stack-trace, multi-file]
+capabilities: [bug_diagnosis, code_comprehension]
+
+repo:
+  url: "https://github.com/tiangolo/fastapi"
+  commit: "628c34e0cae200564d191c95d7edea78c88c4b5e"
+  setup_commands:
+    - "python3 -m venv .venv && source .venv/bin/activate && pip install -e '.[all]' && pip install pytest"
+
+issue:
+  description: |
+    The order processing pipeline is raising a TypeError deep in the call stack.
+    A stack trace has been provided. Trace it through the 4 modules, identify the
+    root cause, and fix it.
+
+    THE STACK TRACE (provided as context):
+
+      Traceback (most recent call last):
+        File "routes/orders.py", line 14, in create_order
+          result = order_service.process(order_data)
+        File "services/order_service.py", line 12, in process
+          serialized = order_repo.save(order_data)
+          total = serialized["total"] + Decimal("0.01")  # add processing fee
+        File "repos/order_repo.py", line 10, in save
+          return serializer.serialize(data)
+        File "utils/serializer.py", line 8, in serialize
+          return json.loads(json.dumps(obj, default=str))
+      TypeError: unsupported operand type(s) for +: 'str' and 'decimal.Decimal'
+
+    Step 1 - Create the 4 modules that produce this error:
+
+    routes/orders.py:
+      from decimal import Decimal
+      from services import order_service
+
+      def create_order(order_data: dict) -> dict:
+          result = order_service.process(order_data)
+          return result
+
+    services/order_service.py:
+      from decimal import Decimal
+      from repos import order_repo
+
+      def process(order_data: dict) -> dict:
+          serialized = order_repo.save(order_data)
+          # Expects serialized["total"] to still be Decimal after round-trip
+          total = serialized["total"] + Decimal("0.01")
+          return {"total": total, "status": "confirmed"}
+
+    repos/order_repo.py:
+      from utils import serializer
+
+      def save(data: dict) -> dict:
+          # Simulate persisting and retrieving the order
+          return serializer.serialize(data)
+
+    utils/serializer.py:
+      import json
+
+      def serialize(obj: dict) -> dict:
+          # BUG: json.dumps(default=str) converts Decimal to string "1.50",
+          # then json.loads converts it back as str, not Decimal.
+          # The caller in order_service.py then tries str + Decimal -> TypeError.
+          return json.loads(json.dumps(obj, default=str))
+
+    Step 2 - Create tests/test_order_pipeline.py:
+
+      - test_serialize_preserves_decimal: call serializer.serialize({"total": Decimal("1.50")})
+        and assert the returned "total" is a Decimal, not a str. This test FAILS.
+      - test_order_service_adds_fee: call order_service.process({"total": Decimal("9.99")})
+        and assert result["total"] == Decimal("10.00"). This test FAILS.
+      - test_create_order_end_to_end: call create_order({"total": Decimal("5.00")})
+        and assert result["total"] == Decimal("5.01"). Fails before fix.
+
+    Step 3 - Fix utils/serializer.py:
+
+      Replace the default=str approach with a custom JSON encoder and matching
+      decoder that preserves Decimal values:
+
+        import json
+        from decimal import Decimal
+
+        class DecimalEncoder(json.JSONEncoder):
+            def default(self, obj):
+                if isinstance(obj, Decimal):
+                    return {"__decimal__": str(obj)}
+                return super().default(obj)
+
+        def _decimal_hook(obj: dict) -> dict:
+            if "__decimal__" in obj:
+                return Decimal(obj["__decimal__"])
+            return obj
+
+        def serialize(obj: dict) -> dict:
+            return json.loads(json.dumps(obj, cls=DecimalEncoder), object_hook=_decimal_hook)
+
+    Step 4 - After fixing, all 3 tests must pass. Do not change the interface of
+    any function other than utils/serializer.py.
+
+  files_to_examine:
+    - "routes/orders.py"
+    - "services/order_service.py"
+    - "repos/order_repo.py"
+    - "utils/serializer.py"
+
+verification:
+  test_commands:
+    - "source .venv/bin/activate && python3 -m pytest tests/test_order_pipeline.py -v"
+  lint_commands:
+    - "source .venv/bin/activate && ruff check routes/orders.py services/order_service.py repos/order_repo.py utils/serializer.py tests/test_order_pipeline.py"
+  security_commands: []
+  partial_credit:
+    - criterion: "Traces the error to utils/serializer.py via the stack trace"
+      points: 20
+      check: "grep -q 'default=str' utils/serializer.py || grep -q 'DecimalEncoder' utils/serializer.py"
+    - criterion: "Identifies Decimal->str silent conversion as root cause"
+      points: 20
+      check: "grep -qiE 'decimal.*str|str.*decimal|default=str' tests/test_order_pipeline.py"
+    - criterion: "Custom encoder/decoder used in serializer.py"
+      points: 15
+      check: "grep -qE 'JSONEncoder|object_hook|__decimal__' utils/serializer.py"
+    - criterion: "Arithmetic on Decimal works correctly after deserialization"
+      points: 20
+      check: "grep -qE 'Decimal.*10\\.00|10\\.00.*Decimal|5\\.01|processing.fee' tests/test_order_pipeline.py"
+    - criterion: "All tests pass"
+      points: 25
+      check: "source .venv/bin/activate && python3 -m pytest tests/test_order_pipeline.py -v"
+
+constraints:
+  max_iterations: 20
+  timeout_seconds: 1200

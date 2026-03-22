@@ -1,0 +1,240 @@
+id: MF-009
+category: multi-file
+title: "Resolve merge conflict between two feature branches"
+difficulty: medium
+estimated_minutes: 30
+languages: [python]
+tags: [fastapi, git, merge-conflict, multi-file-reasoning]
+capabilities: [multi_file_reasoning, code_comprehension]
+
+repo:
+  url: "https://github.com/tiangolo/fastapi"
+  commit: "628c34e0cae200564d191c95d7edea78c88c4b5e"
+  setup_commands:
+    - "python3 -m venv .venv && source .venv/bin/activate && pip install -e '.[all]' && pip install pytest email-validator"
+
+issue:
+  description: |
+    Two developers made changes to services/user_service.py on separate branches.
+    Their work was merged at the wrong point and git left conflict markers in the
+    file. Your job is to resolve the conflict so BOTH features are present,
+    all imports are clean, and the tests pass.
+
+    Step 1 - Create the base service (the shared ancestor, no conflict markers):
+
+    services/__init__.py  (empty)
+
+    services/user_service.py (base — this is what both branches started from):
+      ```python
+      import re
+
+      _store: dict[int, dict] = {}
+      _next_id = 1
+
+
+      def create_user(name: str, email: str) -> dict:
+          global _next_id
+          user = {"id": _next_id, "name": name, "email": email}
+          _store[_next_id] = user
+          _next_id += 1
+          return user
+
+
+      def get_user(user_id: int) -> dict | None:
+          return _store.get(user_id)
+
+
+      def list_users() -> list[dict]:
+          return list(_store.values())
+      ```
+
+    Step 2 - Create two reference files showing what each branch added:
+
+    services/user_service_branch_a.py (branch-a added email validation to create_user):
+      ```python
+      import re
+
+      _EMAIL_RE = re.compile(r"^[a-zA-Z0-9_.+-]+@[a-zA-Z0-9-]+\.[a-zA-Z0-9-.]+$")
+
+      _store: dict[int, dict] = {}
+      _next_id = 1
+
+
+      class InvalidEmailError(ValueError):
+          pass
+
+
+      def create_user(name: str, email: str) -> dict:
+          global _next_id
+          if not _EMAIL_RE.match(email):
+              raise InvalidEmailError(f"Invalid email address: {email!r}")
+          user = {"id": _next_id, "name": name, "email": email}
+          _store[_next_id] = user
+          _next_id += 1
+          return user
+
+
+      def get_user(user_id: int) -> dict | None:
+          return _store.get(user_id)
+
+
+      def list_users() -> list[dict]:
+          return list(_store.values())
+      ```
+
+    services/user_service_branch_b.py (branch-b added role-based access to get_user):
+      ```python
+      import re
+
+      ROLES = {"admin", "member", "viewer"}
+
+      _store: dict[int, dict] = {}
+      _next_id = 1
+
+
+      class UnauthorizedError(PermissionError):
+          pass
+
+
+      def create_user(name: str, email: str) -> dict:
+          global _next_id
+          user = {"id": _next_id, "name": name, "email": email}
+          _store[_next_id] = user
+          _next_id += 1
+          return user
+
+
+      def get_user(user_id: int, role: str = "member") -> dict | None:
+          if role not in ROLES:
+              raise UnauthorizedError(f"Unknown role: {role!r}")
+          if role == "viewer" and user_id % 2 != 0:
+              raise UnauthorizedError("Viewers can only access even-id users")
+          return _store.get(user_id)
+
+
+      def list_users() -> list[dict]:
+          return list(_store.values())
+      ```
+
+    Step 3 - Create the conflicted file at services/user_service.py with git
+    conflict markers. The conflict arose because both branches modified the
+    import block and the function signatures at the same point:
+
+      ```
+      import re
+
+      <<<<<<< HEAD (branch-a)
+      _EMAIL_RE = re.compile(r"^[a-zA-Z0-9_.+-]+@[a-zA-Z0-9-]+\.[a-zA-Z0-9-.]+$")
+
+      _store: dict[int, dict] = {}
+      _next_id = 1
+
+
+      class InvalidEmailError(ValueError):
+          pass
+      =======
+      ROLES = {"admin", "member", "viewer"}
+
+      _store: dict[int, dict] = {}
+      _next_id = 1
+
+
+      class UnauthorizedError(PermissionError):
+          pass
+      >>>>>>> branch-b
+
+
+      def create_user(name: str, email: str) -> dict:
+          global _next_id
+      <<<<<<< HEAD (branch-a)
+          if not _EMAIL_RE.match(email):
+              raise InvalidEmailError(f"Invalid email address: {email!r}")
+          user = {"id": _next_id, "name": name, "email": email}
+      =======
+          user = {"id": _next_id, "name": name, "email": email}
+      >>>>>>> branch-b
+          _store[_next_id] = user
+          _next_id += 1
+          return user
+
+
+      def get_user(user_id: int) -> dict | None:
+      <<<<<<< HEAD (branch-a)
+          return _store.get(user_id)
+      =======
+          if role not in ROLES:
+              raise UnauthorizedError(f"Unknown role: {role!r}")
+          if role == "viewer" and user_id % 2 != 0:
+              raise UnauthorizedError("Viewers can only access even-id users")
+          return _store.get(user_id)
+      >>>>>>> branch-b
+
+
+      def list_users() -> list[dict]:
+          return list(_store.values())
+      ```
+
+    Step 4 - Resolve the conflict in services/user_service.py so that:
+      - All conflict markers (<<<<<<<, =======, >>>>>>>) are removed
+      - BOTH InvalidEmailError and email validation are present in create_user
+      - BOTH UnauthorizedError and role-based access are present in get_user
+      - get_user signature becomes: get_user(user_id: int, role: str = "member")
+      - _EMAIL_RE, ROLES, InvalidEmailError, UnauthorizedError are all defined
+      - No duplicate code (single _store, single _next_id)
+      - The import block is clean (just import re at the top)
+
+    Step 5 - Create tests/test_user_service.py that verifies BOTH features work:
+      - create_user with valid email creates a user
+      - create_user with invalid email raises InvalidEmailError
+      - get_user returns user for admin and member roles
+      - get_user raises UnauthorizedError for unknown role
+      - get_user raises UnauthorizedError for viewer accessing odd-id user
+      - list_users returns all created users
+
+  files_to_examine:
+    - "services/user_service_branch_a.py"
+    - "services/user_service_branch_b.py"
+    - "services/user_service.py"
+
+verification:
+  test_commands:
+    - "source .venv/bin/activate && python3 -m pytest tests/test_user_service.py -v"
+  lint_commands:
+    - "source .venv/bin/activate && ruff check services/user_service.py"
+  security_commands: []
+  partial_credit:
+    - criterion: "Conflict markers removed"
+      points: 20
+      check: "! grep -qE '^<<<<<<< |^=======$|^>>>>>>> ' services/user_service.py"
+    - criterion: "Email validation present in create_user"
+      points: 15
+      check: "grep -q 'InvalidEmailError' services/user_service.py && grep -q '_EMAIL_RE' services/user_service.py"
+    - criterion: "Role-based access present in get_user"
+      points: 15
+      check: "grep -q 'UnauthorizedError' services/user_service.py && grep -q 'ROLES' services/user_service.py"
+    - criterion: "Imports are clean (no duplicates)"
+      points: 10
+      check: 'python3 -c "
+content = open(\"services/user_service.py\").read()
+import_lines = [l for l in content.splitlines() if l.startswith(\"import \") or l.startswith(\"from \")]
+assert len(import_lines) == len(set(import_lines)), \"Duplicate imports found\"
+print(\"imports clean\")
+"'
+    - criterion: "No duplicate store or next_id declarations"
+      points: 15
+      check: 'python3 -c "
+import re
+content = open(\"services/user_service.py\").read()
+store_count = len(re.findall(\"^_store\", content, re.MULTILINE))
+id_count = len(re.findall(\"^_next_id\", content, re.MULTILINE))
+assert store_count == 1, f\"_store declared {store_count} times\"
+assert id_count == 1, f\"_next_id declared {id_count} times\"
+print(\"no duplicate declarations\")
+"'
+    - criterion: "Tests pass"
+      points: 25
+      check: "source .venv/bin/activate && python3 -m pytest tests/test_user_service.py -v"
+
+constraints:
+  max_iterations: 20
+  timeout_seconds: 1200

@@ -1,0 +1,178 @@
+id: FA-011
+category: feature-addition
+title: "Add comprehensive docstrings to 10 undocumented functions based on implementation"
+difficulty: easy
+estimated_minutes: 15
+languages: [python]
+tags: [fastapi, documentation, docstrings, code-comprehension]
+capabilities: [code_comprehension]
+
+repo:
+  url: "https://github.com/tiangolo/fastapi"
+  commit: "628c34e0cae200564d191c95d7edea78c88c4b5e"
+  setup_commands:
+    - "python3 -m venv .venv && source .venv/bin/activate && pip install -e '.[all]' && pip install pytest"
+
+issue:
+  description: |
+    A utilities module contains 10 implemented functions with zero docstrings.
+    Your job is to read each implementation and add a docstring that accurately
+    describes what the function does, its parameters, its return value, and
+    includes at least one usage example.
+
+    Step 1 - Create utils/helpers.py with the following 10 functions.
+    Do NOT add docstrings — they are intentionally missing and are what you
+    must add in Step 2.
+
+    ```python
+    import re
+    import hashlib
+    import time
+    from typing import Any
+
+
+    def parse_date(date_str: str) -> tuple[int, int, int]:
+        parts = date_str.split("-")
+        return int(parts[0]), int(parts[1]), int(parts[2])
+
+
+    def validate_email(email: str) -> bool:
+        pattern = r"^[a-zA-Z0-9_.+-]+@[a-zA-Z0-9-]+\.[a-zA-Z0-9-.]+$"
+        return bool(re.match(pattern, email))
+
+
+    def format_currency(amount: float, symbol: str = "$") -> str:
+        return f"{symbol}{amount:,.2f}"
+
+
+    def slugify(text: str) -> str:
+        text = text.lower()
+        text = re.sub(r"[^\w\s-]", "", text)
+        text = re.sub(r"[\s_-]+", "-", text)
+        return text.strip("-")
+
+
+    def chunk_list(lst: list, size: int) -> list[list]:
+        return [lst[i : i + size] for i in range(0, len(lst), size)]
+
+
+    def retry_with_backoff(func, max_attempts: int = 3, base_delay: float = 1.0):
+        for attempt in range(max_attempts):
+            try:
+                return func()
+            except Exception:
+                if attempt == max_attempts - 1:
+                    raise
+                time.sleep(base_delay * (2 ** attempt))
+
+
+    def deep_merge(base: dict, override: dict) -> dict:
+        result = base.copy()
+        for key, value in override.items():
+            if key in result and isinstance(result[key], dict) and isinstance(value, dict):
+                result[key] = deep_merge(result[key], value)
+            else:
+                result[key] = value
+        return result
+
+
+    def flatten_dict(d: dict, parent_key: str = "", sep: str = ".") -> dict:
+        items: list = []
+        for k, v in d.items():
+            new_key = f"{parent_key}{sep}{k}" if parent_key else k
+            if isinstance(v, dict):
+                items.extend(flatten_dict(v, new_key, sep).items())
+            else:
+                items.append((new_key, v))
+        return dict(items)
+
+
+    def mask_pii(text: str) -> str:
+        text = re.sub(r"\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b", "[EMAIL]", text)
+        text = re.sub(r"\b\d{3}[-.]?\d{3}[-.]?\d{4}\b", "[PHONE]", text)
+        text = re.sub(r"\b\d{3}-\d{2}-\d{4}\b", "[SSN]", text)
+        return text
+
+
+    def compute_checksum(data: str, algorithm: str = "sha256") -> str:
+        h = hashlib.new(algorithm)
+        h.update(data.encode())
+        return h.hexdigest()
+    ```
+
+    Step 2 - Add a docstring to every one of the 10 functions. Each docstring must:
+      - Describe what the function does (one clear sentence minimum)
+      - Document each parameter (name, type, purpose)
+      - Document the return value (type and meaning)
+      - Include at least one usage example in a doctest-style block (>>> ...)
+
+    Step 3 - Create tests/test_helpers.py that imports all 10 functions and
+    verifies they work correctly. Include at least one test per function.
+
+  files_to_examine:
+    - "fastapi/utils.py"
+
+verification:
+  test_commands:
+    - "source .venv/bin/activate && python3 -m pytest tests/test_helpers.py -v"
+  lint_commands:
+    - "source .venv/bin/activate && ruff check utils/helpers.py"
+  security_commands: []
+  partial_credit:
+    - criterion: "At least 5 functions have docstrings"
+      points: 15
+      check: "python3 -c \"
+import ast, sys
+tree = ast.parse(open('utils/helpers.py').read())
+funcs = [n for n in ast.walk(tree) if isinstance(n, ast.FunctionDef)]
+with_docs = [f for f in funcs if ast.get_docstring(f)]
+assert len(with_docs) >= 5, f'Only {len(with_docs)}/10 have docstrings'
+print(f'{len(with_docs)} functions have docstrings')
+\""
+    - criterion: "All 10 functions have docstrings"
+      points: 15
+      check: "python3 -c \"
+import ast
+tree = ast.parse(open('utils/helpers.py').read())
+funcs = [n for n in ast.walk(tree) if isinstance(n, ast.FunctionDef)]
+with_docs = [f for f in funcs if ast.get_docstring(f)]
+assert len(with_docs) == 10, f'Expected 10, got {len(with_docs)}'
+print('all 10 functions have docstrings')
+\""
+    - criterion: "Docstrings mention parameters"
+      points: 20
+      check: "python3 -c \"
+import ast
+tree = ast.parse(open('utils/helpers.py').read())
+funcs = [n for n in ast.walk(tree) if isinstance(n, ast.FunctionDef)]
+with_param_docs = [f for f in funcs if ast.get_docstring(f) and any(w in (ast.get_docstring(f) or '') for w in ['Args:', 'Parameters:', ':param', 'param '])]
+assert len(with_param_docs) >= 5, f'Only {len(with_param_docs)} functions document parameters'
+print(f'{len(with_param_docs)} functions document parameters')
+\""
+    - criterion: "Docstrings mention return values"
+      points: 15
+      check: "python3 -c \"
+import ast
+tree = ast.parse(open('utils/helpers.py').read())
+funcs = [n for n in ast.walk(tree) if isinstance(n, ast.FunctionDef)]
+with_return_docs = [f for f in funcs if ast.get_docstring(f) and any(w in (ast.get_docstring(f) or '') for w in ['Returns:', ':returns:', 'Return:'])]
+assert len(with_return_docs) >= 5, f'Only {len(with_return_docs)} functions document return values'
+print(f'{len(with_return_docs)} functions document return values')
+\""
+    - criterion: "At least 3 docstrings include usage examples"
+      points: 15
+      check: "python3 -c \"
+import ast
+tree = ast.parse(open('utils/helpers.py').read())
+funcs = [n for n in ast.walk(tree) if isinstance(n, ast.FunctionDef)]
+with_examples = [f for f in funcs if ast.get_docstring(f) and '>>>' in (ast.get_docstring(f) or '')]
+assert len(with_examples) >= 3, f'Only {len(with_examples)} functions have examples'
+print(f'{len(with_examples)} functions have usage examples')
+\""
+    - criterion: "Tests pass"
+      points: 20
+      check: "source .venv/bin/activate && python3 -m pytest tests/test_helpers.py -v"
+
+constraints:
+  max_iterations: 15
+  timeout_seconds: 900

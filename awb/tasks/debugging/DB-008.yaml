@@ -1,0 +1,102 @@
+id: DB-008
+category: debugging
+title: "Diagnose why test passes locally but fails due to environment assumption"
+difficulty: medium
+estimated_minutes: 30
+languages: [python]
+tags: [fastapi, pathlib, tempfile, cwd, environment-dependent]
+capabilities: [bug_diagnosis, test_writing]
+
+repo:
+  url: "https://github.com/tiangolo/fastapi"
+  commit: "628c34e0cae200564d191c95d7edea78c88c4b5e"
+  setup_commands:
+    - "python3 -m venv .venv && source .venv/bin/activate && pip install -e '.[all]' && pip install pytest"
+
+issue:
+  description: |
+    Create a path utility module with environment-dependent bugs, then diagnose
+    and fix them so the tests are cwd-independent.
+
+    Step 1 - Create the buggy utility at utils/paths.py:
+
+      import os
+
+      def get_temp_path(filename: str) -> str:
+          """Return a path under /tmp/ for temporary files."""
+          return f"/tmp/{filename}"
+
+      def get_data_path(filename: str) -> str:
+          """Return an absolute path to a file in the data/ directory."""
+          return os.path.abspath(f"data/{filename}")
+
+    THE BUGS:
+      - get_temp_path() hardcodes /tmp/ which is not portable (fails on Windows,
+        may be wrong on some Linux configurations).
+      - get_data_path() calls os.path.abspath() on a relative path, which resolves
+        relative to the current working directory at call time. When pytest is run
+        from different directories (e.g., the project root vs. a subdirectory), the
+        resolved path changes, causing tests to produce different results depending
+        on cwd.
+
+    Step 2 - Create tests/test_paths_buggy.py that demonstrates the failure:
+
+      - test_data_path_contains_data_dir: asserts that get_data_path("file.txt")
+        ends with "data/file.txt". This test passes when run from the repo root
+        but silently produces a wrong absolute path when run from any other cwd.
+      - test_temp_path_format: asserts get_temp_path("out.csv") == "/tmp/out.csv".
+        Documents the hardcoded assumption.
+
+    Step 3 - Fix utils/paths.py:
+
+      - get_temp_path(): use tempfile.mkdtemp() for creating temp directories, or
+        use tempfile.gettempdir() to get the platform temp dir, rather than
+        hardcoding /tmp/.
+      - get_data_path(): anchor the path relative to the module file itself using
+        pathlib.Path(__file__).parent. Do not use os.path.abspath() on a bare
+        relative path.
+
+    Step 4 - Create tests/test_paths_fixed.py that proves the fix:
+
+      - test_data_path_is_cwd_independent: call get_data_path("file.txt") from two
+        different working directories (using os.chdir in the test or by computing
+        what the result would be from a different cwd) and assert the result is
+        identical in both cases.
+      - test_temp_path_uses_platform_temp_dir: assert that the directory portion of
+        get_temp_path("out.csv") equals tempfile.gettempdir(), not a hardcoded string.
+      - test_data_path_is_absolute: assert os.path.isabs(get_data_path("file.txt"))
+        is True.
+      - test_data_path_anchored_to_module: assert that get_data_path("x.txt")
+        starts with str(pathlib.Path(__file__).parent.parent / "data") or the
+        equivalent resolved path.
+
+  files_to_examine:
+    - "fastapi/"
+    - "tests/"
+
+verification:
+  test_commands:
+    - "source .venv/bin/activate && python3 -m pytest tests/test_paths_fixed.py -v"
+  lint_commands:
+    - "source .venv/bin/activate && ruff check utils/paths.py tests/test_paths_fixed.py"
+  security_commands: []
+  partial_credit:
+    - criterion: "Identifies cwd dependency in get_data_path()"
+      points: 20
+      check: "grep -qE 'cwd|chdir|working.dir|__file__|Path\\(__file__\\)' tests/test_paths_fixed.py"
+    - criterion: "get_data_path() uses pathlib or __file__ instead of bare abspath"
+      points: 20
+      check: "grep -qE '__file__|Path\\(__file__' utils/paths.py"
+    - criterion: "get_temp_path() uses tempfile instead of hardcoded /tmp/"
+      points: 15
+      check: "grep -q 'tempfile' utils/paths.py && ! grep -q '\"/tmp/' utils/paths.py"
+    - criterion: "test_data_path_is_cwd_independent verifies cwd-independence"
+      points: 20
+      check: "grep -qE 'cwd_independent|chdir|cwd' tests/test_paths_fixed.py"
+    - criterion: "All fixed tests pass"
+      points: 25
+      check: "source .venv/bin/activate && python3 -m pytest tests/test_paths_fixed.py -v"
+
+constraints:
+  max_iterations: 20
+  timeout_seconds: 1200

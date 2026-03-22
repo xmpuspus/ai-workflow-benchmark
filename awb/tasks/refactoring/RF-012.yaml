@@ -1,0 +1,108 @@
+id: RF-012
+category: refactoring
+title: "Fix 5 planted errors in a broken GitHub Actions workflow YAML"
+difficulty: easy
+estimated_minutes: 15
+languages: [yaml, python]
+tags: [ci-cd, github-actions, yaml, devops]
+capabilities: [framework_knowledge, code_comprehension]
+
+repo:
+  url: "https://github.com/tiangolo/fastapi"
+  commit: "628c34e0cae200564d191c95d7edea78c88c4b5e"
+  setup_commands:
+    - "python3 -m venv .venv && source .venv/bin/activate && pip install -e '.[all]' && pip install pytest ruff pyyaml"
+
+issue:
+  description: |
+    Create a GitHub Actions workflow file with 5 planted errors, then identify
+    and fix every one. Also write a validation script that catches the most
+    common workflow mistakes.
+
+    Step 1 - Create .github/workflows/test.yml with these exact 5 errors:
+
+      Error 1 — missing branches filter on the trigger:
+        on: [push, pull_request]
+        (should be)
+        on:
+          push:
+            branches: [main]
+          pull_request:
+            branches: [main]
+
+      Error 2 — invalid runner name:
+        runs-on: ubuntu-latest-22.04
+        (valid names are ubuntu-latest, ubuntu-22.04, etc. — the hybrid does
+        not exist and will fail to find a runner)
+
+      Error 3 — python-version without quotes:
+        python-version: 3.11
+        YAML parses this as the float 3.11, which Python's setup-python
+        action receives as the string "3.1100000000000003" and cannot resolve.
+        It must be: python-version: "3.11"
+
+      Error 4 — pip install runs before the checkout step:
+        steps:
+          - name: Install dependencies
+            run: pip install -r requirements.txt
+          - name: Checkout
+            uses: actions/checkout@v4
+        (checkout must come first — there is no requirements.txt to install
+        until the repo is checked out)
+
+      Error 5 — pytest invoked without activating the virtual environment:
+        - name: Run tests
+          run: pytest
+        (if dependencies were installed into a venv, pytest must be invoked
+        as .venv/bin/pytest or after "source .venv/bin/activate")
+
+    The file should otherwise be a plausible CI workflow: it sets up Python,
+    installs dependencies, and runs tests.
+
+    Step 2 - Create scripts/validate_workflow.py that:
+      - Accepts a path argument (sys.argv[1]) pointing to a workflow YAML file
+      - Parses the YAML with PyYAML
+      - Checks for and reports each of the 5 issue categories:
+          * trigger has no branches filter (checks on: dict structure)
+          * runner name contains a hyphenated version suffix that is not a
+            valid GitHub-hosted runner (checks runs-on field)
+          * python-version value is a float rather than a string
+          * checkout step does not appear before any run: steps
+          * pytest called without path prefix or venv activation
+      - Prints "PASS" if no issues found, or lists each issue found
+      - Exits with code 0 on PASS, code 1 if any issues found
+
+    Step 3 - Fix all 5 errors in .github/workflows/test.yml so that
+    scripts/validate_workflow.py exits with code 0.
+  files_to_examine:
+    - ".github/workflows/"
+
+verification:
+  test_commands:
+    - "source .venv/bin/activate && python3 scripts/validate_workflow.py .github/workflows/test.yml"
+  lint_commands:
+    - "source .venv/bin/activate && python3 -c \"import yaml; yaml.safe_load(open('.github/workflows/test.yml'))\""
+  security_commands: []
+  partial_credit:
+    - criterion: "Branches filter added to push and pull_request triggers"
+      points: 15
+      check: "grep -qE 'branches' .github/workflows/test.yml"
+    - criterion: "Runner name corrected to a valid GitHub-hosted runner"
+      points: 15
+      check: "! grep -q 'ubuntu-latest-22.04' .github/workflows/test.yml"
+    - criterion: "python-version value is quoted as a string"
+      points: 20
+      check: "grep -qE 'python-version:\\s*[\"'']3\\.11[\"'']' .github/workflows/test.yml"
+    - criterion: "Checkout step appears before pip install step"
+      points: 15
+      check: "source .venv/bin/activate && python3 -c \"import yaml,sys; steps=[s.get('uses','') or s.get('run','') for s in yaml.safe_load(open('.github/workflows/test.yml'))['jobs'][list(yaml.safe_load(open('.github/workflows/test.yml'))['jobs'].keys())[0]]['steps']]; co=[i for i,s in enumerate(steps) if 'checkout' in s.lower()]; pi=[i for i,s in enumerate(steps) if 'pip install' in s.lower()]; sys.exit(0 if co and pi and co[0] < pi[0] else 1)\""
+    - criterion: "pytest invoked with venv activation or explicit path prefix"
+      points: 10
+      check: "grep -qE '\\.venv/bin/pytest|source .*/activate.*\\n.*pytest|activate && pytest' .github/workflows/test.yml"
+    - criterion: "Validation script exits 0 on the fixed workflow"
+      points: 25
+      check: "source .venv/bin/activate && python3 scripts/validate_workflow.py .github/workflows/test.yml"
+
+constraints:
+  max_iterations: 15
+  timeout_seconds: 900

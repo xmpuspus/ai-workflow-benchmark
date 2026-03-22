@@ -1,0 +1,172 @@
+id: BF-014
+category: bug-fix
+title: "Fix N+1 query pattern causing GET /orders to time out under load"
+difficulty: medium
+estimated_minutes: 30
+languages: [python]
+tags: [fastapi, sqlalchemy, performance, n-plus-one, async]
+capabilities: [bug_diagnosis, framework_knowledge]
+
+repo:
+  url: "https://github.com/tiangolo/fastapi"
+  commit: "628c34e0cae200564d191c95d7edea78c88c4b5e"
+  setup_commands:
+    - "python3 -m venv .venv && source .venv/bin/activate && pip install -e '.[all]' && pip install pytest sqlalchemy aiosqlite"
+
+issue:
+  description: |
+    A FastAPI endpoint that lists orders is timing out under moderate load.
+    The endpoint fetches all orders then lazily loads each order's items in a
+    loop — an N+1 query pattern that issues one query per order.
+
+    Create the following files exactly as shown. Do not fix the bug yet.
+
+    app/models.py:
+
+      from sqlalchemy import Column, Integer, String, Float, ForeignKey
+      from sqlalchemy.orm import relationship, DeclarativeBase
+
+      class Base(DeclarativeBase):
+          pass
+
+      class Order(Base):
+          __tablename__ = "orders"
+          id = Column(Integer, primary_key=True)
+          customer = Column(String, nullable=False)
+          items = relationship("OrderItem", lazy="select")
+
+      class OrderItem(Base):
+          __tablename__ = "order_items"
+          id = Column(Integer, primary_key=True)
+          order_id = Column(Integer, ForeignKey("orders.id"), nullable=False)
+          name = Column(String, nullable=False)
+          price = Column(Float, nullable=False)
+
+    app/main.py:
+
+      from fastapi import FastAPI, Depends
+      from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine, async_sessionmaker
+      from sqlalchemy import select
+      from app.models import Base, Order
+
+      DATABASE_URL = "sqlite+aiosqlite:///./test.db"
+      engine = create_async_engine(DATABASE_URL)
+      SessionLocal = async_sessionmaker(engine, expire_on_commit=False)
+
+      app = FastAPI()
+
+      async def get_db():
+          async with SessionLocal() as session:
+              yield session
+
+      @app.on_event("startup")
+      async def startup():
+          async with engine.begin() as conn:
+              await conn.run_sync(Base.metadata.create_all)
+
+      @app.get("/orders")
+      async def list_orders(db: AsyncSession = Depends(get_db)):
+          result = await db.execute(select(Order))
+          orders = result.scalars().all()
+          # N+1 BUG: each iteration triggers a lazy load for order.items
+          return [
+              {
+                  "id": order.id,
+                  "customer": order.customer,
+                  "items": [
+                      {"name": item.name, "price": item.price}
+                      for item in order.items   # lazy load fires here
+                  ],
+              }
+              for order in orders
+          ]
+
+    Create tests/test_orders_performance.py:
+
+      import time
+      import pytest
+      import pytest_asyncio
+      from httpx import AsyncClient, ASGITransport
+      from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker
+      from sqlalchemy import insert
+
+      from app.main import app
+      from app.models import Base, Order, OrderItem
+
+      TEST_DB = "sqlite+aiosqlite:///./test_perf.db"
+
+      @pytest_asyncio.fixture(scope="module")
+      async def seeded_app():
+          engine = create_async_engine(TEST_DB)
+          async with engine.begin() as conn:
+              await conn.run_sync(Base.metadata.create_all)
+          Session = async_sessionmaker(engine, expire_on_commit=False)
+          async with Session() as session:
+              for i in range(50):
+                  order = Order(customer=f"Customer {i}")
+                  session.add(order)
+              await session.flush()
+              result = await session.execute(select(Order))
+              orders = result.scalars().all()
+              for order in orders:
+                  for j in range(5):
+                      session.add(OrderItem(order_id=order.id, name=f"Item {j}", price=9.99))
+              await session.commit()
+          yield app
+          async with engine.begin() as conn:
+              await conn.run_sync(Base.metadata.drop_all)
+
+      @pytest.mark.asyncio
+      async def test_list_orders_responds_within_one_second(seeded_app):
+          async with AsyncClient(transport=ASGITransport(app=seeded_app), base_url="http://test") as client:
+              start = time.monotonic()
+              response = await client.get("/orders")
+              elapsed = time.monotonic() - start
+          assert response.status_code == 200
+          data = response.json()
+          assert len(data) == 50
+          assert all(len(order["items"]) == 5 for order in data)
+          assert elapsed < 1.0, f"Endpoint took {elapsed:.2f}s — N+1 queries likely"
+
+    Install pytest-asyncio: pip install pytest-asyncio
+    Run the test — it will fail because the N+1 pattern is too slow.
+
+    Fix app/main.py to use eager loading. Import selectinload from
+    sqlalchemy.orm and add it to the query:
+
+      from sqlalchemy.orm import selectinload
+      result = await db.execute(select(Order).options(selectinload(Order.items)))
+
+    This replaces N+1 queries (1 for orders + 50 for items) with 2 queries total.
+    After the fix the timing assertion must pass.
+  files_to_examine:
+    - "app/models.py"
+    - "app/main.py"
+    - "tests/test_orders_performance.py"
+
+verification:
+  test_commands:
+    - "source .venv/bin/activate && pip install pytest-asyncio -q && python3 -m pytest tests/test_orders_performance.py -v"
+  lint_commands:
+    - "source .venv/bin/activate && ruff check app/main.py app/models.py"
+  security_commands: []
+  partial_credit:
+    - criterion: "Identifies N+1 as the root cause (names it in a comment or uses eager loading)"
+      points: 20
+      check: "grep -qEi 'n.?1|n\\+1|lazy.?load|eager.?load|selectinload|joinedload' app/main.py"
+    - criterion: "Uses selectinload or joinedload on the query"
+      points: 25
+      check: "grep -qE 'selectinload|joinedload' app/main.py"
+    - criterion: "Query count reduced (no per-order lazy load loop remaining)"
+      points: 15
+      check: "! grep -q 'for item in order.items' app/main.py || grep -qE 'selectinload|joinedload' app/main.py"
+    - criterion: "Timing assertion present in test (< 1 second threshold)"
+      points: 15
+      check: "grep -q 'elapsed < 1' tests/test_orders_performance.py"
+    - criterion: "All tests pass including timing assertion"
+      points: 25
+      check: "source .venv/bin/activate && pip install pytest-asyncio -q && python3 -m pytest tests/test_orders_performance.py -v"
+
+constraints:
+  max_iterations: 20
+  timeout_seconds: 1200

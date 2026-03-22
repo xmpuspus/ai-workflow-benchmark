@@ -1,0 +1,84 @@
+id: RF-011
+category: refactoring
+title: "Optimize O(n^2) duplicate email search to O(n) using a hash map"
+difficulty: easy
+estimated_minutes: 15
+languages: [python]
+tags: [performance, algorithms, data-structures, refactoring]
+capabilities: [refactoring_discipline, code_comprehension]
+
+repo:
+  url: "https://github.com/tiangolo/fastapi"
+  commit: "628c34e0cae200564d191c95d7edea78c88c4b5e"
+  setup_commands:
+    - "python3 -m venv .venv && source .venv/bin/activate && pip install -e '.[all]' && pip install pytest ruff"
+
+issue:
+  description: |
+    Create utils/matcher.py with a find_duplicates function that finds all items
+    sharing the same "email" field. The initial implementation must use nested
+    loops (O(n^2)). Then create tests that assert both correctness and timing
+    constraints — the timing assertion will fail with the naive implementation.
+    Fix the implementation to use a dict or defaultdict to achieve O(n).
+
+    Step 1 - Create utils/matcher.py with this O(n^2) implementation:
+
+      from typing import Any
+
+      def find_duplicates(items: list[dict]) -> list[dict]:
+          """Return all items whose email appears more than once in the list."""
+          duplicates = []
+          for i in range(len(items)):
+              for j in range(len(items)):
+                  if i != j and items[i]["email"] == items[j]["email"]:
+                      if items[i] not in duplicates:
+                          duplicates.append(items[i])
+          return duplicates
+
+    Step 2 - Create tests/test_matcher.py with these tests:
+
+      - test_no_duplicates: list with all unique emails returns []
+      - test_single_duplicate_pair: two items with same email both returned
+      - test_multiple_groups: two different duplicate groups both detected
+      - test_preserves_all_fields: returned dicts include all original fields
+      - test_performance_1000_items: build a 1000-item list where items 0 and
+        500 share one email, items 1 and 501 share another. Assert
+        find_duplicates returns exactly 4 items AND completes in under 0.1
+        seconds (use time.perf_counter). The O(n^2) version will exceed
+        this limit; the O(n) version must not.
+
+    Step 3 - Fix find_duplicates in utils/matcher.py to use a dict grouping
+    items by email. The O(n) implementation should:
+      - Build a dict mapping email -> list[dict] in a single pass
+      - Collect items from groups with more than one entry
+      - Return the flattened list of duplicates
+      - Pass all 5 tests including the timing assertion
+  files_to_examine:
+    - "fastapi/utils.py"
+
+verification:
+  test_commands:
+    - "source .venv/bin/activate && python3 -m pytest tests/test_matcher.py -v"
+  lint_commands:
+    - "source .venv/bin/activate && ruff check utils/matcher.py"
+  security_commands: []
+  partial_credit:
+    - criterion: "Identifies nested loop as the performance bottleneck"
+      points: 15
+      check: "! grep -qE 'for j in range|for j, ' utils/matcher.py"
+    - criterion: "Uses dict or defaultdict to group by email in O(n)"
+      points: 25
+      check: "grep -qE 'defaultdict|\\{\\}|dict\\(' utils/matcher.py"
+    - criterion: "Correctness preserved — duplicate detection logic is correct"
+      points: 20
+      check: "source .venv/bin/activate && python3 -m pytest tests/test_matcher.py::test_single_duplicate_pair tests/test_matcher.py::test_multiple_groups tests/test_matcher.py::test_preserves_all_fields -v"
+    - criterion: "Timing test passes with 1000-item list under 0.1 seconds"
+      points: 15
+      check: "source .venv/bin/activate && python3 -m pytest tests/test_matcher.py::test_performance_1000_items -v"
+    - criterion: "All 5 tests pass"
+      points: 25
+      check: "source .venv/bin/activate && python3 -m pytest tests/test_matcher.py -v"
+
+constraints:
+  max_iterations: 15
+  timeout_seconds: 900

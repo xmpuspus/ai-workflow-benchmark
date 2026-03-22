@@ -1,0 +1,175 @@
+id: CR-010
+category: code-review
+title: "Write a migration guide documenting API changes between v1 and v2 endpoints"
+difficulty: medium
+estimated_minutes: 30
+languages: [python, markdown]
+tags: [documentation, fastapi, pydantic, api-versioning, migration]
+capabilities: [code_comprehension, framework_knowledge]
+
+repo:
+  url: "https://github.com/tiangolo/fastapi"
+  commit: "628c34e0cae200564d191c95d7edea78c88c4b5e"
+  setup_commands:
+    - "python3 -m venv .venv && source .venv/bin/activate && pip install -e '.[all]' && pip install pytest ruff"
+
+issue:
+  description: |
+    Two versions of an API module exist: v1 uses old patterns (dict returns,
+    no response models, string status codes) and v2 uses current best practices
+    (Pydantic response models, proper HTTP status codes, typed responses).
+    Your task is to read both files and write a migration guide in Markdown
+    that documents every difference with before/after code examples.
+
+    Step 1 - Create api/v1/endpoints.py with 5 endpoints using old patterns:
+
+      from fastapi import APIRouter
+      router = APIRouter(prefix="/v1")
+
+      # 1. Returns a plain dict — no response model
+      @router.get("/users/{user_id}")
+      def get_user(user_id: int):
+          return {"id": user_id, "name": "Alice", "email": "alice@example.com"}
+
+      # 2. Returns plain dict on create — uses 200 instead of 201
+      @router.post("/users")
+      def create_user(name: str, email: str):
+          return {"id": 1, "name": name, "email": email}
+
+      # 3. Returns string "not found" on missing resource — no HTTPException
+      @router.get("/items/{item_id}")
+      def get_item(item_id: int):
+          if item_id > 100:
+              return "not found"
+          return {"id": item_id, "title": "Widget"}
+
+      # 4. Delete returns 200 with a message dict — should be 204 with no body
+      @router.delete("/users/{user_id}")
+      def delete_user(user_id: int):
+          return {"message": "deleted"}
+
+      # 5. List endpoint returns raw list — no envelope or metadata
+      @router.get("/users")
+      def list_users():
+          return [{"id": 1, "name": "Alice"}, {"id": 2, "name": "Bob"}]
+
+    Step 2 - Create api/v2/endpoints.py with the same 5 endpoints using
+    current FastAPI best practices:
+
+      from fastapi import APIRouter, HTTPException, status
+      from pydantic import BaseModel
+
+      class UserOut(BaseModel):
+          id: int
+          name: str
+          email: str
+
+      class UserIn(BaseModel):
+          name: str
+          email: str
+
+      class ItemOut(BaseModel):
+          id: int
+          title: str
+
+      class UsersListOut(BaseModel):
+          items: list[UserOut]
+          total: int
+
+      router = APIRouter(prefix="/v2")
+
+      # 1. Typed response model
+      @router.get("/users/{user_id}", response_model=UserOut)
+      def get_user(user_id: int) -> UserOut:
+          return UserOut(id=user_id, name="Alice", email="alice@example.com")
+
+      # 2. 201 Created with response model
+      @router.post("/users", response_model=UserOut, status_code=status.HTTP_201_CREATED)
+      def create_user(body: UserIn) -> UserOut:
+          return UserOut(id=1, name=body.name, email=body.email)
+
+      # 3. HTTPException for not found
+      @router.get("/items/{item_id}", response_model=ItemOut)
+      def get_item(item_id: int) -> ItemOut:
+          if item_id > 100:
+              raise HTTPException(status_code=404, detail="Item not found")
+          return ItemOut(id=item_id, title="Widget")
+
+      # 4. 204 No Content on delete
+      @router.delete("/users/{user_id}", status_code=status.HTTP_204_NO_CONTENT)
+      def delete_user(user_id: int) -> None:
+          return None
+
+      # 5. Envelope with metadata
+      @router.get("/users", response_model=UsersListOut)
+      def list_users() -> UsersListOut:
+          users = [UserOut(id=1, name="Alice", email="alice@example.com"),
+                   UserOut(id=2, name="Bob", email="bob@example.com")]
+          return UsersListOut(items=users, total=len(users))
+
+    Step 3 - Write docs/migration_guide.md that documents every difference
+    between v1 and v2. The guide must:
+      - Have an introductory section explaining why these patterns changed
+      - Cover all 5 endpoints with a dedicated section per endpoint
+      - Show the v1 code (before) and v2 code (after) for each endpoint
+      - Explain WHY each change matters (not just what changed):
+          * response_model: enables automatic serialization, validation,
+            and OpenAPI schema generation
+          * 201 vs 200 on create: semantically correct, tells clients the
+            resource was created
+          * HTTPException vs string return: clients can check status codes
+            without parsing the body
+          * 204 on delete: no-content signals success without a body,
+            reduces payload
+          * response envelope: pagination metadata travels with the list
+      - All code examples must be syntactically valid Python
+      - Use fenced code blocks with language tags (```python)
+
+    Step 4 - Create scripts/check_guide_syntax.py that accepts a markdown
+    file path as sys.argv[1], extracts all fenced python code blocks, parses
+    each with ast.parse, and exits 0 if all parse successfully or 1 with an
+    error message on failure.
+
+    Step 5 - Create tests/test_migration_guide.py that verifies:
+      - docs/migration_guide.md exists
+      - The guide mentions all 5 endpoint paths (/users/{user_id}, /users,
+        /items/{item_id}, POST /users, DELETE /users/{user_id})
+      - The guide contains at least 5 fenced python code blocks
+      - Each endpoint section contains both v1 and v2 code examples
+        (check that each section includes at least one "v1" and one "v2"
+        label or "before" / "after" heading)
+      - The Python code blocks are syntactically valid (invoke
+        scripts/check_guide_syntax.py with subprocess and assert returncode 0)
+  files_to_examine:
+    - "fastapi/routing.py"
+    - "fastapi/responses.py"
+
+verification:
+  test_commands:
+    - "source .venv/bin/activate && python3 -m pytest tests/test_migration_guide.py -v"
+  lint_commands:
+    - "source .venv/bin/activate && ruff check api/"
+  security_commands: []
+  partial_credit:
+    - criterion: "Migration guide file exists at docs/migration_guide.md"
+      points: 10
+      check: "test -f docs/migration_guide.md"
+    - criterion: "Guide covers all 5 endpoints with dedicated sections"
+      points: 20
+      check: "grep -cE 'users/\\{user_id\\}|POST /users|DELETE /users|items/\\{item_id\\}|GET /users' docs/migration_guide.md | awk '{exit ($1 >= 5) ? 0 : 1}'"
+    - criterion: "Each section shows before (v1) and after (v2) examples"
+      points: 20
+      check: "grep -qiE 'v1|before' docs/migration_guide.md && grep -qiE 'v2|after' docs/migration_guide.md"
+    - criterion: "Guide explains the reason for each change"
+      points: 15
+      check: "grep -cE 'response_model|status_code|HTTPException|envelope|204' docs/migration_guide.md | awk '{exit ($1 >= 3) ? 0 : 1}'"
+    - criterion: "All Python code examples in the guide are syntactically valid"
+      points: 10
+      check: "source .venv/bin/activate && python3 scripts/check_guide_syntax.py docs/migration_guide.md"
+    - criterion: "All migration guide tests pass"
+      points: 25
+      check: "source .venv/bin/activate && python3 -m pytest tests/test_migration_guide.py -v"
+
+constraints:
+  max_iterations: 20
+  timeout_seconds: 1200
