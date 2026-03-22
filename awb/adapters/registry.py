@@ -11,6 +11,7 @@ _FALLBACK: dict[str, str] = {
     "claude-code-custom": "awb.adapters.claude_code:ClaudeCodeCustomAdapter",
     "cursor": "awb.adapters.cursor:CursorAdapter",
     "aider": "awb.adapters.aider:AiderAdapter",
+    "pi": "awb.adapters.pi:PiAdapter",
 }
 
 _cache: dict[str, type[ToolAdapter]] = {}

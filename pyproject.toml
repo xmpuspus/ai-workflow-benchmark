@@ -57,6 +57,7 @@ claude-code-vanilla = "awb.adapters.claude_code:ClaudeCodeVanillaAdapter"
 claude-code-custom = "awb.adapters.claude_code:ClaudeCodeCustomAdapter"
 cursor = "awb.adapters.cursor:CursorAdapter"
 aider = "awb.adapters.aider:AiderAdapter"
+pi = "awb.adapters.pi:PiAdapter"
 
 [tool.hatch.build.targets.wheel]
 packages = ["awb"]
