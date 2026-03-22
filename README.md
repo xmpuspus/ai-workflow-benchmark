@@ -1,211 +1,177 @@
-# AI Workflow Benchmark (awb)
+<div align="center">
+  <h1>AI Workflow Benchmark (AWB)</h1>
+  <p><strong>Measure AI coding tool+workflow performance, not just model capability.</strong></p>
+  <p>
+    <a href="https://pypi.org/project/awb/"><img src="https://img.shields.io/pypi/v/awb" alt="PyPI"></a>
+    <a href="https://github.com/xmpuspus/ai-workflow-benchmark/actions"><img src="https://img.shields.io/github/actions/workflow/status/xmpuspus/ai-workflow-benchmark/test.yml" alt="Tests"></a>
+    <img src="https://img.shields.io/badge/tasks-60-blue" alt="Tasks">
+    <img src="https://img.shields.io/badge/python-3.11%2B-blue" alt="Python">
+    <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-green" alt="License"></a>
+  </p>
+</div>
 
-Benchmark harness measuring AI coding tool+workflow performance, not just model capability.
+---
 
-## The Problem
+## Why This Exists
 
-Existing benchmarks test models in isolation:
+SWE-bench tests models. AWB tests workflows. The same model running vanilla Claude Code vs. a purpose-built setup with a tuned CLAUDE.md, hooks, and structured agents produces meaningfully different results on real engineering tasks. No existing benchmark captures that gap — they all evaluate the model in isolation.
 
-- **SWE-bench** - 500 tasks, Python-only, headless model evaluation. No iteration cycles, no cost tracking, no human interventions.
-- **Aider Polyglot** - 225 Exercism problems, measures edit formats and context strategies. Still model-centric.
-
-Neither measures the tool+workflow. A developer using Claude Code with a well-tuned CLAUDE.md, custom hooks, and a structured workflow will outperform the same model running vanilla. No benchmark captures that gap.
-
-AWB benchmarks the full stack: tool, configuration, workflow, and model together.
-
-## What This Measures
-
-Seven scoring dimensions per task run, using sigmoid normalization with per-task baselines:
-
-| Dimension | Weight | Description |
-|-----------|--------|-------------|
-| Correctness | 55% | Combined success rate (pass/fail) + partial credit (rubric-based) |
-| Cost efficiency | 15% | Estimated USD per task, normalized per difficulty tier |
-| Speed | 10% | Wall-clock seconds, baseline derived from task estimated_minutes |
-| Code quality | 10% | Lint warning delta before/after (ruff, eslint, tsc) |
-| Reliability | 5% | Pre-existing tests broken by the change |
-| Security | 3% | New security issues introduced (bandit, semgrep) |
-| Efficiency | 2% | Tool turns used relative to task max_iterations |
-
-All metrics use sigmoid normalization: optimal performance scores ~95, baseline scores ~50, and scores never go negative. Per-task baselines are derived from difficulty level and constraints.
-
-### Capability Profiles
-
-Each task maps to 1-3 capabilities, producing a radar chart of tool strengths:
-
-- **Code comprehension** - understanding existing code (27 tasks)
-- **Bug diagnosis** - finding root cause (17 tasks)
-- **Multi-file reasoning** - coordinated changes across files (20 tasks)
-- **Framework knowledge** - knowing APIs and patterns (26 tasks)
-- **Test writing** - writing correct tests (8 tasks)
-- **Refactoring discipline** - change without breaking (23 tasks)
-- **Security awareness** - identifying vulnerabilities (8 tasks)
-- **Cost discipline** - token efficiency (derived from all tasks)
-
-## Task Suite
-
-60 tasks across 7 categories, built on real open-source frameworks:
-
-| Category | Tasks | Easy/Med/Hard | What It Tests |
-|----------|-------|---------------|---------------|
-| Bug Fix | 10 | 3/3/2 | Root cause analysis, None handling, async bugs, race conditions |
-| Feature Addition | 8 | 2/3/2 | Convention adherence, middleware patterns, cross-cutting features |
-| Refactoring | 10 | 2/3/2 | Multi-file consistency, pattern extraction, async migration |
-| Code Review | 7 | 2/3/1 | Security awareness, OWASP, concurrency bugs, CORS/auth |
-| Debugging | 7 | 2/1/3 | Hypothesis testing, connection leaks, pipeline tracing |
-| Multi-File | 8 | 0/3/3 | Cross-module architecture, plugin systems, auth chains |
-| Legacy Code | 10 | 4/4/2 | Modernization, migration, dead code removal, type annotations |
-
-Repos used: FastAPI, httpx, Flask, Starlette, Click, Pydantic, Hono.
-
-All repos pinned to release tag SHAs. Setup installs via venv + pip (Python) or npm (TypeScript) in under 15 seconds.
+AWB benchmarks the full stack: **tool + configuration + workflow + model**, together, on 60 tasks drawn from real open-source repositories.
 
 ## Quick Start
 
 ```bash
-pip install -e ".[dev]"
+pip install awb
 
-# Optional: install scipy/numpy for advanced statistics
-pip install -e ".[stats]"
+awb quickstart                    # verify your setup
+awb run --runs 3                  # full benchmark (3 runs each for stable scores)
+awb gap results/runs/<run_dir>/   # analyze capability gaps
 ```
 
-### Check available tools
-
-```bash
-awb tools
-```
-
-### Validate task definitions
-
-```bash
-awb validate
-```
-
-### Run a benchmark
-
-```bash
-# Run vanilla vs custom on all tasks (default: 3 runs each)
-awb run --runs 1
-
-# Single tool, single task
-awb run claude-code-custom -t BF-001 --runs 1
-
-# Filter by category
-awb run --runs 1 --category legacy-code
-
-# Preview what will execute
-awb run --dry-run
-```
-
-### Analyze capability gaps
-
-```bash
-awb gap results/runs/<run_dir>/
-```
-
-Output includes:
-- Capability radar chart (per-dimension scores)
-- Failure analysis with root cause classification
-- Systematic weakness detection (e.g., "fails all hard tasks")
-- Actionable improvement suggestions
-
-### Compare results
-
-```bash
-awb compare results/runs/<run1>/ results/runs/<run2>/
-```
-
-### External submissions
-
-```bash
-# Validate a submission from another tool/user
-awb submit submission.json
-
-# Compare two external submissions with statistical significance
-awb compare-submissions submission_a.json submission_b.json
-```
-
-### Workflow descriptors
-
-```bash
-awb workflow export claude-code-custom -n "my-setup"
-awb workflow validate workflow.yaml
-awb workflow diff baseline.yaml optimized.yaml
-awb workflow init
-```
-
-### Generate leaderboard
-
-```bash
-awb leaderboard
-awb leaderboard --output-dir ./site
-```
-
-## Architecture
+## How It Works
 
 ```
-awb/core/           Config, task loading, runner, result recording, repo management
-awb/adapters/       Tool adapters (implement ToolAdapter ABC)
-awb/verification/   Diff analysis, lint checking, partial credit evaluation
-awb/scoring/        Sigmoid normalization, per-task baselines, capability profiles,
-                    statistics (confidence intervals, significance testing),
-                    integrity checks (contamination detection)
-awb/analysis/       Gap analysis engine, workflow improvement suggestions
-awb/submission/     External submission format, cross-submission comparison
-awb/workflow/       Workflow descriptors (export, validate, diff)
-awb/leaderboard/    Static HTML leaderboard generator
-awb/tasks/          60 task YAML definitions, organized by category
-awb/cli.py          Click-based CLI interface
-results/            Run outputs (gitignored), JSON schemas
+Clone repo at pinned SHA
+  → Run setup commands
+  → Capture baseline lint/security counts
+  → Execute tool with task prompt
+  → Run test suite + partial credit rubric
+  → Sigmoid-normalize 7 metrics
+  → Produce weighted composite + capability profile
 ```
 
-## Scoring System (v2)
+Each task starts from a fresh `git clone` at a pinned commit. Every tool gets the same prompt, the same timeout, and the same verification suite. Results are scored with sigmoid normalization so scores are never negative and never collapse at the boundary.
 
-### Sigmoid normalization
+## Scoring System
 
-All metrics use a sigmoid curve centered at the task's baseline:
-- At the **optimal** value (excellent performance): score ~95
-- At the **baseline** value (adequate performance): score ~50
-- Scores never go negative, providing smooth gradient at all values
+Seven dimensions, sigmoid-normalized with per-task baselines derived from difficulty:
 
-Per-task baselines are derived from difficulty:
+| Dimension | Weight | What It Measures |
+|-----------|--------|-----------------|
+| Correctness | 55% | Pass/fail (60%) + partial credit rubric (40%) |
+| Cost efficiency | 15% | Estimated USD per task |
+| Speed | 10% | Wall-clock seconds vs. estimated task time |
+| Code quality | 10% | Lint warning delta (pre vs. post) |
+| Reliability | 5% | Pre-existing tests broken by the change |
+| Security | 3% | New security issues introduced |
+| Efficiency | 2% | Tool turns used vs. task max |
+
+**Sigmoid curve:** `score = 100 / (1 + exp(k * (value - baseline)))`
+
+- Optimal performance (excellent) → ~95
+- Baseline performance (adequate) → ~50
+- Above baseline → smooth decay, never negative
+
+**Difficulty-weighted aggregation:** hard tasks count 2.5×, medium 1.5×, easy 1.0×. A tool that solves hard tasks beats one that only solves easy ones even if the easy-task count is higher.
+
+**Per-task baselines by difficulty:**
 
 | Metric | Easy | Medium | Hard |
 |--------|------|--------|------|
-| Cost optimal/baseline | $0.05/$0.30 | $0.20/$1.00 | $1.00/$3.00 |
-| Speed | 50%/100% of estimated_minutes | same | same |
-| Iterations | 3/max_iters | 8/max_iters | 15/max_iters |
+| Cost optimal / baseline | $0.05 / $0.30 | $0.20 / $1.00 | $1.00 / $3.00 |
+| Speed | 50% / 100% of estimated_minutes | same | same |
+| Iterations | 3 / max_iters | 8 / max_iters | 15 / max_iters |
 
-### Difficulty-weighted aggregation
+## The 60 Tasks
 
-Aggregate scores weight by difficulty: easy=1.0, medium=1.5, hard=2.5. Solving hard tasks counts more than solving easy ones.
+Real open-source repos, pinned to release tag SHAs. Setup runs in under 15 seconds via venv + pip (Python) or npm (TypeScript).
 
-### Configurable weight profiles
+| Category | Count | Easy / Med / Hard | What It Tests |
+|----------|-------|-------------------|---------------|
+| bug-fix | 10 | 3 / 3 / 2 | Root cause analysis, None handling, async bugs, race conditions |
+| feature-addition | 8 | 2 / 3 / 2 | Convention adherence, middleware patterns, cross-cutting features |
+| refactoring | 10 | 2 / 3 / 2 | Multi-file consistency, pattern extraction, async migration |
+| code-review | 7 | 2 / 3 / 1 | Security awareness, OWASP, concurrency bugs, CORS/auth |
+| debugging | 7 | 2 / 1 / 3 | Hypothesis testing, connection leaks, pipeline tracing |
+| multi-file | 8 | 0 / 3 / 3 | Cross-module architecture, plugin systems, auth chains |
+| legacy-code | 10 | 4 / 4 / 2 | Modernization, migration, dead code removal, type annotations |
 
-Three built-in profiles in `awb/scoring/weights.yaml`:
-- **default** - balanced (correctness 55%, cost 15%, speed 10%, quality 10%)
-- **correctness_focused** - correctness 70%, everything else reduced
-- **production** - higher weight on reliability (10%) and security (8%)
+**Repos used:** FastAPI, httpx, Flask, Starlette, Click, Pydantic, SQLAlchemy 2.0, Hono
 
-### Statistical framework
+**Task IDs:**
+`BF-001–011` · `FA-001–008` · `RF-001–010` · `CR-001–007` · `DB-001–007` · `MF-001–008` · `LC-001–010`
 
-- Confidence intervals via t-distribution (no scipy required)
-- Significance testing via sign test for tool comparison
-- Integrity checks: contamination detection (suspiciously fast completions), variance anomalies (identical times across runs)
-- Minimum 3 runs recommended for stable scores
+## Capability Profiles
+
+Each task maps to 1–3 capabilities, producing a radar chart of tool strengths:
+
+| Capability | Tasks | What It Measures |
+|------------|-------|-----------------|
+| code_comprehension | 27 | Understanding existing code before modifying |
+| framework_knowledge | 26 | Knowing API patterns (Pydantic v2, async SQLAlchemy, etc.) |
+| refactoring_discipline | 23 | Changing code without breaking behavior |
+| multi_file_reasoning | 20 | Coordinating changes across multiple files |
+| bug_diagnosis | 17 | Structured root cause analysis |
+| test_writing | 8 | Writing correct, meaningful tests |
+| security_awareness | 8 | Identifying and fixing vulnerabilities |
+| cost_discipline | derived | Token efficiency across all tasks |
+
+Example `awb gap` output:
+
+```
+Capability Profile
+------------------
+code_comprehension    ████████████████████  82.4  (n=27, conf=high)
+framework_knowledge   ████████████████░░░░  68.1  (n=26, conf=high)
+refactoring_discipline████████████████░░░░  65.3  (n=23, conf=high)
+multi_file_reasoning  ████████████░░░░░░░░  51.2  (n=20, conf=high)
+bug_diagnosis         ███████████████░░░░░  63.7  (n=17, conf=med)
+test_writing          ██████████░░░░░░░░░░  44.1  (n=8,  conf=low)
+security_awareness    █████████████░░░░░░░  55.8  (n=8,  conf=low)
+
+Systematic Patterns
+-------------------
+- Fails 70%+ of multi_file_reasoning tasks → consider multi-agent workflows
+- Token spend on failed hard tasks: $4.20 → add early-exit heuristics
+- No failures on easy tasks → baseline is solid
+
+Top Suggestions
+---------------
+1. Enable subagent mode for tasks spanning >3 files (impact: high)
+2. Add repo-level CLAUDE.md with architecture overview (impact: medium)
+3. Use --think flag for debugging tasks (impact: medium)
+```
+
+## CLI Reference
+
+| Command | Description |
+|---------|-------------|
+| `awb run [tool] [options]` | Run benchmark tasks |
+| `awb gap <run_dir>` | Analyze capability gaps and generate improvement suggestions |
+| `awb compare <run1> <run2>` | Compare two runs with significance testing |
+| `awb export <run_dir> -o file.json` | Export results in external submission format |
+| `awb submit <file.json>` | Validate and display an external submission |
+| `awb compare-submissions <a.json> <b.json>` | Cross-tool comparison with statistics |
+| `awb quickstart` | Verify setup: tools available, tasks load, validation passes |
+| `awb info <task_id>` | Show task details |
+| `awb tools` | List registered adapters and availability |
+| `awb validate` | Validate all task YAMLs against schema |
+| `awb leaderboard` | Generate HTML leaderboard from run results |
+| `awb workflow <subcommand>` | Export, validate, diff, or init workflow descriptors |
+
+**Common options for `awb run`:**
+
+```bash
+awb run                            # all tools, all tasks, 3 runs
+awb run claude-code-custom         # single tool
+awb run -t BF-001                  # single task
+awb run --category legacy-code     # filter by category
+awb run --difficulty hard          # filter by difficulty
+awb run --capability bug_diagnosis # filter by capability
+awb run --runs 1 --dry-run        # preview without executing
+```
 
 ## Adding Tasks
 
-Tasks are YAML files under `awb/tasks/<category>/`. Copy `awb/tasks/_template.yaml`:
+Tasks live in `awb/tasks/<category>/`. Copy `awb/tasks/_template.yaml`:
 
 ```yaml
-id: BF-042
+id: BF-012
 category: bug-fix
 title: "Fix response_model silently dropping extra fields in FastAPI"
 difficulty: easy
 estimated_minutes: 15
 languages: [python]
-tags: [fastapi, pydantic, validation]
 capabilities: [framework_knowledge, test_writing]
 
 repo:
@@ -223,8 +189,6 @@ issue:
 verification:
   test_commands:
     - "source .venv/bin/activate && python3 -m pytest tests/test_extra_fields.py -v"
-  lint_commands:
-    - "source .venv/bin/activate && ruff check tests/test_extra_fields.py"
   partial_credit:
     - criterion: "Uses Pydantic v2 ConfigDict"
       points: 50
@@ -238,13 +202,11 @@ constraints:
   timeout_seconds: 1800
 ```
 
-Valid capabilities: `code_comprehension`, `bug_diagnosis`, `multi_file_reasoning`, `framework_knowledge`, `test_writing`, `refactoring_discipline`, `security_awareness`.
-
-Full schema: `awb/tasks/schema.json`
+Run `awb validate` to check your task before opening a PR. Full guide: [CONTRIBUTING.md](CONTRIBUTING.md)
 
 ## Adding Tools
 
-Create a new file in `awb/adapters/` implementing the `ToolAdapter` ABC:
+Implement the `ToolAdapter` ABC in `awb/adapters/`:
 
 ```python
 from awb.adapters.base import ToolAdapter, ToolResult
@@ -265,32 +227,34 @@ class MyToolAdapter(ToolAdapter):
         ...
 ```
 
-Register it in `awb/adapters/registry.py`.
+Register in `awb/adapters/registry.py` and add an entry point in `pyproject.toml`.
 
 ## External Submissions
 
-Anyone can submit results using the JSON format defined in `results/submission-schema.json`:
+Anyone can share results using the submission format defined in `results/submission-schema.json`:
 
 ```bash
-awb submit my-results.json              # validate and display
-awb compare-submissions a.json b.json   # compare with significance testing
+awb run --runs 3
+awb export results/runs/<run_dir>/ -o my-results.json
+awb submit my-results.json                        # validate locally
+awb compare-submissions a.json b.json             # compare with significance testing
 ```
 
-The submission format includes tool info, model pricing, hardware class, and per-task run results. Hardware classes enable fair speed comparisons (only compared within the same tier).
+The format captures tool version, model, hardware class, and per-task run results. Hardware classes (e.g., `apple_m5_24gb`, `linux_x86_16gb`) enable fair speed comparisons — only compared within the same tier.
 
-## Fair Comparison Methodology
+## Statistical Framework
 
-Full details: [METHODOLOGY.md](METHODOLOGY.md)
+- Confidence intervals via t-distribution (no scipy required for core scoring)
+- Significance testing via sign test for paired tool comparison
+- Integrity checks: contamination detection (completions <10s flagged), variance anomalies (identical times/tokens across runs)
+- Weight profiles: `default`, `correctness_focused`, `production` (see `awb/scoring/weights.yaml`)
 
-1. Same prompt - identical task description to every tool
-2. Same starting state - fresh git clone at pinned commit
-3. Same timeout - equal wall-clock limit per task
-4. Same verification - identical test suite and rubric
-5. Tool-native features allowed - hooks, agents, IDE autocomplete all fair game
-6. 3 runs minimum - report median to reduce variance
-7. Version pinning - tool, model, and repo commits all recorded
-8. Open methodology - all code, prompts, and scoring logic open source
-9. Known limitations stated explicitly
+## Links
+
+- [Methodology](METHODOLOGY.md) — Fair comparison principles, metric definitions, known limitations
+- [Architecture](ARCHITECTURE.md) — Module graph, data models, pipeline diagrams
+- [Contributing](CONTRIBUTING.md) — Adding tasks, tools, and submitting results
+- [PyPI](https://pypi.org/project/awb/) — `pip install awb`
 
 ## License
 

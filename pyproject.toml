@@ -10,7 +10,13 @@ readme = "README.md"
 license = "MIT"
 requires-python = ">=3.11"
 authors = [{name = "Xavier Puspus"}]
-keywords = ["benchmark", "ai-coding", "claude-code", "developer-tools"]
+keywords = ["benchmark", "ai-coding", "claude-code", "developer-tools", "workflow", "swe-bench"]
+
+[project.urls]
+Homepage = "https://github.com/xmpuspus/ai-workflow-benchmark"
+Repository = "https://github.com/xmpuspus/ai-workflow-benchmark"
+Documentation = "https://github.com/xmpuspus/ai-workflow-benchmark/blob/main/METHODOLOGY.md"
+"Bug Tracker" = "https://github.com/xmpuspus/ai-workflow-benchmark/issues"
 classifiers = [
     "Development Status :: 3 - Alpha",
     "Intended Audience :: Developers",
@@ -38,6 +44,10 @@ dev = [
 stats = [
     "scipy>=1.12.0,<2",
     "numpy>=1.26.0,<3",
+]
+publish = [
+    "build>=1.0.0",
+    "twine>=5.0.0",
 ]
 
 [project.scripts]

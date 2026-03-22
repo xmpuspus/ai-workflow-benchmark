@@ -49,12 +49,14 @@ def get_adapter(name: str) -> ToolAdapter:
     return adapters[name]()
 
 
-def list_adapters() -> list[tuple[str, str, bool]]:
+def list_adapters() -> list[tuple[str, str, bool | None]]:
     result = []
     for name, cls in _load_adapters().items():
         adapter = cls()
         try:
             available = adapter.check_available()
+        except NotImplementedError:
+            available = None  # Stub adapter — not yet implemented
         except Exception:
             available = False
         result.append((name, adapter.display_name, available))

@@ -1,7 +1,6 @@
 """Cursor IDE CLI adapter (placeholder)."""
 from __future__ import annotations
 
-import shutil
 from pathlib import Path
 
 from awb.adapters.base import ToolAdapter, ToolResult
@@ -23,7 +22,7 @@ class CursorAdapter(ToolAdapter):
         )
 
     def check_available(self) -> bool:
-        return shutil.which("cursor") is not None
+        raise NotImplementedError("Cursor adapter not yet implemented")
 
     def get_config_hash(self) -> str:
         return "n/a"

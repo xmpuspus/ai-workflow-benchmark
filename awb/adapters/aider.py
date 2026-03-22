@@ -1,7 +1,6 @@
 """Aider CLI adapter (placeholder)."""
 from __future__ import annotations
 
-import shutil
 from pathlib import Path
 
 from awb.adapters.base import ToolAdapter, ToolResult
@@ -23,7 +22,7 @@ class AiderAdapter(ToolAdapter):
         )
 
     def check_available(self) -> bool:
-        return shutil.which("aider") is not None
+        raise NotImplementedError("Aider adapter not yet implemented")
 
     def get_config_hash(self) -> str:
         return "n/a"

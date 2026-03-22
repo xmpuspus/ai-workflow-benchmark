@@ -1,0 +1,59 @@
+{
+  "spec_version": "awb/v2",
+  "submission": {
+    "submitter": "example-user",
+    "submitted_at": "2026-03-22T00:00:00Z",
+    "tool": {
+      "name": "claude-code-vanilla",
+      "version": "2.1.81",
+      "config_description": "Default Claude Code with no custom configuration"
+    },
+    "model": {
+      "name": "claude-opus-4-6",
+      "provider": "anthropic",
+      "pricing": {
+        "input_per_m_tokens": 15.0,
+        "output_per_m_tokens": 75.0
+      }
+    },
+    "environment": {
+      "os": "Darwin 25.3.0",
+      "hardware_class": "apple_m5_24gb",
+      "hardware_detail": "Apple M5, 24GB",
+      "network": "local"
+    },
+    "awb_version": "0.2.0",
+    "task_set_hash": ""
+  },
+  "results": [
+    {
+      "task_id": "BF-001",
+      "runs": [
+        {
+          "run_number": 1,
+          "timestamp": "2026-03-22T00:01:00Z",
+          "outcome": {
+            "success": true,
+            "partial_credit_score": 100,
+            "partial_credit_max": 100
+          },
+          "metrics": {
+            "wall_clock_seconds": 39.3,
+            "iteration_count": 5,
+            "human_interventions": 0
+          },
+          "cost": {
+            "input_tokens": 45000,
+            "output_tokens": 2500,
+            "estimated_cost_usd": 0.32
+          },
+          "quality": {
+            "lint_delta": 0,
+            "security_delta": 0,
+            "test_regressions": 0
+          }
+        }
+      ]
+    }
+  ]
+}

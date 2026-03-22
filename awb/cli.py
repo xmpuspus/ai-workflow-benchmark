@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import asyncio
 import sys
+from datetime import UTC
 from pathlib import Path
 
 import click
@@ -21,7 +22,7 @@ def cli():
     pass
 
 
-def _run_both(task_id, category, runs, parallel, dry_run, timeout):
+def _run_both(task_id, category, capability, difficulty, runs, parallel, dry_run, timeout):
     """Run vanilla and custom back-to-back then show a comparison."""
     from awb.core.runner import BenchmarkRunner
     from awb.core.task_loader import load_all_tasks
@@ -32,6 +33,10 @@ def _run_both(task_id, category, runs, parallel, dry_run, timeout):
         if not tasks:
             console.print(f"[red]Task '{task_id}' not found[/red]")
             sys.exit(1)
+    if capability:
+        tasks = [t for t in tasks if capability in t.capabilities]
+    if difficulty:
+        tasks = [t for t in tasks if t.difficulty == difficulty]
 
     if not tasks:
         console.print("[yellow]No tasks matched filters[/yellow]")
@@ -123,13 +128,15 @@ def _run_both(task_id, category, runs, parallel, dry_run, timeout):
 @click.option("--workflow", "-w", type=click.Path(exists=True), help="Workflow descriptor YAML")
 @click.option("--task", "-t", "task_id", help="Run a single task by ID")
 @click.option("--category", "-c", help="Filter tasks by category")
+@click.option("--capability", "-cap", help="Filter tasks by capability (e.g., security_awareness)")
+@click.option("--difficulty", "-d", help="Filter tasks by difficulty (easy, medium, hard)")
 @click.option("--runs", "-n", default=3, help="Number of runs per task")
 @click.option("--parallel", is_flag=True, help="Run tasks in parallel")
 @click.option("--dry-run", is_flag=True, help="Validate without executing")
 @click.option("--timeout", type=int, help="Override timeout (seconds)")
 def run(tool: str | None, workflow: str | None, task_id: str | None,
-        category: str | None, runs: int, parallel: bool, dry_run: bool,
-        timeout: int | None):
+        category: str | None, capability: str | None, difficulty: str | None,
+        runs: int, parallel: bool, dry_run: bool, timeout: int | None):
     """Run benchmark tasks through a tool adapter."""
     from awb.core.runner import BenchmarkRunner
     from awb.core.task_loader import load_all_tasks
@@ -152,8 +159,9 @@ def run(tool: str | None, workflow: str | None, task_id: str | None,
         console.print(f"Loaded workflow: [bold]{descriptor.name}[/bold]")
     elif not tool:
         # No tool specified - run both variants and compare
-        _run_both(task_id=task_id, category=category, runs=runs,
-                  parallel=parallel, dry_run=dry_run, timeout=timeout)
+        _run_both(task_id=task_id, category=category, capability=capability,
+                  difficulty=difficulty, runs=runs, parallel=parallel,
+                  dry_run=dry_run, timeout=timeout)
         return
 
     tasks = load_all_tasks(category=category)
@@ -162,6 +170,10 @@ def run(tool: str | None, workflow: str | None, task_id: str | None,
         if not tasks:
             console.print(f"[red]Task '{task_id}' not found[/red]")
             sys.exit(1)
+    if capability:
+        tasks = [t for t in tasks if capability in t.capabilities]
+    if difficulty:
+        tasks = [t for t in tasks if t.difficulty == difficulty]
 
     if not tasks:
         console.print("[yellow]No tasks matched filters[/yellow]")
@@ -261,6 +273,157 @@ def compare(run_dir_1: str, run_dir_2: str):
         table.add_row(tid, s1, s2, sc1, sc2, t1, t2, c1, c2)
 
     console.print(table)
+
+
+@cli.command()
+@click.argument("run_dir", type=click.Path(exists=True))
+@click.option("--output", "-o", type=click.Path(), default="submission.json", help="Output file")
+@click.option("--submitter", default="anonymous", help="Submitter name")
+def export(run_dir: str, output: str, submitter: str):
+    """Export benchmark results as a shareable submission JSON."""
+    import json
+    from datetime import datetime
+
+    from awb import __version__
+    from awb.core.results import ResultRecorder
+
+    recorder = ResultRecorder()
+    results = recorder.load_run(Path(run_dir))
+    if not results:
+        console.print("[red]No results found[/red]")
+        sys.exit(1)
+
+    by_task: dict = {}
+    for r in results:
+        if r.task_id not in by_task:
+            by_task[r.task_id] = []
+        by_task[r.task_id].append(r)
+
+    submission = {
+        "spec_version": "awb/v2",
+        "submission": {
+            "submitter": submitter,
+            "submitted_at": datetime.now(UTC).isoformat(),
+            "tool": {
+                "name": results[0].tool,
+                "version": results[0].tool_version,
+            },
+            "model": {
+                "name": results[0].model or "unknown",
+            },
+            "environment": {
+                "os": results[0].environment.os,
+                "hardware_class": "other",
+                "hardware_detail": results[0].environment.hardware,
+            },
+            "awb_version": __version__,
+        },
+        "results": [],
+    }
+
+    for task_id, task_results in sorted(by_task.items()):
+        runs = []
+        for i, r in enumerate(task_results, 1):
+            runs.append({
+                "run_number": i,
+                "timestamp": r.timestamp,
+                "outcome": {
+                    "success": r.outcome.success,
+                    "partial_credit_score": r.outcome.partial_credit_score,
+                    "partial_credit_max": r.outcome.partial_credit_max,
+                },
+                "metrics": {
+                    "wall_clock_seconds": r.metrics.wall_clock_seconds,
+                    "iteration_count": r.metrics.iteration_count,
+                    "human_interventions": r.metrics.human_interventions,
+                },
+                "cost": {
+                    "input_tokens": r.cost.input_tokens,
+                    "output_tokens": r.cost.output_tokens,
+                    "estimated_cost_usd": r.cost.estimated_cost_usd,
+                },
+                "quality": {
+                    "lint_delta": r.quality.lint_delta,
+                    "security_delta": r.quality.security_delta,
+                    "test_regressions": r.quality.test_regressions,
+                },
+            })
+        submission["results"].append({"task_id": task_id, "runs": runs})
+
+    out = Path(output)
+    out.write_text(json.dumps(submission, indent=2))
+    console.print(f"Exported {len(results)} result(s) to [bold]{out}[/bold]")
+
+
+@cli.command()
+def quickstart():
+    """Run a quick benchmark to verify setup works."""
+    from awb.core.runner import BenchmarkRunner
+    from awb.core.task_loader import load_all_tasks
+
+    console.print("[bold]AWB Quickstart[/bold] - running BF-001 with vanilla Claude Code\n")
+
+    tasks = load_all_tasks()
+    tasks = [t for t in tasks if t.id == "BF-001"]
+    if not tasks:
+        console.print("[red]Task BF-001 not found[/red]")
+        sys.exit(1)
+
+    runner = BenchmarkRunner(
+        tool="claude-code-vanilla", tasks=tasks, runs=1, parallel=False,
+    )
+
+    try:
+        results = asyncio.run(runner.run_all())
+    except Exception as e:
+        console.print(f"[red]Error: {e}[/red]")
+        sys.exit(1)
+
+    if not results:
+        console.print("[red]No results produced[/red]")
+        sys.exit(1)
+
+    r = results[0]
+    status = "[green]PASS[/green]" if r.outcome.success else "[red]FAIL[/red]"
+    score = f"{r.outcome.partial_credit_score}/{r.outcome.partial_credit_max}"
+    console.print(f"\nResult: {status}")
+    console.print(f"Score: {score}")
+    console.print(f"Time: {r.metrics.wall_clock_seconds:.1f}s")
+    console.print(f"Cost: ${r.cost.estimated_cost_usd:.2f}")
+    console.print("\nSetup verified. Run [bold]awb run --runs 1[/bold] for the full 60-task suite.")
+
+
+@cli.command()
+@click.argument("task_id")
+def info(task_id: str):
+    """Display details for a specific task."""
+    from awb.core.task_loader import load_all_tasks
+
+    tasks = load_all_tasks()
+    task = next((t for t in tasks if t.id == task_id), None)
+    if not task:
+        console.print(f"[red]Task '{task_id}' not found[/red]")
+        sys.exit(1)
+
+    console.print(f"\n[bold]{task.id}[/bold] - {task.title}\n")
+    console.print(f"  Category:     {task.category}")
+    console.print(f"  Difficulty:   {task.difficulty}")
+    console.print(
+        f"  Time:         {task.estimated_minutes} min"
+        f" (timeout: {task.constraints.timeout_seconds}s)"
+    )
+    console.print(f"  Languages:    {', '.join(task.languages)}")
+    console.print(f"  Capabilities: {', '.join(task.capabilities)}")
+    console.print(f"  Tags:         {', '.join(task.tags)}")
+    console.print(f"  Repo:         {task.repo.url}")
+    console.print(f"  Commit:       {task.repo.commit[:12]}")
+    console.print(f"  Max iters:    {task.constraints.max_iterations}")
+
+    if task.verification.partial_credit:
+        total_pts = sum(c.points for c in task.verification.partial_credit)
+        console.print(f"\n  Partial Credit ({total_pts} pts):")
+        for c in task.verification.partial_credit:
+            console.print(f"    [{c.points:3d}] {c.criterion}")
 
 
 @cli.command()
@@ -464,7 +627,12 @@ def tools():
     table.add_column("Status")
 
     for name, display_name, available in list_adapters():
-        status = "[green]Available[/green]" if available else "[red]Not found[/red]"
+        if available is None:
+            status = "[yellow]Stub[/yellow]"
+        elif available:
+            status = "[green]Available[/green]"
+        else:
+            status = "[red]Not found[/red]"
         table.add_row(name, display_name, status)
 
     console.print(table)
