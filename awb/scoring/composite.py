@@ -21,15 +21,20 @@ from awb.scoring.normalize import (
 
 DIFFICULTY_WEIGHT = {"easy": 1.0, "medium": 1.5, "hard": 2.5}
 
+_weight_cache: dict[str, dict[str, float]] = {}
+
 
 def load_weight_profile(profile: str = "default") -> dict[str, float]:
-    """Load a weight profile from weights.yaml."""
+    """Load a weight profile from weights.yaml (cached after first read)."""
+    if profile in _weight_cache:
+        return _weight_cache[profile]
     weights_path = Path(__file__).parent / "weights.yaml"
     with weights_path.open() as f:
         all_profiles = yaml.safe_load(f)
     if profile not in all_profiles:
         raise ValueError(f"Unknown weight profile: {profile}. Available: {list(all_profiles)}")
-    return all_profiles[profile]
+    _weight_cache[profile] = all_profiles[profile]
+    return _weight_cache[profile]
 
 
 @dataclass

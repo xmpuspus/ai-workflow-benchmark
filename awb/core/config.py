@@ -12,14 +12,21 @@ try:
 
     _TASKS_PKG = _pkg_files("awb.tasks")
     TASKS_DIR = Path(str(_TASKS_PKG))
-except Exception:
+except (ImportError, TypeError, FileNotFoundError):
     TASKS_DIR = Path(__file__).parent.parent / "tasks"
 
 RESULTS_DIR = Path(os.environ.get("AWB_RESULTS_DIR", Path.cwd() / "results" / "runs"))
 TASK_SCHEMA_PATH = TASKS_DIR / "schema.json"
 RESULT_SCHEMA_PATH = RESULTS_DIR / "schema.json"
 
-METRIC_WEIGHTS = {
+def _load_default_weights() -> dict[str, float]:
+    """Load default metric weights from scoring/weights.yaml."""
+    from awb.scoring.composite import load_weight_profile
+    return load_weight_profile("default")
+
+
+# Lazy-loaded on first access via report.py and leaderboard — kept as dict for backward compat
+METRIC_WEIGHTS: dict[str, float] = {
     "correctness": 0.55,
     "cost_efficiency": 0.15,
     "speed": 0.10,
@@ -123,17 +130,19 @@ def _detect_hardware() -> str:
                 ["sysctl", "-n", "machdep.cpu.brand_string"],
                 text=True,
                 timeout=5,
+                stderr=subprocess.DEVNULL,
             ).strip()
             mem_bytes = int(
                 subprocess.check_output(
                     ["sysctl", "-n", "hw.memsize"],
                     text=True,
                     timeout=5,
+                    stderr=subprocess.DEVNULL,
                 ).strip()
             )
             mem_gb = mem_bytes // (1024**3)
             return f"{chip}, {mem_gb}GB"
-        except Exception:
+        except (subprocess.SubprocessError, ValueError, OSError):
             pass
     return platform.machine()
 

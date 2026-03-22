@@ -375,7 +375,7 @@ def quickstart():
 
     try:
         results = asyncio.run(runner.run_all())
-    except Exception as e:
+    except (OSError, RuntimeError, ValueError) as e:
         console.print(f"[red]Error: {e}[/red]")
         sys.exit(1)
 

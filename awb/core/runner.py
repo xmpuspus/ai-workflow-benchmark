@@ -135,23 +135,21 @@ class BenchmarkRunner:
         except TaskTimeoutError:
             collector.stop()
             log.warning("Task %s timed out after %ds", task.id, timeout)
-            metrics = collector.to_metrics()
 
         except Exception:
             collector.stop()
             log.exception("Task %s failed with error", task.id)
+
+        finally:
             metrics = collector.to_metrics()
 
-        else:
-            metrics = collector.to_metrics()
-
-        # Build result
-        adapter = _get_adapter(self.tool)
+        # Build result (reuse adapter from try block if available)
+        adapter_info = _get_adapter(self.tool)
         result = RunResult(
             task_id=task.id,
             tool=self.tool,
-            tool_version=adapter.get_version(),
-            model=getattr(adapter, "model", "unknown"),
+            tool_version=adapter_info.get_version(),
+            model=getattr(adapter_info, "model", "unknown"),
             run_id=run_id,
             timestamp=datetime.now(UTC).isoformat(),
             outcome=outcome,
@@ -188,6 +186,6 @@ async def _count_baseline(kind: str, task: TaskDefinition, workspace: Path) -> i
             return await count_security_issues(
                 task.verification.security_commands, workspace
             )
-    except Exception:
-        pass
+    except Exception as exc:
+        log.debug("Baseline %s count failed: %s", kind, exc)
     return 0
