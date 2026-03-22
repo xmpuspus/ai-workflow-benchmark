@@ -4,10 +4,14 @@
   <p>
     <a href="https://pypi.org/project/awb/"><img src="https://img.shields.io/pypi/v/awb" alt="PyPI"></a>
     <a href="https://github.com/xmpuspus/ai-workflow-benchmark/actions"><img src="https://img.shields.io/github/actions/workflow/status/xmpuspus/ai-workflow-benchmark/test.yml" alt="Tests"></a>
-    <img src="https://img.shields.io/badge/tasks-60-blue" alt="Tasks">
+    <img src="https://img.shields.io/badge/tasks-80-blue" alt="Tasks">
     <img src="https://img.shields.io/badge/python-3.11%2B-blue" alt="Python">
     <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-green" alt="License"></a>
   </p>
+  <br/>
+  <img src="demos/awb-showcase.gif" alt="AWB Demo — install, validate, run, analyze" width="680"/>
+  <br/>
+  <sub>Install from PyPI, validate 80 tasks, run vanilla vs custom, get capability profiles and improvement suggestions.</sub>
 </div>
 
 ---
@@ -16,7 +20,7 @@
 
 SWE-bench tests models. AWB tests workflows. The same model running vanilla Claude Code vs. a purpose-built setup with a tuned CLAUDE.md, hooks, and structured agents produces meaningfully different results on real engineering tasks. No existing benchmark captures that gap — they all evaluate the model in isolation.
 
-AWB benchmarks the full stack: **tool + configuration + workflow + model**, together, on 60 tasks drawn from real open-source repositories.
+AWB benchmarks the full stack: **tool + configuration + workflow + model**, together, on 80 tasks drawn from real open-source repositories.
 
 ## Quick Start
 
@@ -72,7 +76,7 @@ Seven dimensions, sigmoid-normalized with per-task baselines derived from diffic
 | Speed | 50% / 100% of estimated_minutes | same | same |
 | Iterations | 3 / max_iters | 8 / max_iters | 15 / max_iters |
 
-## The 60 Tasks
+## The 80 Tasks
 
 Real open-source repos, pinned to release tag SHAs. Setup runs in under 15 seconds via venv + pip (Python) or npm (TypeScript).
 
