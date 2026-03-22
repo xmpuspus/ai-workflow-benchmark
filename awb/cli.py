@@ -97,30 +97,69 @@ def _run_both(task_id, category, capability, difficulty, runs, parallel, dry_run
 
     console.print(table)
 
-    # Summary line
-    total_v = sum(r.outcome.partial_credit_score for r in vanilla_results)
-    max_v = sum(r.outcome.partial_credit_max for r in vanilla_results)
-    total_c = sum(r.outcome.partial_credit_score for r in custom_results)
-    max_c = sum(r.outcome.partial_credit_max for r in custom_results)
+    # Workflow Lift Score
+    from awb.core.task_loader import load_all_tasks
+    from awb.scoring.workflow_lift import compute_workflow_lift
 
-    pct_v = (total_v / max_v * 100) if max_v else 0
-    pct_c = (total_c / max_c * 100) if max_c else 0
-    delta = pct_c - pct_v
+    all_tasks = load_all_tasks()
+    task_defs = {t.id: t for t in all_tasks}
+    report = compute_workflow_lift(vanilla_results, custom_results, task_defs)
 
-    if delta > 0:
-        summary = (
-            f"Your workflow scored {pct_c:.0f}% vs vanilla {pct_v:.0f}%"
-            f" - that's a +{delta:.0f}% improvement"
-        )
-    elif delta < 0:
-        summary = (
-            f"Your workflow scored {pct_c:.0f}% vs vanilla {pct_v:.0f}%"
-            f" - vanilla leads by {-delta:.0f}%"
-        )
-    else:
-        summary = f"Your workflow scored {pct_c:.0f}% - tied with vanilla"
+    # Headline
+    sig = "[green]significant[/green]" if report.significant else "[yellow]not significant[/yellow]"
+    p_str = f"p={report.p_value:.3f}" if report.p_value is not None else "n/a"
+    sign = "+" if report.lift >= 0 else ""
+    lift_color = "green" if report.lift > 0 else ("red" if report.lift < 0 else "yellow")
 
-    console.print(f"\n[bold]{summary}[/bold]")
+    lift_str = f"[{lift_color}]{sign}{report.lift} pts[/{lift_color}]"
+    console.print(f"\n[bold]Workflow Lift: {lift_str}[/bold]  ({p_str}, {sig})")
+    console.print(
+        f"  Pass rate: vanilla {report.vanilla_pass_rate:.0f}%"
+        f" vs custom {report.custom_pass_rate:.0f}%"
+    )
+    console.print(
+        f"  Wins: custom {report.custom_wins}"
+        f" / vanilla {report.vanilla_wins}"
+        f" / ties {report.ties}"
+    )
+
+    # Capability breakdown
+    helps = [c for c in report.capability_lifts if c.lift > 0.5]
+    hurts = [c for c in report.capability_lifts if c.lift < -0.5]
+
+    if helps:
+        console.print("\n  [bold]Where your workflow helps:[/bold]")
+        for c in helps:
+            label = c.capability.replace("_", " ")
+            console.print(
+                f"    {label:<24} [green]+{c.lift:>5.1f} pts[/green]"
+                f"  ({c.tasks} tasks)"
+            )
+
+    if hurts:
+        console.print("\n  [bold]Where it hurts:[/bold]")
+        for c in hurts:
+            label = c.capability.replace("_", " ")
+            console.print(
+                f"    {label:<24} [red]{c.lift:>5.1f} pts[/red]"
+                f"  ({c.tasks} tasks)"
+            )
+
+    if not helps and not hurts:
+        console.print("\n  No significant capability-level differences.")
+
+    # Top movers
+    movers = [t for t in report.per_task if abs(t["lift"]) > 5]
+    if movers:
+        console.print("\n  [bold]Biggest task-level differences:[/bold]")
+        for t in movers[:8]:
+            sign_t = "+" if t["lift"] > 0 else ""
+            color = "green" if t["lift"] > 0 else "red"
+            console.print(
+                f"    {t['task_id']:<8}"
+                f" [{color}]{sign_t}{t['lift']:>5.0f}[/{color}]"
+                f"  (V={t['vanilla']:.0f} C={t['custom']:.0f})"
+            )
 
 
 @cli.command()
