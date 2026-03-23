@@ -2,8 +2,11 @@
 from __future__ import annotations
 
 import logging
+import time
 from datetime import UTC, datetime
 from pathlib import Path
+
+from rich.console import Console
 
 from awb.core.config import (
     RunEnvironment,
@@ -19,6 +22,7 @@ from awb.core.results import ResultRecorder
 from awb.core.timeout import TaskTimeoutError, run_with_timeout
 
 log = logging.getLogger(__name__)
+_console = Console()
 
 
 class BenchmarkRunner:
@@ -44,12 +48,71 @@ class BenchmarkRunner:
     async def run_all(self) -> list[RunResult]:
         """Run all tasks for the configured number of runs."""
         results: list[RunResult] = []
+        total_tasks = len(self.tasks) * self.runs
+        completed = 0
+        passed = 0
+        run_start = time.monotonic()
+
         for run_num in range(1, self.runs + 1):
             run_id = f"{self._run_id}_run{run_num}"
-            for task in self.tasks:
+            run_passed = 0
+            run_completed = 0
+
+            _console.print(
+                f"\n[bold cyan]--- Run {run_num}/{self.runs} ---[/bold cyan]  "
+                f"({len(self.tasks)} tasks, saving to results/runs/{run_id}/)"
+            )
+
+            for i, task in enumerate(self.tasks, 1):
                 log.info("Run %d/%d - Task %s", run_num, self.runs, task.id)
+                _console.print(
+                    f"  [{completed + 1}/{total_tasks}] {task.id} ({task.difficulty}) ...",
+                    end="",
+                )
+
+                task_start = time.monotonic()
                 result = await self.run_single(task, run_id=run_id)
+                elapsed = time.monotonic() - task_start
+
+                completed += 1
+                run_completed += 1
+                success = result.outcome.success
+                if success:
+                    passed += 1
+                    run_passed += 1
+
+                score = result.outcome.partial_credit_score
+                max_score = result.outcome.partial_credit_max
+                status = "[green]PASS[/green]" if success else "[red]FAIL[/red]"
+                cost = result.cost.estimated_cost_usd
+
+                # ETA calculation
+                avg_time = (time.monotonic() - run_start) / completed
+                remaining = total_tasks - completed
+                eta_min = (avg_time * remaining) / 60
+
+                _console.print(
+                    f" {status}  {score}/{max_score}  "
+                    f"{elapsed:.0f}s  ${cost:.2f}  "
+                    f"[dim](run: {run_passed}/{run_completed} | "
+                    f"total: {passed}/{completed} | "
+                    f"ETA: {eta_min:.0f}m)[/dim]"
+                )
+
                 results.append(result)
+
+            # Run summary
+            run_pct = run_passed / run_completed * 100 if run_completed else 0
+            _console.print(
+                f"  [bold]Run {run_num} complete:[/bold] "
+                f"{run_passed}/{run_completed} passed ({run_pct:.0f}%)"
+            )
+
+        total_elapsed = (time.monotonic() - run_start) / 60
+        _console.print(
+            f"\n[bold]All runs complete:[/bold] "
+            f"{passed}/{completed} passed in {total_elapsed:.0f}m"
+        )
         return results
 
     async def run_single(
