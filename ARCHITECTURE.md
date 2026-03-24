@@ -599,5 +599,5 @@ ai-workflow-benchmark/
 ├── README.md
 ├── METHODOLOGY.md
 ├── ARCHITECTURE.md
-└── pyproject.toml                # v0.5.2
+└── pyproject.toml                # v0.5.3
 ```

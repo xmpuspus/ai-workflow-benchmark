@@ -1,10 +1,10 @@
 # Changelog
 
-## 0.5.2 (2026-03-24)
+## 0.5.3 (2026-03-24)
 
-### Fixed
-- Vanilla adapter environment isolation now correctly applied — vanilla runs use an empty config directory with no hooks or custom instructions
-- Workflow task setup reliability improvements: valid repo commits, grep-based verification checks, calibrated difficulty
+### Changed
+- Vanilla adapter now uses `--system-prompt` override and `CLAUDE_SKIP_HOOKS=1` for clean isolation — hooks, skills, and auto-memory are disabled while auth remains functional
+- Workflow task setup reliability: valid repo commits, grep-based verification checks, calibrated difficulty
 
 ## 0.5.0 (2026-03-24)
 

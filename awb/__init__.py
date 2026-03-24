@@ -1,3 +1,3 @@
 """AI Workflow Benchmark - measure tool+workflow performance."""
 
-__version__ = "0.5.2"
+__version__ = "0.5.3"
