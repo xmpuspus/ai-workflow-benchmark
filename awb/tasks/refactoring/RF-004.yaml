@@ -1,7 +1,7 @@
 id: RF-004
 category: refactoring
 title: "Fix TypeScript strict mode violations in Hono items handler"
-difficulty: medium
+difficulty: hard
 estimated_minutes: 30
 languages: [typescript]
 tags: [hono, typescript, strict-mode, type-safety, refactoring]

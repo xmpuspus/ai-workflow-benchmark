@@ -1,7 +1,7 @@
 id: CR-009
 category: code-review
 title: "Analyse async concurrency bugs in FastAPI code — written analysis only"
-difficulty: hard
+difficulty: easy
 estimated_minutes: 45
 languages: [python]
 tags: [fastapi, asyncio, concurrency, race-condition, sqlalchemy, async-generator]
@@ -130,4 +130,4 @@ verification:
 
 constraints:
   max_iterations: 25
-  timeout_seconds: 1800
+  timeout_seconds: 228

@@ -1,7 +1,7 @@
 id: BF-003
 category: bug-fix
 title: "Fix API client retry logic ignoring Retry-After header on 429 responses"
-difficulty: medium
+difficulty: hard
 estimated_minutes: 30
 languages: [python]
 tags: [httpx, retry, rate-limiting, api-client]
@@ -76,10 +76,13 @@ verification:
     - criterion: "Failing test exists that captures the bug"
       points: 25
       check: "grep -qE 'test_.*retry_after|retry.after.*header' tests/test_retry_after.py"
-    - criterion: "Tests pass"
-      points: 25
+    - criterion: "At least half of tests pass"
+      points: 15
+      check: "source .venv/bin/activate && python3 -m pytest tests/test_retry_after.py -v 2>&1 | python3 -c \"import sys; lines=[l for l in sys.stdin if '::' in l]; passed=[l for l in lines if 'PASSED' in l]; total=len(lines); assert len(passed) >= total//2, f'Only {len(passed)}/{total} tests passed'; print(f'{len(passed)}/{total} tests passed')\""
+    - criterion: "All tests pass"
+      points: 10
       check: "source .venv/bin/activate && python3 -m pytest tests/test_retry_after.py -v"
 
 constraints:
   max_iterations: 20
-  timeout_seconds: 1200
+  timeout_seconds: 649

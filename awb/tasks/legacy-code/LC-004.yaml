@@ -1,7 +1,7 @@
 id: LC-004
 category: legacy-code
 title: "Fix Python 3.12 deprecation warnings in a Flask app"
-difficulty: medium
+difficulty: easy
 estimated_minutes: 30
 languages: [python]
 tags: [deprecation, python312, flask, modernization]
@@ -126,4 +126,4 @@ verification:
 
 constraints:
   max_iterations: 20
-  timeout_seconds: 1200
+  timeout_seconds: 377

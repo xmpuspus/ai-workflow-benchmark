@@ -189,6 +189,75 @@ def compare_tools_paired(
     )
 
 
+@dataclass
+class TaskStability:
+    task_id: str
+    mean_score: float
+    std_dev: float
+    score_range: float  # max - min across runs
+    n_runs: int
+    is_unstable: bool   # score_range > threshold
+
+
+def compute_task_stability(
+    task_id: str, scores: list[float], threshold: float = 30.0
+) -> TaskStability:
+    """Compute stability metrics for a single task across runs."""
+    n = len(scores)
+    if n == 0:
+        return TaskStability(
+            task_id=task_id, mean_score=0.0, std_dev=0.0,
+            score_range=0.0, n_runs=0, is_unstable=False,
+        )
+    if n == 1:
+        return TaskStability(
+            task_id=task_id, mean_score=scores[0], std_dev=0.0,
+            score_range=0.0, n_runs=1, is_unstable=False,
+        )
+
+    mean = statistics.mean(scores)
+    sd = statistics.stdev(scores)
+    rng = max(scores) - min(scores)
+    return TaskStability(
+        task_id=task_id,
+        mean_score=round(mean, 1),
+        std_dev=round(sd, 1),
+        score_range=round(rng, 1),
+        n_runs=n,
+        is_unstable=rng > threshold,
+    )
+
+
+def compute_stability_report(results: list) -> list[TaskStability]:
+    """Group results by task_id, compute partial credit %, return stability per task."""
+    from awb.core.config import RunResult  # noqa: PLC0415 — avoid circular at module level
+
+    by_task: dict[str, list[float]] = {}
+    for r in results:
+        if not isinstance(r, RunResult):
+            continue
+        max_pts = r.outcome.partial_credit_max or 1
+        score_pct = (r.outcome.partial_credit_score / max_pts) * 100
+        by_task.setdefault(r.task_id, []).append(score_pct)
+
+    stabilities = [compute_task_stability(tid, scores) for tid, scores in by_task.items()]
+    return sorted(stabilities, key=lambda s: -s.std_dev)
+
+
+def compute_stability_weights(stabilities: list[TaskStability]) -> dict[str, float]:
+    """Convert stability to per-task weight multipliers.
+
+    Weight = 1.0 if std_dev <= 15, else max(0.3, 1.0 - (std_dev - 15) / 50).
+    """
+    weights = {}
+    for s in stabilities:
+        if s.std_dev <= 15:
+            weights[s.task_id] = 1.0
+        else:
+            weights[s.task_id] = max(0.3, 1.0 - (s.std_dev - 15) / 50)
+    return weights
+
+
 def _binomial_two_tailed_p(k: int, n: int) -> float:
     """Two-tailed p-value for sign test using exact binomial (small n).
 

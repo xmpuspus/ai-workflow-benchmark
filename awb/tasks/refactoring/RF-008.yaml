@@ -1,7 +1,7 @@
 id: RF-008
 category: refactoring
 title: "Migrate sync SQLAlchemy code to async across 4 files"
-difficulty: hard
+difficulty: easy
 estimated_minutes: 45
 languages: [python]
 tags: [fastapi, sqlalchemy, async, migration, database]
@@ -105,4 +105,4 @@ verification:
 
 constraints:
   max_iterations: 25
-  timeout_seconds: 1800
+  timeout_seconds: 616

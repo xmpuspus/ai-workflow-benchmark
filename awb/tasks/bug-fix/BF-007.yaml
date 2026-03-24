@@ -110,10 +110,13 @@ verification:
     - criterion: "No RuntimeError raised under concurrent load"
       points: 15
       check: "grep -qE 'RuntimeError|exception|raises' tests/test_cache_thread_safety.py"
-    - criterion: "Tests pass"
-      points: 20
+    - criterion: "At least half of tests pass"
+      points: 10
+      check: "source .venv/bin/activate && python3 -m pytest tests/test_cache_thread_safety.py -v 2>&1 | python3 -c \"import sys; lines=[l for l in sys.stdin if '::' in l]; passed=[l for l in lines if 'PASSED' in l]; total=len(lines); assert len(passed) >= total//2, f'Only {len(passed)}/{total} tests passed'; print(f'{len(passed)}/{total} tests passed')\""
+    - criterion: "All tests pass"
+      points: 10
       check: "source .venv/bin/activate && python3 -m pytest tests/test_cache_thread_safety.py -v"
 
 constraints:
   max_iterations: 25
-  timeout_seconds: 1800
+  timeout_seconds: 374

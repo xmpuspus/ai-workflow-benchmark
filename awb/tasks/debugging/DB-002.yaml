@@ -94,4 +94,4 @@ verification:
 
 constraints:
   max_iterations: 20
-  timeout_seconds: 1200
+  timeout_seconds: 419

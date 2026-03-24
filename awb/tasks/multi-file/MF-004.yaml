@@ -1,7 +1,7 @@
 id: MF-004
 category: multi-file
 title: "Extract inline DB logic from 4 route handlers into a repository pattern"
-difficulty: medium
+difficulty: easy
 estimated_minutes: 30
 languages: [python]
 tags: [fastapi, repository-pattern, refactoring, separation-of-concerns]
@@ -82,4 +82,4 @@ verification:
 
 constraints:
   max_iterations: 20
-  timeout_seconds: 1200
+  timeout_seconds: 470

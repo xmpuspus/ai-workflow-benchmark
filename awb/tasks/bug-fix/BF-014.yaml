@@ -1,7 +1,7 @@
 id: BF-014
 category: bug-fix
 title: "Fix N+1 query pattern causing GET /orders to time out under load"
-difficulty: medium
+difficulty: hard
 estimated_minutes: 30
 languages: [python]
 tags: [fastapi, sqlalchemy, performance, n-plus-one, async]
@@ -169,4 +169,4 @@ verification:
 
 constraints:
   max_iterations: 20
-  timeout_seconds: 1200
+  timeout_seconds: 363

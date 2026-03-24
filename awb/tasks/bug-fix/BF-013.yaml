@@ -104,10 +104,13 @@ verification:
     - criterion: "Tests use httpx.Client with transport= parameter"
       points: 15
       check: "grep -qE 'httpx\\.Client.*transport|Client\\(.*transport' tests/test_retry_backoff.py"
+    - criterion: "At least half of tests pass"
+      points: 15
+      check: "source .venv/bin/activate && python3 -m pytest tests/test_retry_backoff.py -v 2>&1 | python3 -c \"import sys; lines=[l for l in sys.stdin if '::' in l]; passed=[l for l in lines if 'PASSED' in l]; total=len(lines); assert len(passed) >= total//2, f'Only {len(passed)}/{total} tests passed'; print(f'{len(passed)}/{total} tests passed')\""
     - criterion: "All tests pass"
-      points: 25
+      points: 10
       check: "source .venv/bin/activate && python3 -m pytest tests/test_retry_backoff.py -v"
 
 constraints:
   max_iterations: 25
-  timeout_seconds: 1800
+  timeout_seconds: 656

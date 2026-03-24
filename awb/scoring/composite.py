@@ -104,6 +104,7 @@ def compute_aggregate_score(
     results: list[RunResult],
     tasks: dict[str, TaskDefinition],
     weights: dict[str, float] | None = None,
+    stability_weights: dict[str, float] | None = None,
 ) -> tuple[float, list[TaskScore]]:
     """Compute difficulty-weighted aggregate score across multiple task results.
 
@@ -122,8 +123,12 @@ def compute_aggregate_score(
     if not task_scores:
         return 0.0, []
 
-    total_weight = sum(ts.difficulty_weight for ts in task_scores)
-    aggregate = sum(ts.composite * ts.difficulty_weight for ts in task_scores) / total_weight
+    def _eff_weight(ts: TaskScore) -> float:
+        sw = stability_weights.get(ts.task_id, 1.0) if stability_weights else 1.0
+        return ts.difficulty_weight * sw
+
+    total_weight = sum(_eff_weight(ts) for ts in task_scores)
+    aggregate = sum(ts.composite * _eff_weight(ts) for ts in task_scores) / total_weight
     return round(aggregate, 1), task_scores
 
 

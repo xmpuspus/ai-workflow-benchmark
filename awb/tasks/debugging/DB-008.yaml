@@ -1,7 +1,7 @@
 id: DB-008
 category: debugging
 title: "Diagnose why test passes locally but fails due to environment assumption"
-difficulty: medium
+difficulty: easy
 estimated_minutes: 30
 languages: [python]
 tags: [fastapi, pathlib, tempfile, cwd, environment-dependent]
@@ -99,4 +99,4 @@ verification:
 
 constraints:
   max_iterations: 20
-  timeout_seconds: 1200
+  timeout_seconds: 289

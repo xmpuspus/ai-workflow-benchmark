@@ -1,22 +1,22 @@
 #!/usr/bin/env python3
-"""Generate a LinkedIn-worthy showcase GIF demonstrating AWB v0.3.0."""
+"""Generate a LinkedIn-worthy showcase GIF demonstrating AWB v0.4.1."""
 import sys
 sys.path.insert(0, "/Users/xavier/.claude/skills/terminal-gif")
 from terminal_gif import TerminalGIF, G, D, F, C, Y, R
 
 OUT = "/Users/xavier/Desktop/ai-workflow-benchmark/demos/awb-showcase.gif"
 
-gif = TerminalGIF(preset="full", title="AI Workflow Benchmark v0.3.0")
+gif = TerminalGIF(preset="full", title="AI Workflow Benchmark v0.4.1")
 
-# ─── Scene 1: Install + Version ──────────────────────────────────────────────
+# --- Scene 1: Install + Version ---
 gif.pause(500)
 
 s1 = [
     [D("$"), F(" pip install awb")],
-    [G("Successfully installed"), F(" awb-"), Y("0.3.0")],
+    [G("Successfully installed"), F(" awb-"), Y("0.4.1")],
     "",
     [D("$"), F(" awb --version")],
-    [C("awb"), F(", version "), Y("0.3.0")],
+    [C("awb"), F(", version "), Y("0.4.1")],
     "",
     [D("$"), F(" awb tools")],
     [F("  claude-code-vanilla   "), G("Available")],
@@ -26,7 +26,7 @@ s1 = [
 ]
 gif.add_frame(s1, ms=2500)
 
-# ─── Scene 2: Validate 80 tasks ─────────────────────────────────────────────
+# --- Scene 2: Validate 80 tasks ---
 s2 = [
     [D("$"), F(" awb validate")],
     "",
@@ -44,29 +44,30 @@ s2 = [
 ]
 gif.add_frame(s2, ms=3000)
 
-# ─── Scene 3: Run + Workflow Lift Score ──────────────────────────────────────
+# --- Scene 3: Run with live progress ---
 s3 = [
-    [D("$"), F(" awb run --runs 1")],
+    [D("$"), F(" awb run --runs 3 --parallel -j 3 --adaptive")],
     "",
-    [F("Running "), C("claude-code-vanilla"), F(" on "), Y("80"), F(" tasks")],
-    [F("Running "), C("claude-code-custom"), F("  on "), Y("80"), F(" tasks")],
+    [C("--- Run 1/3 ---"), F("  (80 tasks, saving to results/runs/...)")],
+    [F("  [1/240] BF-001 (easy) ..."), G(" PASS"), F("  100/100  67s  $0.42")],
+    [F("  [2/240] BF-003 (hard) ..."), R(" FAIL"), F("   75/100 143s  $0.81")],
+    [F("  [3/240] BF-004 (easy) ..."), G(" PASS"), F("  100/100  52s  $0.35")],
+    [D("  ... 77 more tasks ...")],
+    [F("  "), G("Run 1 complete:"), F(" 44/80 passed (55%)")],
     "",
-    [F("  Vanilla vs Custom — Side-by-Side")],
-    [D("  ─────────────────────────────────────────")],
-    [F("  BF-012   "), G("PASS"), F("  "), G("PASS"), F("   100/100  100/100")],
-    [F("  BF-014   "), R("FAIL"), F("  "), R("FAIL"), F("    35/100  "), Y(" 75/100")],
-    [F("  CR-008   "), R("FAIL"), F("  "), R("FAIL"), F("    60/100  "), Y(" 75/100")],
-    [F("  DB-010   "), G("PASS"), F("  "), G("PASS"), F("   100/100  100/100")],
-    [F("  LC-012   "), R("FAIL"), F("  "), R("FAIL"), F("    65/100  "), Y(" 80/100")],
-    [D("  ... 75 more tasks ...")],
+    [Y("Adaptive: 44 decisive (skip), 36 near-miss (re-run)")],
+    "",
+    [C("--- Run 2/3 ---"), F("  (36 near-miss tasks)")],
+    [F("  [81/240] BF-003 (hard) ..."), R(" FAIL"), F("   75/100  98s  $0.65")],
+    [D("  ... 35 more near-miss tasks ...")],
 ]
-gif.add_frame(s3, ms=3000)
+gif.add_frame(s3, ms=3500)
 
-# ─── Scene 4: Workflow Lift Score ────────────────────────────────────────────
+# --- Scene 4: Workflow Lift Score ---
 s4 = [
     "",
     [F("  "), G("Workflow Lift: +4.2 pts"), F("  (p=0.031, "), G("significant"), F(")")],
-    [F("  Pass rate: vanilla 62% vs custom 68%")],
+    [F("  Pass rate: vanilla 55% vs custom 59%")],
     [F("  Wins: custom 8 / vanilla 3 / ties 69")],
     "",
     [F("  "), C("Where your workflow helps:")],
@@ -82,8 +83,28 @@ s4 = [
 ]
 gif.add_frame(s4, ms=4000)
 
-# ─── Scene 5: Gap Analysis ──────────────────────────────────────────────────
+# --- Scene 5: Stability + Calibration ---
 s5 = [
+    [D("$"), F(" awb stability results/runs/*")],
+    "",
+    [F("  Task     Mean   Std Dev  Range  Status")],
+    [D("  ─────────────────────────────────────────")],
+    [F("  FA-003    30%    42.4     90    "), R("UNSTABLE")],
+    [F("  RF-003    77%    25.2     60    "), R("UNSTABLE")],
+    [F("  BF-014    56%    18.9     40    "), R("UNSTABLE")],
+    [F("  BF-001    90%     5.1     25    "), G("stable")],
+    [D("  ... 76 more tasks ...")],
+    "",
+    [D("$"), F(" awb calibrate-difficulty results/runs/* --apply")],
+    [Y("59/80 tasks recalibrated"), F(" (empirical pass rates)")],
+    "",
+    [D("$"), F(" awb calibrate-timeouts results/runs/* --apply")],
+    [Y("74/80 tasks tightened"), F(" (p95 x 2.5)")],
+]
+gif.add_frame(s5, ms=4000)
+
+# --- Scene 6: Gap Analysis ---
+s6 = [
     [D("$"), F(" awb gap results/runs/latest/")],
     "",
     [C("claude-code-custom"), F(" — "), Y("88.3%")],
@@ -98,29 +119,9 @@ s5 = [
     [F("  test writing        "), G("==============="), D("====="), F(" "), Y("85")],
     [F("  cost discipline     "), G("==========="), D("========="), F(" "), Y("66")],
 ]
-gif.add_frame(s5, ms=3500)
-
-# ─── Scene 6: Export + Share ─────────────────────────────────────────────────
-s6 = [
-    [D("$"), F(" awb export results/ -o my.json")],
-    [G("Exported"), F(" 80 result(s) to "), C("my.json")],
-    "",
-    [D("$"), F(" awb submit my.json")],
-    [G("Valid"), F(": claude-code-custom v2.1")],
-    [F("  Tasks: "), Y("80"), F("  Pass rate: "), Y("68%")],
-    "",
-    [D("$"), F(" awb compare-submissions a.json b.json")],
-    [F("  Significant: "), G("Yes"), F(" (p=0.03)")],
-    [F("  Effect size: "), Y("0.42"), F(" ("), C("small-medium"), F(")")],
-    "",
-    [D("$"), F(" awb info BF-012")],
-    [F("  "), C("BF-012"), F(" — test-first diagnosis")],
-    [F("  Difficulty: medium | Capabilities: "), Y("2")],
-    [F("  Partial Credit: "), Y("100 pts"), F(" across 5 criteria")],
-]
 gif.add_frame(s6, ms=3500)
 
-# ─── Scene 7: CTA ───────────────────────────────────────────────────────────
+# --- Scene 7: CTA ---
 s7 = [
     "",
     [F("  ┌────────────────────────────────────────┐")],
@@ -132,7 +133,7 @@ s7 = [
     [F("  │  "), Y("7"), F(" categories "), D("|"), F(" Workflow Lift Score │")],
     [F("  │                                        │")],
     [F("  │  "), G("pip install awb"), F("                     │")],
-    [F("  │  "), G("awb run --runs 3"), F("                    │")],
+    [F("  │  "), G("awb run --parallel --adaptive"), F("       │")],
     [F("  │                                        │")],
     [F("  │  "), D("github.com/xmpuspus/"), F("                │")],
     [F("  │  "), D("  ai-workflow-benchmark"), F("              │")],

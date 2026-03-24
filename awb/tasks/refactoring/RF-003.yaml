@@ -1,7 +1,7 @@
 id: RF-003
 category: refactoring
 title: "Fix 12 planted ruff warnings in FastAPI handler while keeping all tests green"
-difficulty: medium
+difficulty: hard
 estimated_minutes: 30
 languages: [python]
 tags: [fastapi, ruff, lint, refactoring, code-quality]

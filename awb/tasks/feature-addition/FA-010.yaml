@@ -1,7 +1,7 @@
 id: FA-010
 category: feature-addition
 title: "Write a Dockerfile for an existing Python FastAPI application"
-difficulty: easy
+difficulty: hard
 estimated_minutes: 15
 languages: [python, dockerfile]
 tags: [fastapi, docker, infrastructure, layer-caching]
@@ -68,8 +68,11 @@ verification:
     - criterion: "Uses python:3.12-slim base image"
       points: 15
       check: "grep -qE '^FROM python:3\\.12-slim' Dockerfile"
-    - criterion: "Copies requirements.txt before application source"
-      points: 20
+    - criterion: "Dockerfile has a COPY for requirements.txt"
+      points: 10
+      check: "grep -qE '^COPY.*requirements\\.txt' Dockerfile"
+    - criterion: "COPY requirements.txt appears before COPY of app source"
+      points: 10
       check: "python3 -c \"
 lines = open('Dockerfile').read().splitlines()
 copy_req = next((i for i, l in enumerate(lines) if 'requirements.txt' in l and l.strip().startswith('COPY')), None)
@@ -89,4 +92,4 @@ print('layer caching order ok')
 
 constraints:
   max_iterations: 15
-  timeout_seconds: 900
+  timeout_seconds: 215

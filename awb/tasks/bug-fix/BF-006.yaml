@@ -1,7 +1,7 @@
 id: BF-006
 category: bug-fix
 title: "Fix async generator leaking database connections when service raises"
-difficulty: hard
+difficulty: easy
 estimated_minutes: 45
 languages: [python]
 tags: [fastapi, async, database, resource-management, generator]
@@ -101,4 +101,4 @@ verification:
 
 constraints:
   max_iterations: 25
-  timeout_seconds: 1800
+  timeout_seconds: 782

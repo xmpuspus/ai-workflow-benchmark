@@ -1,7 +1,7 @@
 id: CR-004
 category: code-review
 title: "Review async code for 4 concurrency bugs and fix them"
-difficulty: hard
+difficulty: medium
 estimated_minutes: 45
 languages: [python]
 tags: [fastapi, asyncio, concurrency, sqlalchemy, httpx, bug-diagnosis]
@@ -128,4 +128,4 @@ verification:
 
 constraints:
   max_iterations: 30
-  timeout_seconds: 2400
+  timeout_seconds: 643

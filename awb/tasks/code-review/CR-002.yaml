@@ -1,7 +1,7 @@
 id: CR-002
 category: code-review
 title: "Security review of FastAPI app with 5 planted vulnerabilities"
-difficulty: hard
+difficulty: medium
 estimated_minutes: 45
 languages: [python]
 tags: [fastapi, sqlalchemy, security, sql-injection, yaml, cors]
@@ -95,4 +95,4 @@ verification:
 
 constraints:
   max_iterations: 25
-  timeout_seconds: 1800
+  timeout_seconds: 513

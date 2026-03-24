@@ -1,7 +1,7 @@
 id: RF-012
 category: refactoring
 title: "Fix 5 planted errors in a broken GitHub Actions workflow YAML"
-difficulty: easy
+difficulty: hard
 estimated_minutes: 15
 languages: [yaml, python]
 tags: [ci-cd, github-actions, yaml, devops]
@@ -105,4 +105,4 @@ verification:
 
 constraints:
   max_iterations: 15
-  timeout_seconds: 900
+  timeout_seconds: 474

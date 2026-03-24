@@ -1,7 +1,7 @@
 id: DB-001
 category: debugging
 title: "Diagnose why test passes in isolation but fails in full suite"
-difficulty: medium
+difficulty: easy
 estimated_minutes: 30
 languages: [python]
 tags: [pytest, shared-state, test-isolation, fixtures]
@@ -68,4 +68,4 @@ verification:
 
 constraints:
   max_iterations: 20
-  timeout_seconds: 1200
+  timeout_seconds: 342

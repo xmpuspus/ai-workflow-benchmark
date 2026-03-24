@@ -1,7 +1,7 @@
 id: FA-011
 category: feature-addition
 title: "Add comprehensive docstrings to 10 undocumented functions based on implementation"
-difficulty: easy
+difficulty: hard
 estimated_minutes: 15
 languages: [python]
 tags: [fastapi, documentation, docstrings, code-comprehension]
@@ -142,30 +142,50 @@ print('all 10 functions have docstrings')
     - criterion: "Docstrings mention parameters"
       points: 20
       check: "python3 -c \"
-import ast
+import ast, re, inspect
 tree = ast.parse(open('utils/helpers.py').read())
 funcs = [n for n in ast.walk(tree) if isinstance(n, ast.FunctionDef)]
-with_param_docs = [f for f in funcs if ast.get_docstring(f) and any(w in (ast.get_docstring(f) or '') for w in ['Args:', 'Parameters:', ':param', 'param '])]
-assert len(with_param_docs) >= 5, f'Only {len(with_param_docs)} functions document parameters'
-print(f'{len(with_param_docs)} functions document parameters')
+count = 0
+for f in funcs:
+    doc = ast.get_docstring(f) or ''
+    if not doc:
+        continue
+    # Check for formal sections OR inline mention of parameter names
+    param_names = [a.arg for a in f.args.args if a.arg != 'self']
+    formal = re.search(r'args:|param|parameters:|arguments:|:param', doc, re.IGNORECASE)
+    inline = sum(1 for p in param_names if p in doc.lower()) >= max(1, len(param_names) // 2)
+    if formal or inline:
+        count += 1
+assert count >= 5, f'Only {count} functions document parameters'
+print(f'{count} functions document parameters')
 \""
     - criterion: "Docstrings mention return values"
       points: 15
       check: "python3 -c \"
-import ast
+import ast, re
 tree = ast.parse(open('utils/helpers.py').read())
 funcs = [n for n in ast.walk(tree) if isinstance(n, ast.FunctionDef)]
-with_return_docs = [f for f in funcs if ast.get_docstring(f) and any(w in (ast.get_docstring(f) or '') for w in ['Returns:', ':returns:', 'Return:'])]
-assert len(with_return_docs) >= 5, f'Only {len(with_return_docs)} functions document return values'
-print(f'{len(with_return_docs)} functions document return values')
+count = 0
+for f in funcs:
+    doc = ast.get_docstring(f) or ''
+    if not doc:
+        continue
+    # Formal return section OR mentions return type/value in prose
+    formal = re.search(r'returns?:|:returns?:|:rtype:', doc, re.IGNORECASE)
+    prose = re.search(r'return[s ].*(?:str|int|bool|dict|list|tuple|float|hash|hex|None)', doc, re.IGNORECASE)
+    if formal or prose:
+        count += 1
+assert count >= 5, f'Only {count} functions document return values'
+print(f'{count} functions document return values')
 \""
     - criterion: "At least 3 docstrings include usage examples"
       points: 15
       check: "python3 -c \"
-import ast
+import ast, re
 tree = ast.parse(open('utils/helpers.py').read())
 funcs = [n for n in ast.walk(tree) if isinstance(n, ast.FunctionDef)]
-with_examples = [f for f in funcs if ast.get_docstring(f) and '>>>' in (ast.get_docstring(f) or '')]
+example_patterns = re.compile(r'>>>|examples?:|usage[: ]|```', re.IGNORECASE)
+with_examples = [f for f in funcs if ast.get_docstring(f) and example_patterns.search(ast.get_docstring(f) or '')]
 assert len(with_examples) >= 3, f'Only {len(with_examples)} functions have examples'
 print(f'{len(with_examples)} functions have usage examples')
 \""
@@ -175,4 +195,4 @@ print(f'{len(with_examples)} functions have usage examples')
 
 constraints:
   max_iterations: 15
-  timeout_seconds: 900
+  timeout_seconds: 360

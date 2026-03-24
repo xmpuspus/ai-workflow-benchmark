@@ -1,7 +1,7 @@
 id: CR-001
 category: code-review
 title: "Review and fix 3 OWASP Top 10 issues in a Flask login flow"
-difficulty: medium
+difficulty: hard
 estimated_minutes: 30
 languages: [python]
 tags: [flask, security, sql-injection, password-hashing, session-fixation, owasp]
@@ -82,8 +82,11 @@ verification:
   security_commands:
     - "source .venv/bin/activate && bandit -r auth/ -ll 2>/dev/null || true"
   partial_credit:
-    - criterion: "SQL injection fixed with parameterized query"
-      points: 20
+    - criterion: "SQL injection vulnerability identified"
+      points: 10
+      check: "grep -qi 'injection\\|f-string\\|f\"SELECT\\|fstring\\|dynamic.*query\\|unsanitized' review/findings.md"
+    - criterion: "Fix uses parameterized query"
+      points: 10
       check: "! grep -q \"f\\\"SELECT\" auth/login.py && grep -qE 'execute\\(.*(\\?,|:username)' auth/login.py"
     - criterion: "Password hashing upgraded from MD5 to bcrypt"
       points: 20
@@ -103,4 +106,4 @@ verification:
 
 constraints:
   max_iterations: 20
-  timeout_seconds: 1200
+  timeout_seconds: 323

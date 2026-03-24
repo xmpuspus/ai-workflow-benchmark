@@ -3,11 +3,11 @@
 ## Project Structure
 
 - `awb/` — Main package
-- `awb/tasks/` — Task YAML definitions (60 tasks across 7 categories)
-- `awb/scoring/` — Sigmoid normalization, composite scoring, capability profiles, statistics
-- `awb/analysis/` — Gap analysis engine, workflow improvement suggestions
+- `awb/tasks/` — Task YAML definitions (80 tasks across 7 categories)
+- `awb/scoring/` — Sigmoid normalization, composite scoring, capability profiles, stability metrics, statistics
+- `awb/analysis/` — Gap analysis engine, workflow improvement suggestions, difficulty/timeout calibrators
 - `awb/submission/` — External submission format and cross-submission comparison
-- `tests/` — pytest suite (71 tests)
+- `tests/` — pytest suite (75 tests)
 
 ## Development
 
@@ -15,7 +15,7 @@
 pip install -e ".[dev]"
 pytest tests/ -v
 ruff check awb/
-awb validate        # check all 60 task YAMLs against schema
+awb validate        # check all 80 task YAMLs against schema
 ```
 
 Optional stats extras (for scipy-backed CI):
@@ -46,6 +46,7 @@ Valid capabilities: `code_comprehension`, `bug_diagnosis`, `multi_file_reasoning
 - Per-task baselines from `awb/scoring/baselines.py` (derived from difficulty)
 - Weight profiles from `awb/scoring/weights.yaml` (default, correctness_focused, production)
 - Composite = difficulty-weighted sum of 7 sigmoid-normalized dimensions
+- Stability metric: `TaskStability` with std_dev, score_range, is_unstable flag; high-variance tasks can be optionally down-weighted in composite scoring
 
 ## Adding a Task
 
@@ -53,6 +54,11 @@ Valid capabilities: `code_comprehension`, `bug_diagnosis`, `multi_file_reasoning
 2. Use next available ID in the category's range (check existing files)
 3. Pin the repo to a commit SHA, not a branch name
 4. Run `awb validate` before opening a PR
+
+New CLI commands in v0.4.0:
+- `awb stability <run_dirs>...` — per-task score stability report
+- `awb calibrate-difficulty <run_dirs>... [--apply]` — recalibrate difficulty from empirical pass rates
+- `awb calibrate-timeouts <run_dirs>... [--apply]` — tighten timeouts from empirical p95 data
 
 ## Adding an Adapter
 

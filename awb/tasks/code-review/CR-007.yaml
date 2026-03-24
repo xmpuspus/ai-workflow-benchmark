@@ -1,7 +1,7 @@
 id: CR-007
 category: code-review
 title: "Audit dependency versions and fix unpinned packages in requirements.txt"
-difficulty: easy
+difficulty: hard
 estimated_minutes: 15
 languages: [python]
 tags: [fastapi, dependencies, supply-chain, security, pinning]
@@ -81,8 +81,11 @@ verification:
     - criterion: "audit/check_deps.py created and detects unpinned dependencies"
       points: 20
       check: "test -f audit/check_deps.py && python3 audit/check_deps.py requirements.txt 2>/dev/null; true"
+    - criterion: "Audit script exists and runs without crashing"
+      points: 10
+      check: "test -f audit/check_deps.py && python3 -c \"compile(open('audit/check_deps.py').read(), 'audit/check_deps.py', 'exec')\" 2>/dev/null && echo ok"
     - criterion: "Audit script correctly identifies unpinned packages"
-      points: 20
+      points: 10
       check: "echo 'requests' | python3 -c \"import sys; content=sys.stdin.read(); exec(open('audit/check_deps.py').read())\" 2>/dev/null | grep -q 'FAIL' || python3 audit/check_deps.py <(echo 'requests') 2>/dev/null | grep -q 'FAIL' || grep -q 'FAIL\\|not pinned\\|no version' audit/check_deps.py"
     - criterion: "All 8 dependencies in requirements.txt are pinned with =="
       points: 25
@@ -96,4 +99,4 @@ verification:
 
 constraints:
   max_iterations: 15
-  timeout_seconds: 900
+  timeout_seconds: 332

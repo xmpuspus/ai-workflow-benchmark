@@ -1,7 +1,7 @@
 id: RF-001
 category: refactoring
 title: "Extract FastAPI inline validation into service layer without framework imports"
-difficulty: hard
+difficulty: medium
 estimated_minutes: 45
 languages: [python]
 tags: [fastapi, refactoring, service-layer, separation-of-concerns]
@@ -75,4 +75,4 @@ verification:
 
 constraints:
   max_iterations: 30
-  timeout_seconds: 2400
+  timeout_seconds: 1629

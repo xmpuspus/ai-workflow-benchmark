@@ -1,7 +1,7 @@
 id: FA-009
 category: feature-addition
 title: "Add caching to a slow FastAPI endpoint — vague requirement, AI decides approach"
-difficulty: medium
+difficulty: hard
 estimated_minutes: 30
 languages: [python]
 tags: [fastapi, caching, ttl, in-memory, ambiguity, decision-making]
@@ -97,8 +97,11 @@ verification:
     - criterion: "Second request for same ID does not call _lookup_product() again"
       points: 20
       check: "grep -qE 'call_counter|count.*1|counter' tests/test_caching.py"
+    - criterion: "Caching is functional (second request hits cache)"
+      points: 8
+      check: "grep -qE 'call_counter|count.*1|counter.*1' tests/test_caching.py"
     - criterion: "Different IDs are cached independently"
-      points: 15
+      points: 7
       check: "grep -qE 'product.*1.*product.*2|two.*product|separate.*id' tests/test_caching.py"
     - criterion: "Some TTL or expiry mechanism present"
       points: 15
@@ -112,4 +115,4 @@ verification:
 
 constraints:
   max_iterations: 20
-  timeout_seconds: 1200
+  timeout_seconds: 281

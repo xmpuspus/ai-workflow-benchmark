@@ -1,7 +1,7 @@
 id: RF-007
 category: refactoring
 title: "Split 400-line god function into 5 focused functions preserving behavior"
-difficulty: hard
+difficulty: easy
 estimated_minutes: 45
 languages: [python]
 tags: [fastapi, refactoring, function-decomposition, single-responsibility]
@@ -99,4 +99,4 @@ verification:
 
 constraints:
   max_iterations: 25
-  timeout_seconds: 1800
+  timeout_seconds: 583

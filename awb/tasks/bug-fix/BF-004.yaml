@@ -1,7 +1,7 @@
 id: BF-004
 category: bug-fix
 title: "Fix None propagation through 3-layer service call chain"
-difficulty: medium
+difficulty: easy
 estimated_minutes: 30
 languages: [python]
 tags: [fastapi, pydantic, none-handling, service-layer]
@@ -88,4 +88,4 @@ verification:
 
 constraints:
   max_iterations: 20
-  timeout_seconds: 1200
+  timeout_seconds: 390

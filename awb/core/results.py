@@ -39,6 +39,19 @@ class ResultRecorder:
             results.append(_dict_to_result(data))
         return results
 
+    def has_result(self, run_id: str, task_id: str, tool: str) -> bool:
+        """Return True if the result file for this run/task/tool exists."""
+        return (self.results_dir / run_id / f"{task_id}_{tool}.json").exists()
+
+    def load_single(self, run_id: str, task_id: str, tool: str) -> RunResult | None:
+        """Load and return a single result if it exists, None otherwise."""
+        path = self.results_dir / run_id / f"{task_id}_{tool}.json"
+        if not path.exists():
+            return None
+        with open(path) as f:
+            data = json.load(f)
+        return _dict_to_result(data)
+
     def load_all_runs(self) -> dict[str, list[RunResult]]:
         """Load all runs, keyed by run_id."""
         runs: dict[str, list[RunResult]] = {}
@@ -50,6 +63,35 @@ class ResultRecorder:
                 if results:
                     runs[run_dir.name] = results
         return runs
+
+    def find_incomplete_run(
+        self, tool: str, expected_tasks: int,
+    ) -> str | None:
+        """Find the most recent run_id for this tool that has fewer results than expected.
+
+        Looks for directories matching *_run1 that contain {tool} results.
+        Returns the base run_id (without _runN suffix) if incomplete, else None.
+        """
+        if not self.results_dir.exists():
+            return None
+
+        candidates: list[tuple[str, str]] = []  # (dir_name, base_id)
+        for run_dir in sorted(self.results_dir.iterdir(), reverse=True):
+            if not run_dir.is_dir():
+                continue
+            name = run_dir.name
+            if "_run1" not in name:
+                continue
+            # Check if this run has results for the requested tool
+            tool_files = list(run_dir.glob(f"*_{tool}.json"))
+            if not tool_files:
+                continue
+            base_id = name.rsplit("_run1", 1)[0]
+            if len(tool_files) < expected_tasks:
+                return base_id
+            candidates.append((name, base_id))
+
+        return None
 
 
 def _dict_to_result(data: dict) -> RunResult:

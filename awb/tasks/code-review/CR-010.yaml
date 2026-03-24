@@ -1,7 +1,7 @@
 id: CR-010
 category: code-review
 title: "Write a migration guide documenting API changes between v1 and v2 endpoints"
-difficulty: medium
+difficulty: easy
 estimated_minutes: 30
 languages: [python, markdown]
 tags: [documentation, fastapi, pydantic, api-versioning, migration]
@@ -172,4 +172,4 @@ verification:
 
 constraints:
   max_iterations: 20
-  timeout_seconds: 1200
+  timeout_seconds: 372

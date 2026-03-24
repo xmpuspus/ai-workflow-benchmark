@@ -1,7 +1,7 @@
 id: BF-009
 category: bug-fix
 title: "Fix circular import between models and services causing AttributeError"
-difficulty: medium
+difficulty: easy
 estimated_minutes: 30
 languages: [python]
 tags: [fastapi, circular-import, modules, architecture]
@@ -96,4 +96,4 @@ verification:
 
 constraints:
   max_iterations: 20
-  timeout_seconds: 1200
+  timeout_seconds: 843

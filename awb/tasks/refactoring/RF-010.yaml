@@ -1,7 +1,7 @@
 id: RF-010
 category: refactoring
 title: "Consolidate 3 duplicate validation functions into a shared utility module"
-difficulty: easy
+difficulty: hard
 estimated_minutes: 15
 languages: [python]
 tags: [fastapi, refactoring, dry-principle, code-reuse]
@@ -94,4 +94,4 @@ verification:
 
 constraints:
   max_iterations: 15
-  timeout_seconds: 900
+  timeout_seconds: 586

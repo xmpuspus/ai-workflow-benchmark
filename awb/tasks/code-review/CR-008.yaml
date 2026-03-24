@@ -1,7 +1,7 @@
 id: CR-008
 category: code-review
 title: "Security review of FastAPI middleware — write report only, no code changes"
-difficulty: medium
+difficulty: hard
 estimated_minutes: 30
 languages: [python]
 tags: [fastapi, security, middleware, cors, timing-attack, rate-limiting]
@@ -122,4 +122,4 @@ verification:
 
 constraints:
   max_iterations: 20
-  timeout_seconds: 1200
+  timeout_seconds: 204

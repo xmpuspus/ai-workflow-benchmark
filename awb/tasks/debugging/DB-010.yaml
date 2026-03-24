@@ -1,7 +1,7 @@
 id: DB-010
 category: debugging
 title: "Profile and fix the slowest endpoint in a FastAPI app with 5 endpoints"
-difficulty: hard
+difficulty: easy
 estimated_minutes: 45
 languages: [python]
 tags: [fastapi, performance, async, profiling, sleep, batching]
@@ -119,4 +119,4 @@ verification:
 
 constraints:
   max_iterations: 25
-  timeout_seconds: 1800
+  timeout_seconds: 462

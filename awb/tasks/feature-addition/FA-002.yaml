@@ -1,7 +1,7 @@
 id: FA-002
 category: feature-addition
 title: "Add rate limiting middleware matching existing auth middleware pattern exactly"
-difficulty: medium
+difficulty: easy
 estimated_minutes: 30
 languages: [python]
 tags: [starlette, middleware, rate-limiting, conventions]
@@ -107,4 +107,4 @@ verification:
 
 constraints:
   max_iterations: 20
-  timeout_seconds: 1200
+  timeout_seconds: 240

@@ -1,7 +1,7 @@
 id: DB-011
 category: debugging
 title: "Follow a stack trace through 4 modules to find a Decimal serialization bug"
-difficulty: medium
+difficulty: hard
 estimated_minutes: 30
 languages: [python]
 tags: [fastapi, json, decimal, serialization, stack-trace, multi-file]
@@ -119,8 +119,11 @@ verification:
     - criterion: "Traces the error to utils/serializer.py via the stack trace"
       points: 20
       check: "grep -q 'default=str' utils/serializer.py || grep -q 'DecimalEncoder' utils/serializer.py"
-    - criterion: "Identifies Decimal->str silent conversion as root cause"
-      points: 20
+    - criterion: "Identifies serialization as the problem area"
+      points: 10
+      check: "grep -qiE 'serial|json|default=str' tests/test_order_pipeline.py"
+    - criterion: "Specifically identifies Decimal->str conversion as root cause"
+      points: 10
       check: "grep -qiE 'decimal.*str|str.*decimal|default=str' tests/test_order_pipeline.py"
     - criterion: "Custom encoder/decoder used in serializer.py"
       points: 15
@@ -134,4 +137,4 @@ verification:
 
 constraints:
   max_iterations: 20
-  timeout_seconds: 1200
+  timeout_seconds: 253

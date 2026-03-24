@@ -1,7 +1,7 @@
 id: LC-006
 category: legacy-code
 title: "Migrate Flask function views to class-based MethodView"
-difficulty: hard
+difficulty: easy
 estimated_minutes: 45
 languages: [python]
 tags: [flask, methodview, refactoring, routing]
@@ -171,4 +171,4 @@ verification:
 
 constraints:
   max_iterations: 25
-  timeout_seconds: 1800
+  timeout_seconds: 491

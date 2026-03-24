@@ -1,7 +1,7 @@
 id: BF-012
 category: bug-fix
 title: "Fix failing test by tracing discount calculation bug back to production code"
-difficulty: medium
+difficulty: easy
 estimated_minutes: 30
 languages: [python]
 tags: [fastapi, pricing, arithmetic, test-driven-diagnosis]
@@ -96,4 +96,4 @@ verification:
 
 constraints:
   max_iterations: 20
-  timeout_seconds: 1200
+  timeout_seconds: 608

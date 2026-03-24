@@ -27,9 +27,9 @@ AWB benchmarks the full stack: **tool + configuration + workflow + model**, toge
 ```bash
 pip install awb
 
-awb quickstart                    # verify your setup
-awb run --runs 3                  # full benchmark (3 runs each for stable scores)
-awb gap results/runs/<run_dir>/   # analyze capability gaps
+awb quickstart                              # verify your setup
+awb run --runs 3 --parallel --adaptive      # full benchmark (parallel, smart re-runs)
+awb gap results/runs/<run_dir>/             # analyze capability gaps
 ```
 
 ## How It Works
@@ -82,13 +82,13 @@ Real open-source repos, pinned to release tag SHAs. Setup runs in under 15 secon
 
 | Category | Count | Easy / Med / Hard | What It Tests |
 |----------|-------|-------------------|---------------|
-| bug-fix | 14 | 3 / 5 / 4 | Root cause analysis, test-first diagnosis, N+1 queries, race conditions |
-| feature-addition | 12 | 4 / 5 / 2 | Convention adherence, ambiguous requirements, Dockerfiles, documentation, TypeScript typing |
-| refactoring | 12 | 4 / 3 / 2 | Multi-file consistency, O(n^2) optimization, CI/CD config, async migration |
-| code-review | 10 | 2 / 5 / 2 | Security review (report-only), concurrency analysis, migration guides, OWASP |
-| debugging | 11 | 2 / 3 / 5 | Performance profiling, regression bisection, stack trace diagnosis, environment bugs |
-| multi-file | 10 | 0 / 4 / 4 | Merge conflicts, Pydantic v1->v2 migration, plugin systems, auth chains |
-| legacy-code | 12 | 4 / 4 / 4 | SQLAlchemy 2.0 migration, 20-file codebase navigation, dead code removal |
+| bug-fix | 13 | 7 / 1 / 5 | Root cause analysis, test-first diagnosis, N+1 queries, race conditions |
+| feature-addition | 12 | 3 / 0 / 9 | Convention adherence, ambiguous requirements, Dockerfiles, documentation, TypeScript typing |
+| refactoring | 12 | 5 / 2 / 5 | Multi-file consistency, O(n^2) optimization, CI/CD config, async migration |
+| code-review | 10 | 4 / 2 / 4 | Security review (report-only), concurrency analysis, migration guides, OWASP |
+| debugging | 11 | 7 / 0 / 4 | Performance profiling, regression bisection, stack trace diagnosis, environment bugs |
+| multi-file | 10 | 4 / 0 / 6 | Merge conflicts, Pydantic v1->v2 migration, plugin systems, auth chains |
+| legacy-code | 12 | 9 / 0 / 3 | SQLAlchemy 2.0 migration, 20-file codebase navigation, dead code removal |
 
 **Repos used:** FastAPI, httpx, Flask, Starlette, Click, Pydantic, SQLAlchemy 2.0, Hono
 
@@ -176,6 +176,9 @@ The lift is computed per-task (configured score minus vanilla score), averaged a
 | `awb validate` | Validate all task YAMLs against schema |
 | `awb leaderboard` | Generate HTML leaderboard from run results |
 | `awb workflow <subcommand>` | Export, validate, diff, or init workflow descriptors |
+| `awb stability <run_dirs>...` | Per-task score stability report |
+| `awb calibrate-difficulty <run_dirs>... [--apply]` | Recalibrate difficulty labels from empirical pass rates |
+| `awb calibrate-timeouts <run_dirs>... [--apply]` | Tighten timeouts from empirical p95 data |
 
 **Common options for `awb run`:**
 
@@ -187,6 +190,9 @@ awb run --category legacy-code     # filter by category
 awb run --difficulty hard          # filter by difficulty
 awb run --capability bug_diagnosis # filter by capability
 awb run --runs 1 --dry-run        # preview without executing
+awb run --resume                   # skip tasks with existing results
+awb run --parallel -j 4            # run 4 tasks concurrently
+awb run --adaptive                 # re-run near-miss tasks (60-99%) after initial pass
 ```
 
 ## Adding Tasks
@@ -276,6 +282,7 @@ The format captures tool version, model, hardware class, and per-task run result
 - Significance testing via sign test for paired tool comparison
 - Integrity checks: contamination detection (completions <10s flagged), variance anomalies (identical times/tokens across runs)
 - Weight profiles: `default`, `correctness_focused`, `production` (see `awb/scoring/weights.yaml`)
+- Stability metric: per-task `TaskStability` (std_dev, score_range, is_unstable); high-variance tasks can be down-weighted in composite scoring
 
 ## Links
 

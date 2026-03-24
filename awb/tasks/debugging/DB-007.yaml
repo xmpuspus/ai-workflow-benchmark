@@ -1,7 +1,7 @@
 id: DB-007
 category: debugging
 title: "Trace data corruption through a 3-stage ETL pipeline to find the dropping stage"
-difficulty: hard
+difficulty: easy
 estimated_minutes: 45
 languages: [python]
 tags: [etl, data-pipeline, none-handling, python-gotchas]
@@ -83,4 +83,4 @@ verification:
 
 constraints:
   max_iterations: 25
-  timeout_seconds: 1800
+  timeout_seconds: 293

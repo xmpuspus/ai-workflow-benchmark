@@ -1,7 +1,7 @@
 id: RF-006
 category: refactoring
 title: "Replace all os.path calls with pathlib.Path across 8 utility files"
-difficulty: medium
+difficulty: easy
 estimated_minutes: 30
 languages: [python]
 tags: [fastapi, pathlib, refactoring, multi-file]
@@ -88,4 +88,4 @@ verification:
 
 constraints:
   max_iterations: 20
-  timeout_seconds: 1200
+  timeout_seconds: 641

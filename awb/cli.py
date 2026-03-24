@@ -22,7 +22,10 @@ def cli():
     pass
 
 
-def _run_both(task_id, category, capability, difficulty, runs, parallel, dry_run, timeout):
+def _run_both(
+    task_id, category, capability, difficulty, runs, parallel, dry_run, timeout,
+    resume=False, concurrency=3, adaptive=False,
+):
     """Run vanilla and custom back-to-back then show a comparison."""
     from awb.core.runner import BenchmarkRunner
     from awb.core.task_loader import load_all_tasks
@@ -59,6 +62,7 @@ def _run_both(task_id, category, capability, difficulty, runs, parallel, dry_run
         runner = BenchmarkRunner(
             tool=variant, tasks=tasks, runs=runs,
             parallel=parallel, timeout_override=timeout,
+            resume=resume, concurrency=concurrency, adaptive=adaptive,
         )
         all_results[variant] = asyncio.run(runner.run_all())
 
@@ -173,9 +177,13 @@ def _run_both(task_id, category, capability, difficulty, runs, parallel, dry_run
 @click.option("--parallel", is_flag=True, help="Run tasks in parallel")
 @click.option("--dry-run", is_flag=True, help="Validate without executing")
 @click.option("--timeout", type=int, help="Override timeout (seconds)")
+@click.option("--resume", is_flag=True, help="Skip tasks that already have results")
+@click.option("-j", "--concurrency", type=int, default=4, help="Max parallel tasks (default: 4)")
+@click.option("--adaptive", is_flag=True, help="Only re-run near-miss tasks on runs 2+")
 def run(tool: str | None, workflow: str | None, task_id: str | None,
         category: str | None, capability: str | None, difficulty: str | None,
-        runs: int, parallel: bool, dry_run: bool, timeout: int | None):
+        runs: int, parallel: bool, dry_run: bool, timeout: int | None,
+        resume: bool, concurrency: int, adaptive: bool):
     """Run benchmark tasks through a tool adapter."""
     from awb.core.runner import BenchmarkRunner
     from awb.core.task_loader import load_all_tasks
@@ -200,7 +208,8 @@ def run(tool: str | None, workflow: str | None, task_id: str | None,
         # No tool specified - run both variants and compare
         _run_both(task_id=task_id, category=category, capability=capability,
                   difficulty=difficulty, runs=runs, parallel=parallel,
-                  dry_run=dry_run, timeout=timeout)
+                  dry_run=dry_run, timeout=timeout,
+                  resume=resume, concurrency=concurrency, adaptive=adaptive)
         return
 
     tasks = load_all_tasks(category=category)
@@ -235,6 +244,7 @@ def run(tool: str | None, workflow: str | None, task_id: str | None,
         tool=tool, tasks=tasks, runs=runs,
         parallel=parallel, timeout_override=timeout,
         workflow=workflow_info,
+        resume=resume, concurrency=concurrency, adaptive=adaptive,
     )
     results = asyncio.run(runner.run_all())
 
@@ -788,3 +798,130 @@ def workflow_init(output: str):
     out = Path(output)
     out.write_text(yaml.dump(descriptor, default_flow_style=False, sort_keys=False))
     console.print(f"\nWorkflow created: [bold]{out}[/bold]")
+
+
+def _load_results_from_dirs(run_dirs: tuple[str, ...]) -> list:
+    """Load results from multiple run directories."""
+    from awb.core.results import ResultRecorder
+    recorder = ResultRecorder()
+    all_results = []
+    for d in run_dirs:
+        all_results.extend(recorder.load_run(Path(d)))
+    return all_results
+
+
+@cli.command()
+@click.argument("run_dirs", nargs=-1, type=click.Path(exists=True))
+def stability(run_dirs: tuple[str, ...]):
+    """Analyze per-task score stability across runs."""
+    from awb.scoring.statistics import compute_stability_report
+
+    results = _load_results_from_dirs(run_dirs)
+    if not results:
+        console.print("[red]No results found[/red]")
+        sys.exit(1)
+
+    report = compute_stability_report(results)
+    table = Table(title="Task Stability Report")
+    table.add_column("Task")
+    table.add_column("Mean", justify="right")
+    table.add_column("Std Dev", justify="right")
+    table.add_column("Range", justify="right")
+    table.add_column("Runs", justify="right")
+    table.add_column("Status")
+
+    for s in report:
+        status = "[red]UNSTABLE[/red]" if s.is_unstable else "[green]stable[/green]"
+        table.add_row(
+            s.task_id,
+            f"{s.mean_score:.0f}%",
+            f"{s.std_dev:.1f}",
+            f"{s.score_range:.0f}",
+            str(s.n_runs),
+            status,
+        )
+    console.print(table)
+
+    unstable = [s for s in report if s.is_unstable]
+    console.print(f"\n{len(unstable)}/{len(report)} tasks unstable (>30pt range)")
+
+
+@cli.command("calibrate-difficulty")
+@click.argument("run_dirs", nargs=-1, type=click.Path(exists=True))
+@click.option("--apply", is_flag=True, help="Update task YAML files")
+def calibrate_difficulty_cmd(run_dirs: tuple[str, ...], apply: bool):
+    """Recalibrate difficulty labels using empirical pass rates."""
+    from awb.analysis.difficulty_calibrator import (
+        apply_difficulty_labels,
+        calibrate_difficulty,
+    )
+
+    results = _load_results_from_dirs(run_dirs)
+    if not results:
+        console.print("[red]No results found[/red]")
+        sys.exit(1)
+
+    recs = calibrate_difficulty(results)
+    table = Table(title="Difficulty Calibration")
+    table.add_column("Task")
+    table.add_column("Current")
+    table.add_column("Recommended")
+    table.add_column("Pass Rate", justify="right")
+    table.add_column("Runs", justify="right")
+    table.add_column("Changed")
+
+    for r in recs:
+        changed = "[yellow]YES[/yellow]" if r.changed else ""
+        table.add_row(
+            r.task_id, r.current, r.recommended,
+            f"{r.pass_rate:.0f}%", str(r.n_runs), changed,
+        )
+    console.print(table)
+
+    changes = [r for r in recs if r.changed]
+    console.print(f"\n{len(changes)}/{len(recs)} tasks would change difficulty")
+
+    if apply and changes:
+        tasks_dir = Path(__file__).parent / "tasks"
+        count = apply_difficulty_labels(recs, tasks_dir)
+        console.print(f"[green]Updated {count} task files[/green]")
+
+
+@cli.command("calibrate-timeouts")
+@click.argument("run_dirs", nargs=-1, type=click.Path(exists=True))
+@click.option("--apply", is_flag=True, help="Update task YAML files")
+def calibrate_timeouts_cmd(run_dirs: tuple[str, ...], apply: bool):
+    """Calibrate task timeouts using empirical wall clock data."""
+    from awb.analysis.timeout_calibrator import (
+        apply_timeouts,
+        calibrate_timeouts,
+    )
+
+    results = _load_results_from_dirs(run_dirs)
+    if not results:
+        console.print("[red]No results found[/red]")
+        sys.exit(1)
+
+    recs = calibrate_timeouts(results)
+    table = Table(title="Timeout Calibration")
+    table.add_column("Task")
+    table.add_column("Current", justify="right")
+    table.add_column("p95 Time", justify="right")
+    table.add_column("Recommended", justify="right")
+    table.add_column("Changed")
+
+    for r in recs:
+        changed = "[yellow]YES[/yellow]" if r.changed else ""
+        table.add_row(
+            r.task_id, f"{r.current_timeout}s",
+            f"{r.p95_time:.0f}s", f"{r.recommended_timeout}s", changed,
+        )
+    console.print(table)
+
+    changes = [r for r in recs if r.changed]
+    console.print(f"\n{len(changes)}/{len(recs)} tasks would change timeout")
+
+    if apply and changes:
+        tasks_dir = Path(__file__).parent / "tasks"
+        count = apply_timeouts(recs, tasks_dir)
+        console.print(f"[green]Updated {count} task files[/green]")

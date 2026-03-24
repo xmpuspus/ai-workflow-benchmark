@@ -1,7 +1,7 @@
 id: CR-006
 category: code-review
 title: "Review error handlers that leak stack traces to API consumers"
-difficulty: medium
+difficulty: hard
 estimated_minutes: 30
 languages: [python]
 tags: [fastapi, error-handling, security, information-disclosure, exception-handlers]
@@ -112,4 +112,4 @@ verification:
 
 constraints:
   max_iterations: 20
-  timeout_seconds: 1200
+  timeout_seconds: 256

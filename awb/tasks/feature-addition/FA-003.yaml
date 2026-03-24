@@ -1,7 +1,7 @@
 id: FA-003
 category: feature-addition
 title: "Add categories resource following exact conventions of existing users and posts"
-difficulty: medium
+difficulty: hard
 estimated_minutes: 35
 languages: [python]
 tags: [fastapi, pydantic, conventions, service-layer, dependency-injection]
@@ -104,4 +104,4 @@ verification:
 
 constraints:
   max_iterations: 20
-  timeout_seconds: 1200
+  timeout_seconds: 342

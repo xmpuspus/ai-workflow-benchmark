@@ -1,7 +1,7 @@
 id: BF-001
 category: bug-fix
 title: "Fix response_model silently dropping extra fields in FastAPI"
-difficulty: easy
+difficulty: medium
 estimated_minutes: 15
 languages: [python]
 tags: [fastapi, pydantic, response-model, validation]
@@ -59,4 +59,4 @@ verification:
 
 constraints:
   max_iterations: 15
-  timeout_seconds: 900
+  timeout_seconds: 519

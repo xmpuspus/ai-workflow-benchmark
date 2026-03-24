@@ -1,7 +1,7 @@
 id: CR-005
 category: code-review
 title: "Fix CORS wildcard misconfiguration and missing auth on admin endpoints"
-difficulty: medium
+difficulty: easy
 estimated_minutes: 30
 languages: [python]
 tags: [fastapi, cors, authentication, security, middleware]
@@ -103,4 +103,4 @@ verification:
 
 constraints:
   max_iterations: 20
-  timeout_seconds: 1200
+  timeout_seconds: 195

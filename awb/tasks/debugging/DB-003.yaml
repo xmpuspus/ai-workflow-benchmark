@@ -1,7 +1,7 @@
 id: DB-003
 category: debugging
 title: "Trace why API returns 200 but response body is missing expected fields"
-difficulty: easy
+difficulty: hard
 estimated_minutes: 15
 languages: [python]
 tags: [fastapi, pydantic, response-model, field-stripping]
@@ -67,4 +67,4 @@ verification:
 
 constraints:
   max_iterations: 15
-  timeout_seconds: 900
+  timeout_seconds: 265

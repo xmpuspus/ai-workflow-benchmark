@@ -1,7 +1,7 @@
 id: DB-009
 category: debugging
 title: "Find which of 3 recent changes introduced a rounding regression"
-difficulty: hard
+difficulty: easy
 estimated_minutes: 45
 languages: [python]
 tags: [fastapi, rounding, regression, bisect, isolation, decimal]
@@ -108,4 +108,4 @@ verification:
 
 constraints:
   max_iterations: 25
-  timeout_seconds: 1800
+  timeout_seconds: 658

@@ -1,7 +1,7 @@
 id: RF-011
 category: refactoring
 title: "Optimize O(n^2) duplicate email search to O(n) using a hash map"
-difficulty: easy
+difficulty: medium
 estimated_minutes: 15
 languages: [python]
 tags: [performance, algorithms, data-structures, refactoring]

@@ -1,7 +1,7 @@
 id: MF-005
 category: multi-file
 title: "Build a structured error handling chain across 5 coordinated files"
-difficulty: medium
+difficulty: easy
 estimated_minutes: 30
 languages: [python]
 tags: [fastapi, error-handling, middleware, exception-handlers, pydantic]
@@ -99,4 +99,4 @@ verification:
 
 constraints:
   max_iterations: 20
-  timeout_seconds: 1200
+  timeout_seconds: 448

@@ -1,7 +1,7 @@
 id: FA-007
 category: feature-addition
 title: "Add users delete and update CLI subcommands matching existing Click group conventions"
-difficulty: easy
+difficulty: hard
 estimated_minutes: 15
 languages: [python]
 tags: [click, cli, conventions, subcommands]
@@ -116,8 +116,11 @@ verification:
     - criterion: "Error handling uses same try/except + sys.exit(1) pattern"
       points: 20
       check: "grep -c 'sys.exit(1)' cli/users.py | grep -qE '[34]'"
+    - criterion: "Test file for CLI exists"
+      points: 5
+      check: "test -f tests/test_users_cli.py"
     - criterion: "Tests verify option naming convention"
-      points: 10
+      points: 5
       check: "grep -qE '--id|option.*naming|convention' tests/test_users_cli.py"
     - criterion: "Tests pass"
       points: 20
@@ -125,4 +128,4 @@ verification:
 
 constraints:
   max_iterations: 15
-  timeout_seconds: 900
+  timeout_seconds: 208

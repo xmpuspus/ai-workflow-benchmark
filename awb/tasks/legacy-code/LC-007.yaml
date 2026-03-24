@@ -1,7 +1,7 @@
 id: LC-007
 category: legacy-code
 title: "Remove 15 pieces of dead code safely without breaking live behavior"
-difficulty: medium
+difficulty: easy
 estimated_minutes: 30
 languages: [python]
 tags: [dead-code, cleanup, refactoring, static-analysis]
@@ -164,4 +164,4 @@ verification:
 
 constraints:
   max_iterations: 20
-  timeout_seconds: 1200
+  timeout_seconds: 369

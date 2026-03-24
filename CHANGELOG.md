@@ -1,5 +1,20 @@
 # Changelog
 
+## 0.4.1 (2026-03-24)
+
+### Added
+- Resume auto-detection: `--resume` finds the most recent incomplete run automatically
+- Git clone retry with exponential backoff (3 attempts, 5s/10s delay) for concurrent runs
+- Split 7 single-criterion bottleneck tasks into granular partial credit (binary "Tests pass" → "At least half pass" + "All pass")
+
+### Changed
+- Default concurrency raised from 3 to 4 (`-j 4`)
+- FA-011 verification criteria broadened to accept Google-style docstrings and inline parameter descriptions
+- Difficulty labels recalibrated from empirical pass rates across 5 runs (easy >70%, medium 35-70%, hard <35%)
+
+### Fixed
+- FA-011 scored 16% on average due to overly rigid regex for param/return documentation checks
+
 ## 0.3.0 (2026-03-22)
 
 ### Added

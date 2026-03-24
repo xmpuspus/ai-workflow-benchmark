@@ -1,7 +1,7 @@
 id: MF-008
 category: multi-file
 title: "Refactor a monolithic test file into 5 focused test modules with shared fixtures"
-difficulty: medium
+difficulty: hard
 estimated_minutes: 30
 languages: [python]
 tags: [pytest, test-organization, conftest, fixtures, refactoring]
@@ -83,4 +83,4 @@ verification:
 
 constraints:
   max_iterations: 20
-  timeout_seconds: 1200
+  timeout_seconds: 1126

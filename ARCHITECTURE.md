@@ -2,7 +2,7 @@
 
 ## System Overview
 
-AWB is a CLI tool with six primary commands. The diagram below shows how each command maps to its backend engine. Commands are color-coded by function: blue for benchmark execution and comparison, amber for analysis and submission workflows, and green for validation and reporting utilities. This separation matters because benchmark execution (blue path) is the hot path that must handle timeouts, subprocess management, and async I/O, while analysis (amber path) operates on saved results and can run without any tool installed.
+AWB is a CLI tool with primary commands for running benchmarks, analyzing results, and maintaining task quality. The diagram below shows how each command maps to its backend engine. Commands are color-coded by function: blue for benchmark execution and comparison, amber for analysis and submission workflows, and green for validation and reporting utilities. This separation matters because benchmark execution (blue path) is the hot path that must handle timeouts, subprocess management, and async I/O, while analysis (amber path) operates on saved results and can run without any tool installed.
 
 ```mermaid
 %%{init: {'theme': 'base', 'themeVariables': {'primaryColor': '#2563eb', 'primaryTextColor': '#ffffff', 'primaryBorderColor': '#1d4ed8', 'secondaryColor': '#f59e0b', 'secondaryTextColor': '#1f2937', 'tertiaryColor': '#10b981', 'tertiaryTextColor': '#ffffff', 'lineColor': '#6b7280', 'fontSize': '14px'}}}%%
@@ -15,10 +15,16 @@ graph TB
     CLI --> Submit["awb submit"]:::secondary
     CLI --> Validate["awb validate"]:::tertiary
     CLI --> Leaderboard["awb leaderboard"]:::tertiary
+    CLI --> Stability["awb stability"]:::secondary
+    CLI --> CalDiff["awb calibrate-difficulty"]:::secondary
+    CLI --> CalTime["awb calibrate-timeouts"]:::secondary
 
     Run --> Runner["BenchmarkRunner<br/><i>core/runner.py</i>"]:::primary
     Gap --> GapEngine["GapReport<br/><i>analysis/gap_analysis.py</i>"]:::secondary
     Compare --> CompareEngine["compare_submissions<br/><i>submission/compare.py</i>"]:::secondary
+    Stability --> StabilityEngine["TaskStability<br/><i>scoring/stability.py</i>"]:::secondary
+    CalDiff --> CalDiffEngine["calibrate_difficulty<br/><i>analysis/calibrate_difficulty.py</i>"]:::secondary
+    CalTime --> CalTimeEngine["calibrate_timeouts<br/><i>analysis/calibrate_timeouts.py</i>"]:::secondary
 
     classDef primary fill:#2563eb,stroke:#1d4ed8,color:#fff
     classDef secondary fill:#f59e0b,stroke:#d97706,color:#1f2937
@@ -139,12 +145,15 @@ graph TD
         Capabilities["capabilities.py<br/><i>Capability radar</i>"]:::purple
         Stats["statistics.py<br/><i>CI, significance</i>"]:::purple
         Integrity["integrity.py<br/><i>Contamination<br/>detection</i>"]:::purple
+        Stability["stability.py<br/><i>TaskStability,<br/>variance weighting</i>"]:::purple
         Report["report.py"]:::purple
     end
 
     subgraph Analysis["Analysis"]
         GapAnalysis["gap_analysis.py<br/><i>Failure analysis,<br/>pattern detection</i>"]:::red
         Suggestions["suggestions.py<br/><i>Rule-based<br/>recommendations</i>"]:::red
+        CalDiffEngine["calibrate_difficulty.py<br/><i>Empirical pass rate<br/>recalibration</i>"]:::red
+        CalTimeEngine["calibrate_timeouts.py<br/><i>p95-based timeout<br/>tightening</i>"]:::red
     end
 
     subgraph Submission["Submission"]
@@ -550,12 +559,15 @@ ai-workflow-benchmark/
 │   │   ├── capabilities.py       # Capability enum + radar
 │   │   ├── statistics.py         # CI, significance testing
 │   │   ├── integrity.py          # Contamination detection
+│   │   ├── stability.py          # TaskStability: std_dev, score_range, is_unstable
 │   │   ├── report.py             # ScoreReport + printing
 │   │   ├── workflow_lift.py      # Workflow Lift Score (custom vs vanilla)
 │   │   └── weights.yaml          # 3 weight profiles
 │   ├── analysis/
 │   │   ├── gap_analysis.py       # FailureAnalysis, GapReport
-│   │   └── suggestions.py        # Rule-based recommendations
+│   │   ├── suggestions.py        # Rule-based recommendations
+│   │   ├── calibrate_difficulty.py  # Recalibrate difficulty from empirical pass rates
+│   │   └── calibrate_timeouts.py    # Tighten timeouts from empirical p95 data
 │   ├── submission/
 │   │   ├── schema.py             # Hardware classes, Submission
 │   │   ├── ingest.py             # Parse + validate JSON
@@ -570,14 +582,14 @@ ai-workflow-benchmark/
 │   └── tasks/
 │       ├── schema.json           # Task YAML JSON Schema
 │       ├── _template.yaml        # Task template
-│       ├── bug-fix/              # 14 tasks (BF-001 to BF-014)
+│       ├── bug-fix/              # 13 tasks (BF-001 to BF-014, no BF-002)
 │       ├── feature-addition/     # 12 tasks (FA-001 to FA-012)
 │       ├── refactoring/          # 12 tasks (RF-001 to RF-012)
 │       ├── code-review/          # 10 tasks (CR-001 to CR-010)
 │       ├── debugging/            # 11 tasks (DB-001 to DB-011)
 │       ├── multi-file/           # 10 tasks (MF-001 to MF-010)
 │       └── legacy-code/          # 12 tasks (LC-001 to LC-012)
-├── tests/                        # pytest suite (71 tests)
+├── tests/                        # pytest suite (75 tests)
 ├── results/
 │   ├── schema.json               # Result JSON Schema
 │   ├── submission-schema.json    # External submission schema
@@ -586,5 +598,5 @@ ai-workflow-benchmark/
 ├── README.md
 ├── METHODOLOGY.md
 ├── ARCHITECTURE.md
-└── pyproject.toml                # v0.2.0
+└── pyproject.toml                # v0.4.1
 ```

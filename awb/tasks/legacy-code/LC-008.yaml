@@ -1,7 +1,7 @@
 id: LC-008
 category: legacy-code
 title: "Upgrade Pydantic v1 models to v2 in a FastAPI app"
-difficulty: medium
+difficulty: easy
 estimated_minutes: 30
 languages: [python]
 tags: [pydantic, pydantic-v2, fastapi, migration]
@@ -147,4 +147,4 @@ verification:
 
 constraints:
   max_iterations: 20
-  timeout_seconds: 1200
+  timeout_seconds: 297

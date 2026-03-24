@@ -1,7 +1,7 @@
 id: LC-005
 category: legacy-code
 title: "Replace sync requests with httpx in async FastAPI codebase"
-difficulty: hard
+difficulty: easy
 estimated_minutes: 45
 languages: [python]
 tags: [async, httpx, requests, fastapi, event-loop]
@@ -139,4 +139,4 @@ verification:
 
 constraints:
   max_iterations: 25
-  timeout_seconds: 1800
+  timeout_seconds: 271

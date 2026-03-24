@@ -273,3 +273,31 @@ class TestScoreReport:
         assert isinstance(report, ScoreReport)
         assert report.tool == "test-tool"
         assert 0 < report.composite_score < 100
+
+
+def test_task_stability_stable():
+    from awb.scoring.statistics import compute_task_stability
+    s = compute_task_stability("BF-001", [80, 82, 78])
+    assert not s.is_unstable
+    assert s.std_dev < 3
+
+
+def test_task_stability_unstable():
+    from awb.scoring.statistics import compute_task_stability
+    s = compute_task_stability("FA-003", [0, 90, 0])
+    assert s.is_unstable
+    assert s.score_range == 90
+
+
+def test_stability_weight_stable():
+    from awb.scoring.statistics import TaskStability, compute_stability_weights
+    stabilities = [TaskStability("BF-001", 80, 5.0, 4.0, 3, False)]
+    weights = compute_stability_weights(stabilities)
+    assert weights["BF-001"] == 1.0
+
+
+def test_stability_weight_unstable():
+    from awb.scoring.statistics import TaskStability, compute_stability_weights
+    stabilities = [TaskStability("FA-003", 30, 40.0, 90.0, 3, True)]
+    weights = compute_stability_weights(stabilities)
+    assert 0.3 < weights["FA-003"] < 1.0

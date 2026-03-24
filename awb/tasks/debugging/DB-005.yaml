@@ -1,7 +1,7 @@
 id: DB-005
 category: debugging
 title: "Diagnose intermittent 500 from async endpoint sharing httpx client in gather"
-difficulty: hard
+difficulty: easy
 estimated_minutes: 45
 languages: [python]
 tags: [fastapi, httpx, asyncio, concurrency, shared-state]
@@ -78,4 +78,4 @@ verification:
 
 constraints:
   max_iterations: 25
-  timeout_seconds: 1800
+  timeout_seconds: 1093

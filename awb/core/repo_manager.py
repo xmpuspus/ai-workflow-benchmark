@@ -2,10 +2,16 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import logging
 import shutil
 from pathlib import Path
 
 from awb.core.config import TaskDefinition
+
+log = logging.getLogger(__name__)
+
+_CLONE_MAX_RETRIES = 3
+_CLONE_BACKOFF_BASE = 5  # seconds
 
 
 class RepoManager:
@@ -33,15 +39,32 @@ class RepoManager:
         stdout, stderr = await proc.communicate()
         return proc.returncode, stdout.decode(), stderr.decode()
 
-    async def prepare(self, task: TaskDefinition) -> Path:
-        workspace = self.workspace_root / task.id
+    async def prepare(self, task: TaskDefinition, run_id: str | None = None) -> Path:
+        workspace = self.workspace_root / (f"{task.id}_{run_id}" if run_id else task.id)
         if workspace.exists():
             shutil.rmtree(workspace)
         workspace.mkdir(parents=True)
 
-        rc, _, err = await self._run("git", "clone", task.repo.url, str(workspace))
-        if rc != 0:
-            raise RuntimeError(f"git clone failed: {err}")
+        # Git clone with retry — concurrent clones can hit GitHub rate limits
+        last_err = ""
+        for attempt in range(_CLONE_MAX_RETRIES):
+            rc, _, err = await self._run("git", "clone", task.repo.url, str(workspace))
+            if rc == 0:
+                break
+            last_err = err
+            if attempt < _CLONE_MAX_RETRIES - 1:
+                delay = _CLONE_BACKOFF_BASE * (attempt + 1)
+                log.warning(
+                    "git clone failed for %s (attempt %d/%d), retrying in %ds",
+                    task.id, attempt + 1, _CLONE_MAX_RETRIES, delay,
+                )
+                # Clean up partial clone before retry
+                if workspace.exists():
+                    shutil.rmtree(workspace)
+                workspace.mkdir(parents=True)
+                await asyncio.sleep(delay)
+        else:
+            raise RuntimeError(f"git clone failed after {_CLONE_MAX_RETRIES} attempts: {last_err}")
 
         rc, _, err = await self._run("git", "checkout", task.repo.commit, cwd=workspace)
         if rc != 0:

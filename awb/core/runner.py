@@ -1,12 +1,14 @@
 """Main benchmark orchestrator."""
 from __future__ import annotations
 
+import asyncio
 import logging
 import time
 from datetime import UTC, datetime
 from pathlib import Path
 
 from rich.console import Console
+from rich.progress import BarColumn, MofNCompleteColumn, Progress, TextColumn, TimeElapsedColumn
 
 from awb.core.config import (
     RunEnvironment,
@@ -24,6 +26,9 @@ from awb.core.timeout import TaskTimeoutError, run_with_timeout
 log = logging.getLogger(__name__)
 _console = Console()
 
+# Tasks scoring below this % are decisive failures; no need to re-run
+_ADAPTIVE_RERUN_MIN = 60
+
 
 class BenchmarkRunner:
     def __init__(
@@ -34,6 +39,9 @@ class BenchmarkRunner:
         parallel: bool = False,
         timeout_override: int | None = None,
         workflow: WorkflowInfo | None = None,
+        resume: bool = False,
+        concurrency: int = 4,
+        adaptive: bool = False,
     ) -> None:
         self.tool = tool
         self.tasks = tasks
@@ -41,9 +49,24 @@ class BenchmarkRunner:
         self.parallel = parallel
         self.timeout_override = timeout_override
         self.workflow = workflow
+        self.resume = resume
+        self.concurrency = concurrency
+        self.adaptive = adaptive
         self.repo_manager = RepoManager()
         self.recorder = ResultRecorder()
-        self._run_id = datetime.now(UTC).strftime("%Y-%m-%d_%H%M%S")
+
+        # Resume: try to find an incomplete run for this tool
+        if self.resume:
+            existing = self.recorder.find_incomplete_run(tool, len(tasks))
+            if existing:
+                self._run_id = existing
+                _console.print(
+                    f"[bold cyan]Resuming run:[/bold cyan] {existing}"
+                )
+            else:
+                self._run_id = datetime.now(UTC).strftime("%Y-%m-%d_%H%M%S")
+        else:
+            self._run_id = datetime.now(UTC).strftime("%Y-%m-%d_%H%M%S")
 
     async def run_all(self) -> list[RunResult]:
         """Run all tasks for the configured number of runs."""
@@ -53,60 +76,60 @@ class BenchmarkRunner:
         passed = 0
         run_start = time.monotonic()
 
+        # Tasks eligible for re-running in adaptive mode (populated after run 1)
+        near_miss_ids: set[str] | None = None
+
         for run_num in range(1, self.runs + 1):
             run_id = f"{self._run_id}_run{run_num}"
-            run_passed = 0
-            run_completed = 0
+
+            # In adaptive mode, only re-run near-miss tasks after run 1
+            if self.adaptive and near_miss_ids is not None:
+                tasks_this_run = [t for t in self.tasks if t.id in near_miss_ids]
+            else:
+                tasks_this_run = self.tasks
 
             _console.print(
                 f"\n[bold cyan]--- Run {run_num}/{self.runs} ---[/bold cyan]  "
-                f"({len(self.tasks)} tasks, saving to results/runs/{run_id}/)"
+                f"({len(tasks_this_run)} tasks, saving to results/runs/{run_id}/)"
             )
 
-            for i, task in enumerate(self.tasks, 1):
-                log.info("Run %d/%d - Task %s", run_num, self.runs, task.id)
-                _console.print(
-                    f"  [{completed + 1}/{total_tasks}] {task.id} ({task.difficulty}) ...",
-                    end="",
+            if self.parallel:
+                run_results = await self._run_parallel(tasks_this_run, run_id, run_num, total_tasks)
+            else:
+                run_results = await self._run_sequential(
+                    tasks_this_run, run_id, run_num, total_tasks, completed, passed, run_start
                 )
 
-                task_start = time.monotonic()
-                result = await self.run_single(task, run_id=run_id)
-                elapsed = time.monotonic() - task_start
+            run_passed = sum(1 for r in run_results if r.outcome.success)
+            run_completed = len(run_results)
+            completed += run_completed
+            passed += run_passed
 
-                completed += 1
-                run_completed += 1
-                success = result.outcome.success
-                if success:
-                    passed += 1
-                    run_passed += 1
-
-                score = result.outcome.partial_credit_score
-                max_score = result.outcome.partial_credit_max
-                status = "[green]PASS[/green]" if success else "[red]FAIL[/red]"
-                cost = result.cost.estimated_cost_usd
-
-                # ETA calculation
-                avg_time = (time.monotonic() - run_start) / completed
-                remaining = total_tasks - completed
-                eta_min = (avg_time * remaining) / 60
-
-                _console.print(
-                    f" {status}  {score}/{max_score}  "
-                    f"{elapsed:.0f}s  ${cost:.2f}  "
-                    f"[dim](run: {run_passed}/{run_completed} | "
-                    f"total: {passed}/{completed} | "
-                    f"ETA: {eta_min:.0f}m)[/dim]"
-                )
-
-                results.append(result)
-
-            # Run summary
             run_pct = run_passed / run_completed * 100 if run_completed else 0
             _console.print(
                 f"  [bold]Run {run_num} complete:[/bold] "
                 f"{run_passed}/{run_completed} passed ({run_pct:.0f}%)"
             )
+
+            results.extend(run_results)
+
+            # After run 1, classify decisive vs near-miss for adaptive mode
+            if self.adaptive and run_num == 1:
+                decisive = []
+                near_miss = []
+                for r in run_results:
+                    max_pts = r.outcome.partial_credit_max
+                    score = r.outcome.partial_credit_score
+                    pct = (score / max_pts * 100) if max_pts else 0
+                    if score == 0 or score == max_pts or pct < _ADAPTIVE_RERUN_MIN:
+                        decisive.append(r.task_id)
+                    else:
+                        near_miss.append(r.task_id)
+                near_miss_ids = set(near_miss)
+                _console.print(
+                    f"  [dim]Adaptive: {len(decisive)} decisive (skipped), "
+                    f"{len(near_miss)} near-miss (re-running)[/dim]"
+                )
 
         total_elapsed = (time.monotonic() - run_start) / 60
         _console.print(
@@ -114,6 +137,108 @@ class BenchmarkRunner:
             f"{passed}/{completed} passed in {total_elapsed:.0f}m"
         )
         return results
+
+    async def _run_sequential(
+        self,
+        tasks: list[TaskDefinition],
+        run_id: str,
+        run_num: int,
+        total_tasks: int,
+        completed_before: int,
+        passed_before: int,
+        run_start: float,
+    ) -> list[RunResult]:
+        results = []
+        run_passed = 0
+        run_completed = 0
+        completed = completed_before
+        passed = passed_before
+
+        for task in tasks:
+            log.info("Run %d/%d - Task %s", run_num, self.runs, task.id)
+
+            # Resume: skip if already recorded
+            if self.resume and self.recorder.has_result(run_id, task.id, self.tool):
+                cached = self.recorder.load_single(run_id, task.id, self.tool)
+                _console.print(
+                    f"  [{completed + 1}/{total_tasks}] {task.id} ({task.difficulty})"
+                    f" [dim][SKIP][/dim]"
+                )
+                completed += 1
+                run_completed += 1
+                if cached.outcome.success:
+                    passed += 1
+                    run_passed += 1
+                results.append(cached)
+                continue
+
+            _console.print(
+                f"  [{completed + 1}/{total_tasks}] {task.id} ({task.difficulty}) ...",
+                end="",
+            )
+
+            task_start = time.monotonic()
+            result = await self.run_single(task, run_id=run_id)
+            elapsed = time.monotonic() - task_start
+
+            completed += 1
+            run_completed += 1
+            success = result.outcome.success
+            if success:
+                passed += 1
+                run_passed += 1
+
+            score = result.outcome.partial_credit_score
+            max_score = result.outcome.partial_credit_max
+            status = "[green]PASS[/green]" if success else "[red]FAIL[/red]"
+            cost = result.cost.estimated_cost_usd
+
+            avg_time = (time.monotonic() - run_start) / completed
+            remaining = total_tasks - completed
+            eta_min = (avg_time * remaining) / 60
+
+            _console.print(
+                f" {status}  {score}/{max_score}  "
+                f"{elapsed:.0f}s  ${cost:.2f}  "
+                f"[dim](run: {run_passed}/{run_completed} | "
+                f"total: {passed}/{completed} | "
+                f"ETA: {eta_min:.0f}m)[/dim]"
+            )
+
+            results.append(result)
+
+        return results
+
+    async def _run_parallel(
+        self,
+        tasks: list[TaskDefinition],
+        run_id: str,
+        run_num: int,
+        total_tasks: int,
+    ) -> list[RunResult]:
+        sem = asyncio.Semaphore(self.concurrency)
+
+        async def _run_bounded(task: TaskDefinition) -> RunResult:
+            async with sem:
+                return await self.run_single(task, run_id=run_id)
+
+        with Progress(
+            TextColumn("[progress.description]{task.description}"),
+            BarColumn(),
+            MofNCompleteColumn(),
+            TimeElapsedColumn(),
+            console=_console,
+        ) as progress:
+            bar = progress.add_task(f"Run {run_num}", total=len(tasks))
+
+            async def _tracked(task: TaskDefinition) -> RunResult:
+                result = await _run_bounded(task)
+                progress.advance(bar)
+                return result
+
+            results = await asyncio.gather(*[_tracked(t) for t in tasks])
+
+        return list(results)
 
     async def run_single(
         self,
@@ -130,8 +255,8 @@ class BenchmarkRunner:
         quality = RunQuality()
 
         try:
-            # 1. Prepare workspace
-            workspace = await self.repo_manager.prepare(task)
+            # 1. Prepare workspace (run_id scopes the path for concurrent safety)
+            workspace = await self.repo_manager.prepare(task, run_id=run_id)
 
             # 2. Baseline lint/security counts
             baseline_lint = await _count_baseline("lint", task, workspace)

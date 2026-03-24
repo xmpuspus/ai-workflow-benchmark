@@ -1,7 +1,7 @@
 id: MF-009
 category: multi-file
 title: "Resolve merge conflict between two feature branches"
-difficulty: medium
+difficulty: hard
 estimated_minutes: 30
 languages: [python]
 tags: [fastapi, git, merge-conflict, multi-file-reasoning]
@@ -237,4 +237,4 @@ print(\"no duplicate declarations\")
 
 constraints:
   max_iterations: 20
-  timeout_seconds: 1200
+  timeout_seconds: 523

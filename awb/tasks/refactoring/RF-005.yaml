@@ -1,7 +1,7 @@
 id: RF-005
 category: refactoring
 title: "Extract 4 inline SQL queries into parameterized repository functions"
-difficulty: medium
+difficulty: easy
 estimated_minutes: 30
 languages: [python]
 tags: [fastapi, sqlalchemy, sql-injection, repository-pattern, security]
@@ -90,4 +90,4 @@ verification:
 
 constraints:
   max_iterations: 20
-  timeout_seconds: 1200
+  timeout_seconds: 284

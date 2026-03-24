@@ -1,7 +1,7 @@
 id: MF-006
 category: multi-file
 title: "Build a plugin system with abstract base class, 3 plugins, registry, and auto-loader"
-difficulty: hard
+difficulty: easy
 estimated_minutes: 45
 languages: [python]
 tags: [fastapi, plugin-architecture, abc, dynamic-loading, importlib]
@@ -114,4 +114,4 @@ verification:
 
 constraints:
   max_iterations: 30
-  timeout_seconds: 2400
+  timeout_seconds: 963

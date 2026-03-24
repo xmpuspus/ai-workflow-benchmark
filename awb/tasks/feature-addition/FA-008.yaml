@@ -1,7 +1,7 @@
 id: FA-008
 category: feature-addition
 title: "Add WebSocket endpoint reusing existing JWT auth dependency from REST routes"
-difficulty: hard
+difficulty: easy
 estimated_minutes: 45
 languages: [python]
 tags: [fastapi, websocket, jwt, authentication, dependency-injection]
@@ -161,4 +161,4 @@ verification:
 
 constraints:
   max_iterations: 25
-  timeout_seconds: 1800
+  timeout_seconds: 226

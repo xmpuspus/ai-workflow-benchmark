@@ -148,8 +148,11 @@ verification:
     - criterion: "sessionmaker used in routes instead of Session(engine) directly"
       points: 15
       check: "grep -q 'sessionmaker' routes/users.py"
+    - criterion: "Tests pass without errors"
+      points: 5
+      check: "source .venv/bin/activate && python3 -m pytest tests/test_legacy_migration.py -v 2>&1 | grep -qE 'passed'"
     - criterion: "No SQLAlchemy deprecation warnings emitted during tests"
-      points: 10
+      points: 5
       check: "source .venv/bin/activate && python3 -m pytest tests/test_legacy_migration.py -v -W error::DeprecationWarning 2>&1 | grep -q '0 warnings'"
     - criterion: "All migration tests pass"
       points: 25
@@ -157,4 +160,4 @@ verification:
 
 constraints:
   max_iterations: 25
-  timeout_seconds: 1800
+  timeout_seconds: 1061

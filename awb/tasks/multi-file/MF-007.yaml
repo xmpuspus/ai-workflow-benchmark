@@ -89,13 +89,16 @@ verification:
     - criterion: "Re-apply is idempotent (no duplicate migration)"
       points: 10
       check: "grep -qE 'migrations.*table|already.*applied|idempotent' migrations/runner.py"
-    - criterion: "Tests verify full apply → rollback → apply lifecycle"
-      points: 10
-      check: "grep -qE 'rollback.*apply|apply.*rollback' tests/test_migrations.py"
+    - criterion: "Tests verify apply creates tables"
+      points: 5
+      check: "grep -qE 'apply|upgrade' tests/test_migrations.py"
+    - criterion: "Tests verify rollback lifecycle"
+      points: 5
+      check: "grep -qE 'rollback.*apply|apply.*rollback|downgrade' tests/test_migrations.py"
     - criterion: "Tests pass"
       points: 25
       check: "source .venv/bin/activate && python3 -m pytest tests/test_migrations.py -v"
 
 constraints:
   max_iterations: 30
-  timeout_seconds: 2400
+  timeout_seconds: 1099

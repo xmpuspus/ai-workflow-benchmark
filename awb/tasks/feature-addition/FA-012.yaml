@@ -1,7 +1,7 @@
 id: FA-012
 category: feature-addition
 title: "Add TypeScript types to an untyped Hono API handler"
-difficulty: medium
+difficulty: hard
 estimated_minutes: 30
 languages: [typescript]
 tags: [hono, typescript, strict-mode, type-safety, interfaces]
@@ -150,4 +150,4 @@ verification:
 
 constraints:
   max_iterations: 20
-  timeout_seconds: 1200
+  timeout_seconds: 766

@@ -121,9 +121,11 @@ Tasks are drawn from real open-source repositories at pinned commits. Synthetic 
 
 ### Difficulty levels
 
-- **easy** (19 tasks) - Single file, under 50 lines changed, obvious fix
-- **medium** (29 tasks) - 1-3 files, moderate reasoning required
-- **hard** (32 tasks) - Multiple files, non-obvious root cause, architectural decisions
+- **easy** (~44 tasks) - Single file, under 50 lines changed, obvious fix (empirical pass rate >65%)
+- **medium** (~5 tasks) - 1-3 files, moderate reasoning required (empirical pass rate 35-65%)
+- **hard** (~31 tasks) - Multiple files, non-obvious root cause, architectural decisions (empirical pass rate <35%)
+
+Difficulty labels are calibrated from empirical pass rates collected across benchmark runs. The `awb calibrate-difficulty` command recalibrates labels when sufficient run data exists; `--apply` writes the updated labels back to task YAMLs.
 
 ### Capability mapping
 
@@ -164,6 +166,16 @@ This replaces the v1 linear normalization which collapsed to 0 above the baselin
 ### Difficulty-weighted aggregation
 
 Aggregate scores weight by difficulty: easy=1.0, medium=1.5, hard=2.5. A tool that solves hard tasks scores higher than one that only solves easy tasks, even if the easy-task count is higher.
+
+### Stability weighting
+
+High-variance tasks (where scores differ significantly across runs) can optionally be down-weighted in the composite score. The `TaskStability` dataclass tracks `std_dev`, `score_range`, and an `is_unstable` flag per task. When stability weighting is enabled, unstable tasks receive a reduced weight contribution so that noisy measurements don't dominate the aggregate. This is an optional parameter to the composite scoring function and is off by default.
+
+Task-level stability is reported by `awb stability <run_dirs>...`, which reads multiple run directories and produces a per-task breakdown. Tasks with high variance are candidates for prompt clarification or tighter verification criteria.
+
+### Timeout calibration
+
+Task timeouts are calibrated from empirical p95 wall-clock times (p95 × 2.5). Previously, timeouts were set at blanket 900–1800s values. The `awb calibrate-timeouts` command recomputes tighter timeouts from run data; `--apply` writes them back to task YAMLs.
 
 ### Weight profiles
 

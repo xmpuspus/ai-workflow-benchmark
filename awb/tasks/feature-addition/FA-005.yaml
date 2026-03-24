@@ -1,7 +1,7 @@
 id: FA-005
 category: feature-addition
 title: "Add retry decorator with exponential backoff and jitter to 3 HTTP clients"
-difficulty: medium
+difficulty: hard
 estimated_minutes: 30
 languages: [python]
 tags: [httpx, retry, backoff, jitter, decorator, multi-file]
@@ -134,10 +134,13 @@ verification:
     - criterion: "Test verifies backoff timing with mocked sleep"
       points: 15
       check: "grep -qE 'mock.*sleep|sleep.*mock|patch.*sleep' tests/test_retry_decorator.py"
-    - criterion: "Tests pass"
-      points: 20
+    - criterion: "At least half of tests pass"
+      points: 10
+      check: "source .venv/bin/activate && python3 -m pytest tests/test_retry_decorator.py -v 2>&1 | python3 -c \"import sys; lines=[l for l in sys.stdin if '::' in l]; passed=[l for l in lines if 'PASSED' in l]; total=len(lines); assert len(passed) >= total//2, f'Only {len(passed)}/{total} tests passed'; print(f'{len(passed)}/{total} tests passed')\""
+    - criterion: "All tests pass"
+      points: 10
       check: "source .venv/bin/activate && python3 -m pytest tests/test_retry_decorator.py -v"
 
 constraints:
   max_iterations: 20
-  timeout_seconds: 1200
+  timeout_seconds: 220

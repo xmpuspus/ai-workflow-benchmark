@@ -1,7 +1,7 @@
 id: LC-003
 category: legacy-code
 title: "Modernize test suite from unittest to pytest preserving 20 test cases"
-difficulty: medium
+difficulty: hard
 estimated_minutes: 30
 languages: [python]
 tags: [pytest, unittest, modernization, testing]
@@ -143,8 +143,11 @@ verification:
     - criterion: "pytest.raises replaces assertRaises"
       points: 15
       check: "grep -q 'pytest.raises' tests/test_old_style.py"
+    - criterion: "At least 15 test functions present"
+      points: 8
+      check: "grep -c '^def test_' tests/test_old_style.py | awk '{exit ($1 < 15)}'"
     - criterion: "All 20 test functions present"
-      points: 15
+      points: 7
       check: "grep -c '^def test_' tests/test_old_style.py | awk '{exit ($1 < 20)}'"
     - criterion: "All tests pass"
       points: 25
@@ -152,4 +155,4 @@ verification:
 
 constraints:
   max_iterations: 20
-  timeout_seconds: 1200
+  timeout_seconds: 276

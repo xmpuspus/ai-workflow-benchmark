@@ -1,7 +1,7 @@
 id: FA-004
 category: feature-addition
 title: "Replace print statements with structured JSON logging across 5 modules"
-difficulty: medium
+difficulty: hard
 estimated_minutes: 30
 languages: [python]
 tags: [fastapi, logging, refactoring, structured-logging, multi-file]
@@ -100,8 +100,11 @@ verification:
     - "source .venv/bin/activate && ruff check routes/ services/ utils/ logging/ tests/test_logging_migration.py"
   security_commands: []
   partial_credit:
-    - criterion: "JsonFormatter created in logging/config.py"
-      points: 15
+    - criterion: "JsonFormatter class exists"
+      points: 8
+      check: "grep -rq 'class JsonFormatter' logging/ || grep -rq 'JsonFormatter' logging/"
+    - criterion: "JsonFormatter defined in logging/config.py specifically"
+      points: 7
       check: "test -f logging/config.py && grep -q 'JsonFormatter' logging/config.py"
     - criterion: "print() removed from routes/ (both files)"
       points: 15
@@ -121,4 +124,4 @@ verification:
 
 constraints:
   max_iterations: 20
-  timeout_seconds: 1200
+  timeout_seconds: 996

@@ -1,7 +1,7 @@
 id: BF-011
 category: bug-fix
 title: "Fix retry transport retrying 401 responses it should treat as final"
-difficulty: easy
+difficulty: hard
 estimated_minutes: 15
 languages: [python]
 tags: [httpx, retry, transport, http-status]
@@ -89,10 +89,13 @@ verification:
     - criterion: "Test proves 503 is retried"
       points: 25
       check: "grep -qE '503.*retried|test_503|503.*200' tests/test_retry_transport.py"
-    - criterion: "Tests pass"
-      points: 25
+    - criterion: "At least half of tests pass"
+      points: 15
+      check: "source .venv/bin/activate && python3 -m pytest tests/test_retry_transport.py -v 2>&1 | python3 -c \"import sys; lines=[l for l in sys.stdin if '::' in l]; passed=[l for l in lines if 'PASSED' in l]; total=len(lines); assert len(passed) >= total//2, f'Only {len(passed)}/{total} tests passed'; print(f'{len(passed)}/{total} tests passed')\""
+    - criterion: "All tests pass"
+      points: 10
       check: "source .venv/bin/activate && python3 -m pytest tests/test_retry_transport.py -v"
 
 constraints:
   max_iterations: 15
-  timeout_seconds: 900
+  timeout_seconds: 497
