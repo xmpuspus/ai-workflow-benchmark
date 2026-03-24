@@ -35,24 +35,13 @@ class ClaudeCodeVanillaAdapter(ToolAdapter):
 
     def _get_env(self) -> dict[str, str]:
         """Build environment dict. Override in subclasses to change config."""
-        _VANILLA_CONFIG_DIR.mkdir(parents=True, exist_ok=True)
-        env = {
-            **os.environ,
-            "CLAUDE_CONFIG_DIR": str(_VANILLA_CONFIG_DIR),
-            "CLAUDE_SKIP_HOOKS": "1",
-        }
-        return self._clean_env(env, keep={"CLAUDE_CONFIG_DIR", "CLAUDE_SKIP_HOOKS"})
+        env = dict(os.environ)
+        env["CLAUDE_SKIP_HOOKS"] = "1"
+        return self._clean_env(env, keep={"CLAUDE_SKIP_HOOKS"})
 
-    async def execute(
-        self,
-        prompt: str,
-        workspace: Path,
-        max_turns: int = 20,
-        timeout_seconds: int = 1800,
-    ) -> ToolResult:
-        full_env = self._get_env()
-
-        cmd = [
+    def _get_cmd(self, prompt: str, max_turns: int) -> list[str]:
+        """Build command. Vanilla overrides system prompt to neutralize CLAUDE.md."""
+        return [
             "claude",
             "-p",
             prompt,
@@ -62,7 +51,19 @@ class ClaudeCodeVanillaAdapter(ToolAdapter):
             str(max_turns),
             "--verbose",
             "--dangerously-skip-permissions",
+            "--system-prompt",
+            "You are a helpful coding assistant. Complete the task described in the prompt.",
         ]
+
+    async def execute(
+        self,
+        prompt: str,
+        workspace: Path,
+        max_turns: int = 20,
+        timeout_seconds: int = 1800,
+    ) -> ToolResult:
+        full_env = self._get_env()
+        cmd = self._get_cmd(prompt, max_turns)
 
         try:
             proc = await asyncio.create_subprocess_exec(
@@ -153,6 +154,20 @@ class ClaudeCodeCustomAdapter(ClaudeCodeVanillaAdapter):
         env = dict(os.environ)
         env["AWB_BENCHMARK"] = "1"
         return self._clean_env(env)
+
+    def _get_cmd(self, prompt: str, max_turns: int) -> list[str]:
+        """Custom uses full config — no --bare flag."""
+        return [
+            "claude",
+            "-p",
+            prompt,
+            "--output-format",
+            "stream-json",
+            "--max-turns",
+            str(max_turns),
+            "--verbose",
+            "--dangerously-skip-permissions",
+        ]
 
     def get_config_hash(self) -> str:
         """Hash key config files for reproducibility."""
