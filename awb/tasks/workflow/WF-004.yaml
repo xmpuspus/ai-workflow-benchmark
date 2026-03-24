@@ -1,0 +1,203 @@
+id: WF-004
+category: workflow
+title: "Implement a paginated /items endpoint satisfying 12 explicit requirements"
+difficulty: hard
+estimated_minutes: 60
+languages: [python]
+tags: [fastapi, pagination, pydantic, query-params, response-model]
+capabilities: [completeness_tracking, multi_file_reasoning]
+
+repo:
+  url: "https://github.com/tiangolo/fastapi"
+  commit: "628c34e0cae200564d191c95d7edea78c88c4b5e"
+  setup_commands:
+    - "python3 -m venv .venv && source .venv/bin/activate && pip install -e '.[all]' && pip install pytest httpx"
+    - |
+      cat > models.py << 'PYEOF'
+      """Shared data models."""
+
+      from dataclasses import dataclass, field
+
+
+      @dataclass
+      class Item:
+          id: int
+          name: str
+          category: str
+          price: float
+
+
+      # Seed data for tests
+      ITEMS: list[Item] = [
+          Item(id=i, name=f"item-{i}", category="a" if i % 2 == 0 else "b", price=float(i))
+          for i in range(1, 51)
+      ]
+      PYEOF
+    - |
+      cat > tests/test_items.py << 'PYEOF'
+      import pytest
+      from fastapi.testclient import TestClient
+      from main import app
+
+      client = TestClient(app)
+
+
+      # REQ 1: GET /items returns a list
+      def test_get_items_returns_list():
+          resp = client.get("/items")
+          assert resp.status_code == 200
+          assert isinstance(resp.json()["items"], list)
+
+
+      # REQ 2: limit param controls page size
+      def test_limit_param():
+          resp = client.get("/items?limit=5")
+          assert len(resp.json()["items"]) == 5
+
+
+      # REQ 3: offset param skips items
+      def test_offset_param():
+          resp_a = client.get("/items?limit=1&offset=0")
+          resp_b = client.get("/items?limit=1&offset=1")
+          assert resp_a.json()["items"][0]["id"] != resp_b.json()["items"][0]["id"]
+
+
+      # REQ 4: sort param (name asc/desc)
+      def test_sort_param():
+          resp = client.get("/items?sort=name&limit=3")
+          names = [i["name"] for i in resp.json()["items"]]
+          assert names == sorted(names)
+
+
+      # REQ 5: filter param by category
+      def test_filter_param():
+          resp = client.get("/items?category=a&limit=50")
+          assert all(i["category"] == "a" for i in resp.json()["items"])
+
+
+      # REQ 6: total_count in response
+      def test_total_count_in_response():
+          resp = client.get("/items")
+          assert "total_count" in resp.json()
+
+
+      # REQ 7: next_cursor in response
+      def test_next_cursor_in_response():
+          resp = client.get("/items?limit=5&offset=0")
+          assert "next_cursor" in resp.json()
+
+
+      # REQ 8: invalid limit returns 422
+      def test_invalid_limit_422():
+          resp = client.get("/items?limit=-1")
+          assert resp.status_code == 422
+
+
+      # REQ 9: default limit is 20
+      def test_default_limit():
+          resp = client.get("/items")
+          assert len(resp.json()["items"]) == 20
+
+
+      # REQ 10: max limit is 100 (limit=200 should be rejected)
+      def test_max_limit_rejected():
+          resp = client.get("/items?limit=200")
+          assert resp.status_code == 422
+
+
+      # REQ 11: function has type hints
+      def test_type_hints_present():
+          import inspect
+          from main import list_items
+          hints = inspect.get_annotations(list_items)
+          assert len(hints) > 0
+
+
+      # REQ 12: Pydantic response model used
+      def test_pydantic_response_model():
+          # If a response model is used, FastAPI includes it in the openapi schema
+          resp = client.get("/openapi.json")
+          schema = resp.json()
+          assert "/items" in schema["paths"]
+      PYEOF
+
+issue:
+  description: |
+    Create main.py implementing a single endpoint GET /items backed by the
+    seed data in models.py (50 items). The endpoint must satisfy all 12
+    requirements below. Each requirement has a test in tests/test_items.py.
+
+    Requirements:
+    1. GET /items returns a JSON object with an "items" key containing a list.
+    2. A `limit` query parameter controls how many items are returned.
+    3. An `offset` query parameter skips that many items from the start.
+    4. A `sort` query parameter accepts "name" and sorts items by name
+       ascending. Any other value or omission returns items in id order.
+    5. A `category` query parameter filters items to only that category.
+    6. The response includes a `total_count` integer (count after filtering,
+       before pagination).
+    7. The response includes a `next_cursor` integer equal to offset + limit,
+       or null if that exceeds total_count.
+    8. Passing a negative `limit` must return HTTP 422.
+    9. When `limit` is omitted, it defaults to 20.
+    10. Passing `limit` greater than 100 must return HTTP 422.
+    11. The `list_items` function must have at least one type annotation
+        (return type or parameter).
+    12. A Pydantic response model must be declared for the /items endpoint
+        (verified via the OpenAPI schema).
+
+    Do not modify models.py or tests/test_items.py.
+  files_to_examine:
+    - "models.py"
+    - "tests/test_items.py"
+
+verification:
+  test_commands:
+    - "source .venv/bin/activate && python3 -m pytest tests/test_items.py -v"
+  lint_commands:
+    - "source .venv/bin/activate && ruff check main.py"
+  security_commands: []
+  partial_credit:
+    - criterion: "REQ 1: GET /items returns list under 'items' key"
+      points: 8
+      check: "source .venv/bin/activate && python3 -m pytest tests/test_items.py::test_get_items_returns_list -v"
+    - criterion: "REQ 2: limit param controls page size"
+      points: 8
+      check: "source .venv/bin/activate && python3 -m pytest tests/test_items.py::test_limit_param -v"
+    - criterion: "REQ 3: offset param skips items"
+      points: 8
+      check: "source .venv/bin/activate && python3 -m pytest tests/test_items.py::test_offset_param -v"
+    - criterion: "REQ 4: sort param orders by name"
+      points: 8
+      check: "source .venv/bin/activate && python3 -m pytest tests/test_items.py::test_sort_param -v"
+    - criterion: "REQ 5: category filter narrows results"
+      points: 8
+      check: "source .venv/bin/activate && python3 -m pytest tests/test_items.py::test_filter_param -v"
+    - criterion: "REQ 6: total_count present in response"
+      points: 8
+      check: "source .venv/bin/activate && python3 -m pytest tests/test_items.py::test_total_count_in_response -v"
+    - criterion: "REQ 7: next_cursor present in response"
+      points: 8
+      check: "source .venv/bin/activate && python3 -m pytest tests/test_items.py::test_next_cursor_in_response -v"
+    - criterion: "REQ 8: negative limit returns 422"
+      points: 8
+      check: "source .venv/bin/activate && python3 -m pytest tests/test_items.py::test_invalid_limit_422 -v"
+    - criterion: "REQ 9: default limit is 20"
+      points: 8
+      check: "source .venv/bin/activate && python3 -m pytest tests/test_items.py::test_default_limit -v"
+    - criterion: "REQ 10: limit > 100 returns 422"
+      points: 8
+      check: "source .venv/bin/activate && python3 -m pytest tests/test_items.py::test_max_limit_rejected -v"
+    - criterion: "REQ 11: list_items has type annotations"
+      points: 8
+      check: "source .venv/bin/activate && python3 -m pytest tests/test_items.py::test_type_hints_present -v"
+    - criterion: "REQ 12: Pydantic response model declared"
+      points: 8
+      check: "source .venv/bin/activate && python3 -m pytest tests/test_items.py::test_pydantic_response_model -v"
+    - criterion: "All 12 tests pass"
+      points: 4
+      check: "source .venv/bin/activate && python3 -m pytest tests/test_items.py -v"
+
+constraints:
+  max_iterations: 25
+  timeout_seconds: 900

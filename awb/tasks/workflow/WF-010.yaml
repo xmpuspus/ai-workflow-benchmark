@@ -1,0 +1,148 @@
+id: WF-010
+category: workflow
+title: "Fix 5 failing tests by finding and correcting one bug in each utility module"
+difficulty: easy
+estimated_minutes: 20
+languages: [python]
+tags: [pytest, debugging, completeness, utility-functions]
+capabilities: [completeness_tracking]
+
+repo:
+  url: "https://github.com/encode/httpx"
+  commit: "26d48e0634e6ee9cdc0533996db289ce4b430177"
+  setup_commands:
+    - "python3 -m venv .venv && source .venv/bin/activate && pip install pytest"
+    - |
+      rm -f tests/conftest.py
+      mkdir -p utils tests
+      touch utils/__init__.py
+    - |
+      cat > utils/string_utils.py << 'PYEOF'
+      def truncate(text, max_len):
+          """Return text truncated to max_len characters, appending '...' if cut."""
+          if len(text) <= max_len:
+              return text
+          # BUG: should be max_len - 3 to leave room for the ellipsis
+          return text[:max_len] + "..."
+      PYEOF
+    - |
+      cat > utils/math_utils.py << 'PYEOF'
+      def average(numbers):
+          """Return the arithmetic mean of a list of numbers."""
+          if not numbers:
+              return 0.0
+          # BUG: wrong operator — should be / not *
+          return sum(numbers) * len(numbers)
+      PYEOF
+    - |
+      cat > utils/date_utils.py << 'PYEOF'
+      def days_between(date1, date2):
+          """Return the number of days between two date strings (YYYY-MM-DD)."""
+          from datetime import date
+          d1 = date.fromisoformat(date1)
+          d2 = date.fromisoformat(date2)
+          # BUG: subtracts in wrong order; should be (d2 - d1)
+          return (d1 - d2).days
+      PYEOF
+    - |
+      cat > utils/list_utils.py << 'PYEOF'
+      def flatten(nested):
+          """Flatten one level of nesting from a list of lists."""
+          result = []
+          for sublist in nested:
+              # BUG: appends the sublist as a whole instead of extending
+              result.append(sublist)
+          return result
+      PYEOF
+    - |
+      cat > utils/dict_utils.py << 'PYEOF'
+      def invert(d):
+          """Return a new dict with keys and values swapped."""
+          # BUG: has keys and values swapped the wrong way around
+          return {k: v for v, k in d.items()}
+      PYEOF
+    - |
+      cat > tests/test_all.py << 'PYEOF'
+      import pytest
+      from utils.string_utils import truncate
+      from utils.math_utils import average
+      from utils.date_utils import days_between
+      from utils.list_utils import flatten
+      from utils.dict_utils import invert
+
+
+      def test_truncate():
+          # "hello world" is 11 chars; truncated to 8 = "hello..." (5 + 3)
+          assert truncate("hello world", 8) == "hello..."
+          assert truncate("hi", 8) == "hi"
+
+
+      def test_average():
+          assert average([1, 2, 3, 4]) == 2.5
+          assert average([]) == 0.0
+
+
+      def test_days_between():
+          assert days_between("2024-01-01", "2024-01-11") == 10
+          assert days_between("2024-01-11", "2024-01-01") == -10
+
+
+      def test_flatten():
+          assert flatten([[1, 2], [3, 4], [5]]) == [1, 2, 3, 4, 5]
+          assert flatten([]) == []
+
+
+      def test_invert():
+          assert invert({"a": 1, "b": 2}) == {1: "a", 2: "b"}
+          assert invert({}) == {}
+      PYEOF
+
+issue:
+  description: |
+    There are 5 tests in tests/test_all.py that are currently all failing.
+    Each test targets one utility module, and each module has exactly one bug.
+
+    Run `python3 -m pytest tests/test_all.py -v` to see the failures.
+
+    Fix all 5 bugs so that all 5 tests pass:
+    1. utils/string_utils.py — truncate() has an off-by-one error
+    2. utils/math_utils.py — average() uses the wrong arithmetic operator
+    3. utils/date_utils.py — days_between() subtracts dates in the wrong order
+    4. utils/list_utils.py — flatten() appends instead of extending
+    5. utils/dict_utils.py — invert() swaps keys and values incorrectly
+
+    Do not modify tests/test_all.py. Fix only the utility modules.
+  files_to_examine:
+    - "utils/string_utils.py"
+    - "utils/math_utils.py"
+    - "utils/date_utils.py"
+    - "utils/list_utils.py"
+    - "utils/dict_utils.py"
+    - "tests/test_all.py"
+
+verification:
+  test_commands:
+    - "source .venv/bin/activate && python3 -m pytest tests/test_all.py -v"
+  lint_commands:
+    - "source .venv/bin/activate && ruff check utils/"
+  security_commands: []
+  partial_credit:
+    - criterion: "test_truncate passes"
+      points: 20
+      check: "source .venv/bin/activate && python3 -m pytest tests/test_all.py::test_truncate -v"
+    - criterion: "test_average passes"
+      points: 20
+      check: "source .venv/bin/activate && python3 -m pytest tests/test_all.py::test_average -v"
+    - criterion: "test_days_between passes"
+      points: 20
+      check: "source .venv/bin/activate && python3 -m pytest tests/test_all.py::test_days_between -v"
+    - criterion: "test_flatten passes"
+      points: 20
+      check: "source .venv/bin/activate && python3 -m pytest tests/test_all.py::test_flatten -v"
+    - criterion: "test_invert passes"
+      points: 20
+      check: "source .venv/bin/activate && python3 -m pytest tests/test_all.py::test_invert -v"
+
+constraints:
+  max_iterations: 15
+  timeout_seconds: 400

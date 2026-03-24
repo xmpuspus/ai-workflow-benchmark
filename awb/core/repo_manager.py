@@ -75,6 +75,12 @@ class RepoManager:
             if rc != 0:
                 raise RuntimeError(f"setup command failed ({cmd}): {err}")
 
+        # Write workspace CLAUDE.md if task defines one
+        if task.workspace_claude_md:
+            claude_dir = workspace / ".claude"
+            claude_dir.mkdir(exist_ok=True)
+            (claude_dir / "CLAUDE.md").write_text(task.workspace_claude_md)
+
         return workspace
 
     async def cleanup(self, workspace: Path) -> None:

@@ -1,0 +1,205 @@
+id: WF-009
+category: workflow
+title: "Debug a layered FastAPI app using project architecture docs to trace a 500 error"
+difficulty: medium
+estimated_minutes: 25
+languages: [python]
+tags: [fastapi, debugging, architecture, layered-design, context-discovery]
+capabilities: [context_discovery, code_comprehension]
+
+repo:
+  url: "https://github.com/tiangolo/fastapi"
+  commit: "628c34e0cae200564d191c95d7edea78c88c4b5e"
+  setup_commands:
+    - "python3 -m venv .venv && source .venv/bin/activate && pip install -e '.[all]' && pip install pytest httpx"
+    - |
+      mkdir -p docs src tests
+    - |
+      cat > docs/ARCHITECTURE.md << 'PYEOF'
+      # Architecture Guide
+
+      This app follows a strict layered architecture:
+
+          routes -> services -> repositories -> in-memory database
+
+      Data flows top-down. Each layer talks only to the layer below it.
+
+      ## Layer Responsibilities
+
+      **routes** (src/routes.py): Parse HTTP requests, delegate to services,
+      return HTTP responses. Never call repositories directly.
+
+      **services** (src/services.py): Business logic. Calls repositories and
+      returns domain objects (Item instances). Never returns raw dicts.
+
+      **repositories** (src/repositories.py): Database access. MUST return
+      Item instances, never raw dicts. This is the most common source of bugs
+      when the database layer is inconsistent.
+
+      **models** (src/models.py): Item dataclass shared by all layers.
+
+      ## Common Bug Pattern
+
+      If you see `AttributeError: 'dict' object has no attribute 'id'` in
+      routes or services, the bug is in repositories.py — it is returning
+      raw dicts instead of Item instances. Fix: wrap each result in Item(**data).
+      PYEOF
+    - |
+      cat > src/__init__.py << 'PYEOF'
+      PYEOF
+    - |
+      cat > src/models.py << 'PYEOF'
+      from dataclasses import dataclass
+
+
+      @dataclass
+      class Item:
+          id: int
+          name: str
+          price: float
+      PYEOF
+    - |
+      cat > src/repositories.py << 'PYEOF'
+      _DB = {
+          1: {"id": 1, "name": "Widget", "price": 9.99},
+          2: {"id": 2, "name": "Gadget", "price": 19.99},
+          3: {"id": 3, "name": "Doohickey", "price": 4.99},
+      }
+
+
+      def get_all_items():
+          # BUG: returns raw dicts instead of Item instances
+          return list(_DB.values())
+
+
+      def get_item_by_id(item_id: int):
+          # BUG: returns raw dict instead of Item instance
+          return _DB.get(item_id)
+      PYEOF
+    - |
+      cat > src/services.py << 'PYEOF'
+      from src.repositories import get_all_items, get_item_by_id
+
+
+      def list_items():
+          return get_all_items()
+
+
+      def fetch_item(item_id: int):
+          item = get_item_by_id(item_id)
+          if item is None:
+              return None
+          return item
+      PYEOF
+    - |
+      cat > src/routes.py << 'PYEOF'
+      from fastapi import FastAPI, HTTPException
+      from src.services import list_items, fetch_item
+
+      app = FastAPI()
+
+
+      @app.get("/items")
+      def get_items():
+          items = list_items()
+          return [{"id": i.id, "name": i.name, "price": i.price} for i in items]
+
+
+      @app.get("/items/{item_id}")
+      def get_item(item_id: int):
+          item = fetch_item(item_id)
+          if item is None:
+              raise HTTPException(status_code=404, detail="not found")
+          return {"id": item.id, "name": item.name, "price": item.price}
+      PYEOF
+    - |
+      cat > tests/test_routes.py << 'PYEOF'
+      from fastapi.testclient import TestClient
+      from src.routes import app
+
+      client = TestClient(app)
+
+
+      def test_list_items_returns_200():
+          response = client.get("/items")
+          assert response.status_code == 200
+          assert len(response.json()) == 3
+
+
+      def test_get_item_returns_correct_fields():
+          response = client.get("/items/1")
+          assert response.status_code == 200
+          data = response.json()
+          assert data["name"] == "Widget"
+          assert data["price"] == 9.99
+
+
+      def test_get_missing_item_returns_404():
+          response = client.get("/items/99")
+          assert response.status_code == 404
+
+
+      def test_all_items_have_required_fields():
+          response = client.get("/items")
+          for item in response.json():
+              assert "id" in item
+              assert "name" in item
+              assert "price" in item
+      PYEOF
+
+workspace_claude_md: |
+  # Project Guide
+
+  Architecture overview is in docs/ARCHITECTURE.md. Always read it before
+  making changes to understand the data flow.
+
+  The app follows a strict layered architecture:
+      routes -> services -> repositories
+
+  When debugging errors, trace the data flow from routes down through
+  services to repositories. The architecture doc explains each layer's
+  responsibilities and common bug patterns.
+
+issue:
+  description: |
+    Users report a 500 error on GET /items and GET /items/{id}. The error
+    message is "AttributeError: 'dict' object has no attribute 'id'".
+
+    The app is in the src/ directory and follows a layered architecture
+    described in docs/ARCHITECTURE.md. Read the architecture documentation
+    before investigating.
+
+    Debug and fix the issue so that all 4 tests in tests/test_routes.py pass.
+
+    Do not modify routes.py or services.py — the fix belongs in the layer
+    that is violating the architecture contract.
+  files_to_examine:
+    - "docs/ARCHITECTURE.md"
+    - "src/repositories.py"
+    - "src/services.py"
+    - "src/routes.py"
+    - "tests/test_routes.py"
+
+verification:
+  test_commands:
+    - "source .venv/bin/activate && python3 -m pytest tests/test_routes.py -v"
+  lint_commands:
+    - "source .venv/bin/activate && ruff check src/"
+  security_commands: []
+  partial_credit:
+    - criterion: "Fix is in repositories.py (not routes.py or services.py)"
+      points: 25
+      check: "grep -qE 'Item\\(' src/repositories.py"
+    - criterion: "get_all_items uses Item constructor"
+      points: 25
+      check: "grep -A5 'def get_all_items' src/repositories.py | grep -qE 'Item\\('"
+    - criterion: "GET /items returns correct response after fix"
+      points: 25
+      check: "source .venv/bin/activate && python3 -c \"from fastapi.testclient import TestClient; from src.routes import app; c = TestClient(app); r = c.get('/items'); assert r.status_code == 200 and len(r.json()) == 3\""
+    - criterion: "All 4 tests pass"
+      points: 25
+      check: "source .venv/bin/activate && python3 -m pytest tests/test_routes.py -v"
+
+constraints:
+  max_iterations: 15
+  timeout_seconds: 500

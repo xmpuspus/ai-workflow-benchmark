@@ -82,18 +82,19 @@ Real open-source repos, pinned to release tag SHAs. Setup runs in under 15 secon
 
 | Category | Count | Easy / Med / Hard | What It Tests |
 |----------|-------|-------------------|---------------|
-| bug-fix | 13 | 7 / 1 / 5 | Root cause analysis, test-first diagnosis, N+1 queries, race conditions |
-| feature-addition | 12 | 3 / 0 / 9 | Convention adherence, ambiguous requirements, Dockerfiles, documentation, TypeScript typing |
-| refactoring | 12 | 5 / 2 / 5 | Multi-file consistency, O(n^2) optimization, CI/CD config, async migration |
-| code-review | 10 | 4 / 2 / 4 | Security review (report-only), concurrency analysis, migration guides, OWASP |
-| debugging | 11 | 7 / 0 / 4 | Performance profiling, regression bisection, stack trace diagnosis, environment bugs |
-| multi-file | 10 | 4 / 0 / 6 | Merge conflicts, Pydantic v1->v2 migration, plugin systems, auth chains |
+| bug-fix | 12 | 7 / 1 / 4 | Root cause analysis, test-first diagnosis, N+1 queries |
+| feature-addition | 9 | 3 / 0 / 6 | Convention adherence, ambiguous requirements, Dockerfiles, TypeScript typing |
+| refactoring | 11 | 5 / 2 / 4 | Multi-file consistency, O(n^2) optimization, CI/CD config, async migration |
+| code-review | 9 | 4 / 2 / 3 | Security review (report-only), concurrency analysis, migration guides, OWASP |
+| debugging | 10 | 7 / 0 / 3 | Performance profiling, regression bisection, stack trace diagnosis |
+| multi-file | 7 | 4 / 0 / 3 | Merge conflicts, plugin systems, auth chains |
 | legacy-code | 12 | 9 / 0 / 3 | SQLAlchemy 2.0 migration, 20-file codebase navigation, dead code removal |
+| workflow | 10 | 3 / 4 / 3 | Completeness tracking, convention discovery, security methodology, context utilization |
 
 **Repos used:** FastAPI, httpx, Flask, Starlette, Click, Pydantic, SQLAlchemy 2.0, Hono
 
 **Task IDs:**
-`BF-001–014` · `FA-001–012` · `RF-001–012` · `CR-001–010` · `DB-001–011` · `MF-001–010` · `LC-001–012`
+`BF-001–014` · `FA-001–010` · `RF-001–012` · `CR-001–010` · `DB-001–011` · `MF-001–009` · `LC-001–012` · `WF-001–010`
 
 ## Capability Profiles
 
@@ -106,6 +107,10 @@ Each task maps to 1–3 capabilities, producing a radar chart of tool strengths:
 | bug_diagnosis | 26 | Structured root cause analysis, test-first diagnosis |
 | refactoring_discipline | 26 | Changing code without breaking behavior |
 | multi_file_reasoning | 23 | Coordinating changes across multiple files |
+| completeness_tracking | 10 | Following all requirements, not stopping at 80% |
+| convention_adherence | 10 | Discovering and following project conventions |
+| security_methodology | 10 | Applying security checklists systematically |
+| context_discovery | 10 | Reading project docs and config before editing |
 | test_writing | 10 | Writing correct, meaningful tests |
 | security_awareness | 10 | Identifying and fixing vulnerabilities |
 | cost_discipline | derived | Token efficiency across all tasks |

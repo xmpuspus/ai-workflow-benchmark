@@ -1,0 +1,193 @@
+id: WF-002
+category: workflow
+title: "Audit and fix 6 OWASP security issues in a Flask application"
+difficulty: medium
+estimated_minutes: 40
+languages: [python]
+tags: [flask, security, owasp, sql-injection, yaml, eval, open-redirect]
+capabilities: [security_methodology]
+
+repo:
+  url: "https://github.com/pallets/flask"
+  commit: "49a6863ec5637a046dac5e94c3bcf93fb6a07d18"
+  setup_commands:
+    - "python3 -m venv .venv && source .venv/bin/activate && pip install flask pyyaml pytest"
+    - |
+      cat > app.py << 'PYEOF'
+      import yaml
+      import sqlite3
+      from flask import Flask, request, redirect
+
+      app = Flask(__name__)
+
+      # SECURITY ISSUE 4: hardcoded API key
+      EXTERNAL_API_KEY = "sk-prod-abc123secretkey9999"
+
+      DB_PATH = ":memory:"
+
+
+      def get_db():
+          conn = sqlite3.connect(DB_PATH)
+          conn.execute(
+              "CREATE TABLE IF NOT EXISTS users (id INTEGER PRIMARY KEY, email TEXT)"
+          )
+          return conn
+
+
+      @app.route("/user")
+      def get_user():
+          # SECURITY ISSUE 1: SQL injection via string format
+          user_id = request.args.get("id", "1")
+          conn = get_db()
+          query = "SELECT * FROM users WHERE id = %s" % user_id
+          result = conn.execute(query).fetchall()
+          return {"users": result}
+
+
+      @app.route("/config", methods=["POST"])
+      def load_config():
+          # SECURITY ISSUE 2: yaml.load without SafeLoader
+          raw = request.data.decode()
+          config = yaml.load(raw)
+          return {"loaded": list(config.keys()) if config else []}
+
+
+      @app.route("/calc")
+      def calculate():
+          # SECURITY ISSUE 3: eval() on user input
+          expr = request.args.get("expr", "1+1")
+          result = eval(expr)
+          return {"result": result}
+
+
+      @app.route("/subscribe", methods=["POST"])
+      def subscribe():
+          # SECURITY ISSUE 5: no input validation on email field
+          email = request.form.get("email")
+          conn = get_db()
+          conn.execute("INSERT INTO users (email) VALUES (?)", (email,))
+          conn.commit()
+          return {"subscribed": email}
+
+
+      @app.route("/goto")
+      def goto():
+          # SECURITY ISSUE 6: open redirect
+          url = request.args.get("url", "/")
+          return redirect(url)
+
+
+      if __name__ == "__main__":
+          app.run()
+      PYEOF
+    - |
+      cat > tests/test_app.py << 'PYEOF'
+      import pytest
+      from app import app
+
+
+      @pytest.fixture
+      def client():
+          app.config["TESTING"] = True
+          with app.test_client() as c:
+              yield c
+
+
+      def test_get_user_no_injection(client):
+          # Parameterized query should not crash on special chars
+          resp = client.get("/user?id=1")
+          assert resp.status_code == 200
+
+
+      def test_config_safe_load(client):
+          # Safe YAML should load fine
+          resp = client.post(
+              "/config",
+              data=b"key: value",
+              content_type="application/octet-stream",
+          )
+          assert resp.status_code == 200
+
+
+      def test_subscribe_valid_email(client):
+          resp = client.post("/subscribe", data={"email": "user@example.com"})
+          assert resp.status_code == 200
+
+
+      def test_subscribe_invalid_email_rejected(client):
+          # Empty / missing email should be rejected with 400
+          resp = client.post("/subscribe", data={"email": ""})
+          assert resp.status_code == 400
+
+
+      def test_goto_external_blocked(client):
+          # Open redirect to external host must be blocked
+          resp = client.get("/goto?url=http://evil.com", follow_redirects=False)
+          assert resp.status_code in (400, 403)
+
+
+      def test_no_hardcoded_key():
+          import os
+          import app as app_module
+          # API key must come from env, not be a literal string in source
+          src = open("app.py").read()
+          assert "sk-prod-abc123secretkey9999" not in src
+      PYEOF
+
+issue:
+  description: |
+    The file app.py is a Flask application with 6 deliberate security
+    vulnerabilities. Find and fix every one of them. The issues are:
+
+    1. SQL injection — the /user endpoint builds a query with string
+       formatting instead of parameterized statements.
+    2. Unsafe YAML deserialization — /config uses yaml.load() without
+       SafeLoader, enabling arbitrary code execution.
+    3. Arbitrary code execution via eval() — /calc evaluates user-supplied
+       expressions directly.
+    4. Hardcoded API key — EXTERNAL_API_KEY is a literal secret in source;
+       move it to an environment variable (os.environ.get).
+    5. Missing email validation — /subscribe accepts any value for email,
+       including empty strings; add a basic format check and return 400 on
+       invalid input.
+    6. Open redirect — /goto redirects to any URL the caller provides;
+       restrict redirects to relative paths only.
+
+    After fixing all issues, run the test suite in tests/test_app.py to
+    confirm nothing is broken.
+  files_to_examine:
+    - "app.py"
+    - "tests/test_app.py"
+
+verification:
+  test_commands:
+    - "source .venv/bin/activate && python3 -m pytest tests/test_app.py -v"
+  lint_commands:
+    - "source .venv/bin/activate && ruff check app.py"
+  security_commands: []
+  partial_credit:
+    - criterion: "SQL injection fixed: parameterized query used in /user"
+      points: 15
+      check: "grep -qE 'execute\\(.*\\?' app.py"
+    - criterion: "YAML deserialization fixed: SafeLoader used in /config"
+      points: 15
+      check: "grep -q 'SafeLoader' app.py"
+    - criterion: "eval() removed or sandboxed in /calc"
+      points: 15
+      check: "grep -vq 'eval(' app.py || grep -q '#.*eval' app.py"
+    - criterion: "Hardcoded API key removed from source"
+      points: 15
+      check: "grep -v 'sk-prod-abc123secretkey9999' app.py | grep -qE 'os\\.environ|os\\.getenv'"
+    - criterion: "Email validation added to /subscribe (returns 400 on bad input)"
+      points: 15
+      check: "grep -qE '400|BadRequest|re\\.' app.py"
+    - criterion: "Open redirect restricted to relative paths in /goto"
+      points: 15
+      check: "grep -qE 'startswith|netloc|urlparse' app.py"
+    - criterion: "All tests pass"
+      points: 10
+      check: "source .venv/bin/activate && python3 -m pytest tests/test_app.py -v"
+
+constraints:
+  max_iterations: 20
+  timeout_seconds: 600

@@ -1,0 +1,147 @@
+id: WF-006
+category: workflow
+title: "Add a health endpoint to FastAPI app without breaking any existing tests"
+difficulty: easy
+estimated_minutes: 15
+languages: [python]
+tags: [fastapi, testing, endpoints, test-safety]
+capabilities: [refactoring_discipline]
+
+repo:
+  url: "https://github.com/tiangolo/fastapi"
+  commit: "628c34e0cae200564d191c95d7edea78c88c4b5e"
+  setup_commands:
+    - "python3 -m venv .venv && source .venv/bin/activate && pip install -e '.[all]' && pip install pytest httpx"
+    - |
+      cat > items_app.py << 'PYEOF'
+      from fastapi import FastAPI, HTTPException
+
+      app = FastAPI()
+
+      _items = {}
+      _next_id = 1
+
+
+      @app.get("/items")
+      def list_items():
+          return {"items": list(_items.values())}
+
+
+      @app.post("/items", status_code=201)
+      def create_item(name: str):
+          global _next_id
+          item = {"id": _next_id, "name": name}
+          _items[_next_id] = item
+          _next_id += 1
+          return item
+
+
+      @app.get("/items/{item_id}")
+      def get_item(item_id: int):
+          if item_id not in _items:
+              raise HTTPException(status_code=404, detail="not found")
+          return _items[item_id]
+      PYEOF
+    - |
+      mkdir -p tests
+      cat > tests/test_items_app.py << 'PYEOF'
+      import pytest
+      from fastapi.testclient import TestClient
+      from items_app import app, _items
+
+      @pytest.fixture(autouse=True)
+      def reset_store():
+          _items.clear()
+          import items_app
+          items_app._next_id = 1
+          yield
+          _items.clear()
+          items_app._next_id = 1
+
+
+      client = TestClient(app)
+
+
+      def test_list_items_empty():
+          response = client.get("/items")
+          assert response.status_code == 200
+          assert response.json() == {"items": []}
+
+
+      def test_create_item():
+          response = client.post("/items", params={"name": "widget"})
+          assert response.status_code == 201
+          assert response.json()["name"] == "widget"
+
+
+      def test_get_item_exists():
+          client.post("/items", params={"name": "gadget"})
+          response = client.get("/items/1")
+          assert response.status_code == 200
+          assert response.json()["name"] == "gadget"
+
+
+      def test_get_item_missing():
+          response = client.get("/items/99")
+          assert response.status_code == 404
+
+
+      def test_list_items_after_create():
+          client.post("/items", params={"name": "thing"})
+          response = client.get("/items")
+          assert response.status_code == 200
+          assert len(response.json()["items"]) == 1
+
+
+      def test_create_multiple_items():
+          client.post("/items", params={"name": "a"})
+          client.post("/items", params={"name": "b"})
+          response = client.get("/items")
+          assert len(response.json()["items"]) == 2
+      PYEOF
+
+issue:
+  description: |
+    The file items_app.py contains a FastAPI application with three endpoints:
+    GET /items, POST /items, and GET /items/{item_id}. There are 6 tests in
+    tests/test_items_app.py that currently all pass.
+
+    Add a GET /health endpoint to items_app.py that returns:
+        {"status": "ok"}
+
+    with HTTP status 200.
+
+    Requirements:
+    - The new endpoint must return exactly {"status": "ok"} with status 200.
+    - All 6 existing tests must continue to pass after your change.
+    - Add at least one test for the new /health endpoint.
+    - No new lint warnings.
+
+    Run the tests before and after making changes to confirm nothing breaks.
+  files_to_examine:
+    - "items_app.py"
+    - "tests/test_items_app.py"
+
+verification:
+  test_commands:
+    - "source .venv/bin/activate && python3 -m pytest tests/test_items_app.py -v"
+  lint_commands:
+    - "source .venv/bin/activate && ruff check items_app.py"
+  security_commands: []
+  partial_credit:
+    - criterion: "/health endpoint returns 200 with {\"status\": \"ok\"}"
+      points: 30
+      check: "source .venv/bin/activate && python3 -c \"from fastapi.testclient import TestClient; from items_app import app; c = TestClient(app); r = c.get('/health'); assert r.status_code == 200 and r.json() == {'status': 'ok'}\""
+    - criterion: "All 6 original tests still pass"
+      points: 30
+      check: "source .venv/bin/activate && python3 -m pytest tests/test_items_app.py::test_list_items_empty tests/test_items_app.py::test_create_item tests/test_items_app.py::test_get_item_exists tests/test_items_app.py::test_get_item_missing tests/test_items_app.py::test_list_items_after_create tests/test_items_app.py::test_create_multiple_items -v"
+    - criterion: "New test for /health endpoint added"
+      points: 20
+      check: "grep -qE 'health' tests/test_items_app.py"
+    - criterion: "No new lint warnings in items_app.py"
+      points: 20
+      check: "source .venv/bin/activate && ruff check items_app.py"
+
+constraints:
+  max_iterations: 15
+  timeout_seconds: 400

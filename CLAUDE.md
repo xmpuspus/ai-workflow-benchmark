@@ -3,7 +3,7 @@
 ## Project Structure
 
 - `awb/` — Main package
-- `awb/tasks/` — Task YAML definitions (80 tasks across 7 categories)
+- `awb/tasks/` — Task YAML definitions (80 tasks across 8 categories)
 - `awb/scoring/` — Sigmoid normalization, composite scoring, capability profiles, stability metrics, statistics
 - `awb/analysis/` — Gap analysis engine, workflow improvement suggestions, difficulty/timeout calibrators
 - `awb/submission/` — External submission format and cross-submission comparison
@@ -34,11 +34,11 @@ pip install -e ".[stats]"
 
 ## Task Schema
 
-See `awb/tasks/schema.json`. Required fields: `id`, `category`, `title`, `difficulty`, `estimated_minutes`, `languages`, `repo`, `issue`, `verification`, `constraints`. Optional: `tags`, `capabilities`.
+See `awb/tasks/schema.json`. Required fields: `id`, `category`, `title`, `difficulty`, `estimated_minutes`, `languages`, `repo`, `issue`, `verification`, `constraints`. Optional: `tags`, `capabilities`, `workspace_claude_md`.
 
-Valid categories: `bug-fix`, `feature-addition`, `refactoring`, `code-review`, `debugging`, `multi-file`, `legacy-code`
+Valid categories: `bug-fix`, `feature-addition`, `refactoring`, `code-review`, `debugging`, `multi-file`, `legacy-code`, `workflow`
 
-Valid capabilities: `code_comprehension`, `bug_diagnosis`, `multi_file_reasoning`, `framework_knowledge`, `test_writing`, `refactoring_discipline`, `security_awareness`
+Valid capabilities: `code_comprehension`, `bug_diagnosis`, `multi_file_reasoning`, `framework_knowledge`, `test_writing`, `refactoring_discipline`, `security_awareness`, `completeness_tracking`, `convention_adherence`, `context_discovery`, `security_methodology`
 
 ## Scoring
 

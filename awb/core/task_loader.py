@@ -68,6 +68,7 @@ def _parse_task(raw: dict) -> TaskDefinition:
         constraints=constraints,
         issue_description=issue_raw.get("description", ""),
         files_to_examine=issue_raw.get("files_to_examine") or [],
+        workspace_claude_md=raw.get("workspace_claude_md", ""),
     )
 
 

@@ -1,0 +1,259 @@
+id: WF-008
+category: workflow
+title: "Move all re.compile() calls from function bodies to module level across 10 files"
+difficulty: hard
+estimated_minutes: 30
+languages: [python]
+tags: [regex, performance, code-quality, completeness]
+capabilities: [completeness_tracking, code_comprehension]
+
+repo:
+  url: "https://github.com/psf/requests"
+  commit: "cb5765758a89fb6ceaad591e6b7a35f8e0e48302"
+  setup_commands:
+    - "python3 -m venv .venv && source .venv/bin/activate && pip install pytest"
+    - |
+      mkdir -p patterns tests
+      cat > patterns/__init__.py << 'PYEOF'
+      PYEOF
+    - |
+      cat > patterns/validator.py << 'PYEOF'
+      import re
+
+
+      def validate_email(value):
+          pattern = re.compile(r"^[\w.+-]+@[\w-]+\.[a-z]{2,}$", re.IGNORECASE)
+          return bool(pattern.match(value))
+      PYEOF
+    - |
+      cat > patterns/parser.py << 'PYEOF'
+      import re
+
+
+      def parse_version(text):
+          rx = re.compile(r"(\d+)\.(\d+)\.(\d+)")
+          m = rx.search(text)
+          if m:
+              return tuple(int(x) for x in m.groups())
+          return None
+      PYEOF
+    - |
+      cat > patterns/cleaner.py << 'PYEOF'
+      import re
+
+
+      def remove_html_tags(text):
+          for _ in range(3):
+              compiled = re.compile(r"<[^>]+>")
+              text = compiled.sub("", text)
+          return text
+      PYEOF
+    - |
+      cat > patterns/tokenizer.py << 'PYEOF'
+      import re
+
+
+      def tokenize(text):
+          if text:
+              tok_re = re.compile(r"\b\w+\b")
+              return tok_re.findall(text)
+          return []
+      PYEOF
+    - |
+      cat > patterns/extractor.py << 'PYEOF'
+      import re
+
+
+      def extract_urls(text):
+          _re = re.compile(r"https?://[^\s]+")
+          return _re.findall(text)
+      PYEOF
+    - |
+      cat > patterns/normalizer.py << 'PYEOF'
+      import re
+
+
+      def normalize_whitespace(text):
+          pat = re.compile(r"\s+")
+          return pat.sub(" ", text).strip()
+      PYEOF
+    - |
+      cat > patterns/detector.py << 'PYEOF'
+      import re
+
+
+      def is_hex_color(value):
+          if value.startswith("#"):
+              color_re = re.compile(r"^#([0-9a-fA-F]{3}|[0-9a-fA-F]{6})$")
+              return bool(color_re.match(value))
+          return False
+      PYEOF
+    - |
+      cat > patterns/formatter.py << 'PYEOF'
+      import re
+
+
+      def format_phone(number):
+          digits_re = re.compile(r"\D")
+          digits = digits_re.sub("", number)
+          if len(digits) == 10:
+              area_re = re.compile(r"(\d{3})(\d{3})(\d{4})")
+              return area_re.sub(r"(\1) \2-\3", digits)
+          return digits
+      PYEOF
+    - |
+      cat > patterns/splitter.py << 'PYEOF'
+      import re
+
+
+      def split_sentences(text):
+          sent_re = re.compile(r"(?<=[.!?])\s+")
+          return sent_re.split(text)
+      PYEOF
+    - |
+      cat > patterns/replacer.py << 'PYEOF'
+      import re
+
+
+      def censor_words(text, words):
+          for word in words:
+              censor_re = re.compile(r"\b" + re.escape(word) + r"\b", re.IGNORECASE)
+              text = censor_re.sub("***", text)
+          return text
+      PYEOF
+    - |
+      cat > tests/test_patterns.py << 'PYEOF'
+      from patterns.validator import validate_email
+      from patterns.parser import parse_version
+      from patterns.cleaner import remove_html_tags
+      from patterns.tokenizer import tokenize
+      from patterns.extractor import extract_urls
+      from patterns.normalizer import normalize_whitespace
+      from patterns.detector import is_hex_color
+      from patterns.formatter import format_phone
+      from patterns.splitter import split_sentences
+      from patterns.replacer import censor_words
+
+
+      def test_validate_email():
+          assert validate_email("user@example.com")
+          assert not validate_email("notanemail")
+
+
+      def test_parse_version():
+          assert parse_version("v1.2.3 release") == (1, 2, 3)
+          assert parse_version("no version") is None
+
+
+      def test_remove_html_tags():
+          assert remove_html_tags("<b>hello</b>") == "hello"
+
+
+      def test_tokenize():
+          assert tokenize("hello world") == ["hello", "world"]
+          assert tokenize("") == []
+
+
+      def test_extract_urls():
+          assert extract_urls("visit https://example.com now") == ["https://example.com"]
+
+
+      def test_normalize_whitespace():
+          assert normalize_whitespace("  hello   world  ") == "hello world"
+
+
+      def test_is_hex_color():
+          assert is_hex_color("#fff")
+          assert is_hex_color("#aabbcc")
+          assert not is_hex_color("red")
+
+
+      def test_format_phone():
+          assert format_phone("5551234567") == "(555) 123-4567"
+
+
+      def test_split_sentences():
+          result = split_sentences("Hello. World! Done?")
+          assert len(result) == 3
+
+
+      def test_censor_words():
+          assert censor_words("hello world", ["world"]) == "hello ***"
+      PYEOF
+
+issue:
+  description: |
+    The patterns/ package contains 10 modules. Each module has exactly one
+    re.compile() call that is currently inside a function body, which means
+    the regex is recompiled on every function call. This is a performance
+    problem that should be fixed by moving all compiled patterns to module
+    level.
+
+    Find and fix all 10 re.compile() calls across these files:
+    - patterns/validator.py
+    - patterns/parser.py
+    - patterns/cleaner.py
+    - patterns/tokenizer.py
+    - patterns/extractor.py
+    - patterns/normalizer.py
+    - patterns/detector.py
+    - patterns/formatter.py (has 2 compiles — move both)
+    - patterns/splitter.py
+    - patterns/replacer.py
+
+    For each file, move the re.compile() call(s) to module level (top of
+    file, before any function definitions) and update the function to
+    reference the module-level variable.
+
+    There are exactly 10 instances across 10 files (formatter.py counts once
+    toward the file count but has 2 compile calls). All 10 tests in
+    tests/test_patterns.py must still pass after your changes.
+
+    Note: patterns/replacer.py builds the regex from a parameter inside a
+    loop — it cannot be trivially moved to module level. For that file,
+    document your reasoning in a comment; the test just needs to pass.
+  files_to_examine:
+    - "patterns/"
+    - "tests/test_patterns.py"
+
+verification:
+  test_commands:
+    - "source .venv/bin/activate && python3 -m pytest tests/test_patterns.py -v"
+  lint_commands:
+    - "source .venv/bin/activate && ruff check patterns/"
+  security_commands: []
+  partial_credit:
+    - criterion: "validator.py has re.compile at module level"
+      points: 10
+      check: "python3 -c \"import ast, sys; src=open('patterns/validator.py').read(); tree=ast.parse(src); top=[n for n in ast.walk(tree) if isinstance(n, ast.Call) and isinstance(n.func, ast.Attribute) and n.func.attr=='compile']; body=[n for n in ast.walk(ast.parse(src)) if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef))]; assert any(True for t in top if not any(t.col_offset > b.col_offset for b in body if hasattr(b, 'col_offset'))), 'still in function'\""
+    - criterion: "No re.compile() inside function body in parser.py"
+      points: 10
+      check: "! grep -A5 'def parse_version' patterns/parser.py | grep -q 're.compile'"
+    - criterion: "No re.compile() inside function body in cleaner.py"
+      points: 10
+      check: "! grep -A5 'def remove_html' patterns/cleaner.py | grep -q 're.compile'"
+    - criterion: "No re.compile() inside function body in tokenizer.py"
+      points: 10
+      check: "! grep -A5 'def tokenize' patterns/tokenizer.py | grep -q 're.compile'"
+    - criterion: "No re.compile() inside function body in extractor.py"
+      points: 10
+      check: "! grep -A5 'def extract_urls' patterns/extractor.py | grep -q 're.compile'"
+    - criterion: "No re.compile() inside function body in normalizer.py"
+      points: 10
+      check: "! grep -A5 'def normalize' patterns/normalizer.py | grep -q 're.compile'"
+    - criterion: "No re.compile() inside function body in detector.py"
+      points: 10
+      check: "! grep -A5 'def is_hex' patterns/detector.py | grep -q 're.compile'"
+    - criterion: "formatter.py compile calls moved to module level"
+      points: 10
+      check: "! grep -A10 'def format_phone' patterns/formatter.py | grep -q 're.compile'"
+    - criterion: "No re.compile() inside function body in splitter.py"
+      points: 10
+      check: "! grep -A5 'def split_sentences' patterns/splitter.py | grep -q 're.compile'"
+    - criterion: "All tests pass"
+      points: 10
+      check: "source .venv/bin/activate && python3 -m pytest tests/test_patterns.py -v"
+
+constraints:
+  max_iterations: 20
+  timeout_seconds: 600

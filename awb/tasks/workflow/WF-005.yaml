@@ -1,0 +1,157 @@
+id: WF-005
+category: workflow
+title: "Diagnose and fix a TypeError caused by a None return from config.get()"
+difficulty: medium
+estimated_minutes: 25
+languages: [python]
+tags: [debugging, httpx, none-handling, config, root-cause]
+capabilities: [bug_diagnosis, context_discovery]
+
+repo:
+  url: "https://github.com/encode/httpx"
+  commit: "26d48e0634e6ee9cdc0533996db289ce4b430177"
+  setup_commands:
+    - "python3 -m venv .venv && source .venv/bin/activate && pip install httpx pytest"
+    - |
+      rm -f tests/conftest.py
+      mkdir -p app tests
+      cat > app/models.py << 'PYEOF'
+      """Domain models."""
+
+      from dataclasses import dataclass
+
+
+      @dataclass
+      class RequestConfig:
+          """Runtime configuration for outbound requests."""
+
+          base_url: str
+          timeout: float
+          retries: int
+      PYEOF
+    - |
+      cat > app/services.py << 'PYEOF'
+      """Service layer that reads config and builds RequestConfig."""
+
+      from app.models import RequestConfig
+
+      # Config may be partially populated; missing keys return None from .get()
+      _CONFIG: dict = {
+          "base_url": "https://api.example.com",
+          "retries": 3,
+          # "timeout" is intentionally absent to reproduce the bug
+      }
+
+
+      def build_config() -> RequestConfig:
+          """Build a RequestConfig from the current runtime config dict."""
+          timeout_raw = _CONFIG.get("timeout")
+          # BUG: timeout_raw is None here; multiplying None * 1000 raises TypeError
+          timeout_ms = timeout_raw * 1000
+          return RequestConfig(
+              base_url=_CONFIG.get("base_url"),
+              timeout=timeout_ms / 1000,
+              retries=_CONFIG.get("retries"),
+          )
+      PYEOF
+    - |
+      cat > app/routes.py << 'PYEOF'
+      """Route handlers that call the service layer."""
+
+      from app.services import build_config
+
+
+      def handle_request(path: str) -> dict:
+          """Handle an outbound request using the current config.
+
+          Args:
+              path: The API path to append to base_url.
+
+          Returns:
+              dict: A summary of the request that would be sent.
+          """
+          config = build_config()
+          return {
+              "url": f"{config.base_url}{path}",
+              "timeout": config.timeout,
+              "retries": config.retries,
+          }
+      PYEOF
+    - |
+      cat > tests/test_app.py << 'PYEOF'
+      import pytest
+      from app.routes import handle_request
+
+
+      def test_handle_request_returns_url():
+          result = handle_request("/health")
+          assert result["url"] == "https://api.example.com/health"
+
+
+      def test_handle_request_timeout_is_float():
+          result = handle_request("/health")
+          assert isinstance(result["timeout"], float)
+
+
+      def test_handle_request_uses_default_timeout():
+          result = handle_request("/health")
+          # Default timeout should be 30.0 seconds when key is missing
+          assert result["timeout"] == 30.0
+
+
+      def test_handle_request_retries():
+          result = handle_request("/health")
+          assert result["retries"] == 3
+      PYEOF
+
+issue:
+  description: |
+    The test suite in tests/test_app.py is failing with a TypeError. Run
+    the tests to see the failure:
+
+        python3 -m pytest tests/test_app.py -v
+
+    Diagnose the root cause and fix it. The app has three files:
+
+    - app/models.py   — RequestConfig dataclass
+    - app/services.py — build_config() reads a config dict
+    - app/routes.py   — handle_request() calls build_config()
+
+    The TypeError originates in one of these files. Find which line
+    causes it, understand why, and apply the minimal fix so all four
+    tests pass.
+
+    Constraints:
+    - Do not modify app/models.py or tests/test_app.py.
+    - The fix must be in app/services.py (that is where the bug is).
+    - When the "timeout" key is absent from _CONFIG, build_config()
+      should fall back to a default of 30.0 seconds.
+  files_to_examine:
+    - "app/services.py"
+    - "app/routes.py"
+    - "app/models.py"
+    - "tests/test_app.py"
+
+verification:
+  test_commands:
+    - "source .venv/bin/activate && python3 -m pytest tests/test_app.py -v"
+  lint_commands:
+    - "source .venv/bin/activate && ruff check app/"
+  security_commands: []
+  partial_credit:
+    - criterion: "Root cause identified: fix is in app/services.py"
+      points: 30
+      check: "git diff app/services.py | grep -q '^+'"
+    - criterion: "None guard uses 'or' pattern or explicit None check on config.get result"
+      points: 25
+      check: "grep -qE '_CONFIG\\.get.*or |if.*timeout_raw.*is None|timeout_raw or ' app/services.py"
+    - criterion: "Fix targets the config.get(\"timeout\") line specifically"
+      points: 25
+      check: "grep -qE 'get\\(\"timeout\".*30|get\\(\"timeout\",\\s*30' app/services.py"
+    - criterion: "All tests pass"
+      points: 20
+      check: "source .venv/bin/activate && python3 -m pytest tests/test_app.py -v"
+
+constraints:
+  max_iterations: 15
+  timeout_seconds: 400

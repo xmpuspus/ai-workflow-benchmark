@@ -11,7 +11,7 @@
     },
     "category": {
       "type": "string",
-      "enum": ["bug-fix", "feature-addition", "refactoring", "code-review", "debugging", "multi-file", "legacy-code"]
+      "enum": ["bug-fix", "feature-addition", "refactoring", "code-review", "debugging", "multi-file", "legacy-code", "workflow"]
     },
     "title": {
       "type": "string",
@@ -40,7 +40,7 @@
       "type": "array",
       "items": {
         "type": "string",
-        "enum": ["code_comprehension", "bug_diagnosis", "multi_file_reasoning", "framework_knowledge", "test_writing", "refactoring_discipline", "security_awareness"]
+        "enum": ["code_comprehension", "bug_diagnosis", "multi_file_reasoning", "framework_knowledge", "test_writing", "refactoring_discipline", "security_awareness", "completeness_tracking", "convention_adherence", "context_discovery", "security_methodology"]
       },
       "minItems": 1,
       "maxItems": 3
@@ -100,6 +100,10 @@
           }
         }
       }
+    },
+    "workspace_claude_md": {
+      "type": "string",
+      "description": "Optional inline CLAUDE.md content written to workspace .claude/CLAUDE.md before tool runs"
     },
     "constraints": {
       "type": "object",

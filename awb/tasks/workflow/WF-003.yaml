@@ -1,0 +1,182 @@
+id: WF-003
+category: workflow
+title: "Add a /users endpoint following documented project conventions"
+difficulty: medium
+estimated_minutes: 30
+languages: [python]
+tags: [fastapi, pydantic, conventions, envelope, docstrings]
+capabilities: [convention_adherence, context_discovery]
+
+workspace_claude_md: |
+  # Project Conventions
+
+  - All Pydantic models use `model_config = ConfigDict(extra="forbid")`
+  - All endpoints return `{"data": result}` envelope format
+  - Use Google-style docstrings on all public functions
+  - Run `ruff check` before committing
+
+repo:
+  url: "https://github.com/tiangolo/fastapi"
+  commit: "628c34e0cae200564d191c95d7edea78c88c4b5e"
+  setup_commands:
+    - "python3 -m venv .venv && source .venv/bin/activate && pip install -e '.[all]' && pip install pytest httpx"
+    - |
+      cat > api.py << 'PYEOF'
+      """Main API module."""
+
+      from pydantic import BaseModel, ConfigDict
+      from fastapi import FastAPI
+
+      app = FastAPI()
+
+      # In-memory stores
+      _items: list[dict] = []
+      _users: list[dict] = []
+
+
+      class ItemCreate(BaseModel):
+          """Request body for creating an item."""
+
+          model_config = ConfigDict(extra="forbid")
+
+          name: str
+          price: float
+
+
+      class ItemResponse(BaseModel):
+          """Response model for a single item."""
+
+          model_config = ConfigDict(extra="forbid")
+
+          id: int
+          name: str
+          price: float
+
+
+      @app.get("/items")
+      def list_items() -> dict:
+          """Return all items.
+
+          Returns:
+              dict: Envelope containing a list of items.
+          """
+          return {"data": _items}
+
+
+      @app.post("/items", status_code=201)
+      def create_item(body: ItemCreate) -> dict:
+          """Create a new item and persist it in memory.
+
+          Args:
+              body: Item fields from the request body.
+
+          Returns:
+              dict: Envelope containing the created item.
+          """
+          item = {"id": len(_items) + 1, "name": body.name, "price": body.price}
+          _items.append(item)
+          return {"data": item}
+      PYEOF
+    - |
+      cat > tests/test_api.py << 'PYEOF'
+      import pytest
+      from fastapi.testclient import TestClient
+      from api import app
+
+      client = TestClient(app)
+
+
+      def test_list_items_empty():
+          resp = client.get("/items")
+          assert resp.status_code == 200
+          assert "data" in resp.json()
+
+
+      def test_create_item():
+          resp = client.post("/items", json={"name": "Widget", "price": 9.99})
+          assert resp.status_code == 201
+          assert resp.json()["data"]["name"] == "Widget"
+
+
+      def test_list_users_returns_data_envelope():
+          resp = client.get("/users")
+          assert resp.status_code == 200
+          assert "data" in resp.json()
+
+
+      def test_create_user_returns_data_envelope():
+          resp = client.post("/users", json={"name": "Alice", "email": "alice@example.com"})
+          assert resp.status_code == 201
+          assert "data" in resp.json()
+          assert resp.json()["data"]["name"] == "Alice"
+
+
+      def test_create_user_extra_field_rejected():
+          resp = client.post(
+              "/users", json={"name": "Bob", "email": "bob@example.com", "role": "admin"}
+          )
+          assert resp.status_code == 422
+
+
+      def test_user_model_has_email():
+          resp = client.post("/users", json={"name": "Carol", "email": "carol@example.com"})
+          assert "email" in resp.json()["data"]
+      PYEOF
+
+issue:
+  description: |
+    The project has two existing endpoints in api.py that establish clear
+    conventions (documented in .claude/CLAUDE.md):
+
+    1. All Pydantic models use `model_config = ConfigDict(extra="forbid")`
+    2. All endpoints return a `{"data": result}` envelope
+    3. All public functions have Google-style docstrings
+
+    Add a /users resource to api.py with these two endpoints:
+
+    GET /users
+      Returns the list of all users in the {"data": [...]} envelope.
+
+    POST /users (status 201)
+      Accepts a JSON body with `name` (str) and `email` (str).
+      Creates a new user, appends it to the in-memory _users list with an
+      auto-incremented integer id, and returns the created user in the
+      {"data": {...}} envelope.
+
+    Requirements:
+    - Define a User Pydantic model (or two models for create/response) that
+      uses ConfigDict(extra="forbid") so extra fields are rejected with 422.
+    - Follow the exact same envelope and docstring style as the /items
+      endpoints above.
+    - Do not modify the existing /items endpoints or tests.
+    - The test suite in tests/test_api.py must pass.
+  files_to_examine:
+    - "api.py"
+    - "tests/test_api.py"
+
+verification:
+  test_commands:
+    - "source .venv/bin/activate && python3 -m pytest tests/test_api.py -v"
+  lint_commands:
+    - "source .venv/bin/activate && ruff check api.py"
+  security_commands: []
+  partial_credit:
+    - criterion: "User model uses ConfigDict(extra='forbid')"
+      points: 20
+      check: "grep -qE 'ConfigDict.*extra.*forbid|extra.*forbid.*ConfigDict' api.py"
+    - criterion: "Both /users endpoints return {\"data\": ...} envelope"
+      points: 20
+      check: "grep -c '\"data\"' api.py | awk '{exit ($1 < 4)}'"
+    - criterion: "Google-style docstrings present on new /users functions"
+      points: 15
+      check: "grep -qE 'Returns:|Args:' api.py"
+    - criterion: "GET /users returns 200"
+      points: 20
+      check: "source .venv/bin/activate && python3 -m pytest tests/test_api.py::test_list_users_returns_data_envelope -v"
+    - criterion: "All tests pass"
+      points: 25
+      check: "source .venv/bin/activate && python3 -m pytest tests/test_api.py -v"
+
+constraints:
+  max_iterations: 20
+  timeout_seconds: 600

@@ -1,0 +1,266 @@
+id: WF-007
+category: workflow
+title: "Migrate 8 Pydantic v1 models to v2 patterns and update all tests"
+difficulty: hard
+estimated_minutes: 45
+languages: [python]
+tags: [pydantic, migration, v2, fastapi, convention]
+capabilities: [framework_knowledge, convention_adherence]
+
+repo:
+  url: "https://github.com/tiangolo/fastapi"
+  commit: "628c34e0cae200564d191c95d7edea78c88c4b5e"
+  setup_commands:
+    - "python3 -m venv .venv && source .venv/bin/activate && pip install -e '.[all]' && pip install pytest httpx 'pydantic>=2.0'"
+    - |
+      cat > models_v1.py << 'PYEOF'
+      from typing import Optional
+      from pydantic import BaseModel, validator
+
+
+      class User(BaseModel):
+          id: int
+          name: str
+          email: Optional[str]
+
+          class Config:
+              extra = "forbid"
+
+          @validator("name")
+          def name_not_empty(cls, v):
+              if not v.strip():
+                  raise ValueError("name cannot be empty")
+              return v.strip()
+
+          def to_dict(self):
+              return self.dict()
+
+          def to_json_str(self):
+              return self.json()
+
+          @classmethod
+          def from_data(cls, data):
+              return cls.parse_obj(data)
+
+
+      class Address(BaseModel):
+          street: str
+          city: str
+          country: Optional[str]
+
+          class Config:
+              extra = "ignore"
+
+          def to_dict(self):
+              return self.dict(exclude_none=True)
+
+
+      class Product(BaseModel):
+          id: int
+          title: str
+          price: float
+          discount: Optional[float]
+
+          @validator("price")
+          def price_positive(cls, v):
+              if v <= 0:
+                  raise ValueError("price must be positive")
+              return v
+
+          def to_dict(self):
+              return self.dict()
+
+
+      class Order(BaseModel):
+          id: int
+          user_id: int
+          total: float
+          status: Optional[str]
+
+          class Config:
+              extra = "forbid"
+
+          def to_json_str(self):
+              return self.json()
+
+
+      class Tag(BaseModel):
+          name: str
+          slug: Optional[str]
+
+          @validator("slug", always=True, pre=True)
+          def slug_from_name(cls, v, values):
+              if v is None and "name" in values:
+                  return values["name"].lower().replace(" ", "-")
+              return v
+
+          def to_dict(self):
+              return self.dict()
+
+
+      class Config(BaseModel):
+          key: str
+          value: str
+          description: Optional[str]
+
+          class Config:
+              extra = "allow"
+
+          @classmethod
+          def from_data(cls, data):
+              return cls.parse_obj(data)
+
+
+      class Review(BaseModel):
+          product_id: int
+          rating: int
+          comment: Optional[str]
+
+          @validator("rating")
+          def rating_range(cls, v):
+              if not 1 <= v <= 5:
+                  raise ValueError("rating must be 1-5")
+              return v
+
+          def to_dict(self):
+              return self.dict()
+
+          def to_json_str(self):
+              return self.json()
+
+
+      class Inventory(BaseModel):
+          product_id: int
+          quantity: int
+          warehouse: Optional[str]
+
+          class Config:
+              extra = "forbid"
+
+          @classmethod
+          def from_data(cls, data):
+              return cls.parse_obj(data)
+
+          def to_dict(self):
+              return self.dict()
+      PYEOF
+    - |
+      mkdir -p tests
+      cat > tests/test_models_v1.py << 'PYEOF'
+      import pytest
+      from models_v1 import User, Address, Product, Order, Tag, Config, Review, Inventory
+
+
+      def test_user_to_dict():
+          u = User(id=1, name="Alice", email="a@b.com")
+          d = u.to_dict()
+          assert d["name"] == "Alice"
+
+
+      def test_user_validator():
+          with pytest.raises(Exception):
+              User(id=1, name="  ", email=None)
+
+
+      def test_user_from_data():
+          u = User.from_data({"id": 2, "name": "Bob", "email": None})
+          assert u.id == 2
+
+
+      def test_address_to_dict_excludes_none():
+          a = Address(street="1 Main St", city="Townsville", country=None)
+          d = a.to_dict()
+          assert "country" not in d
+
+
+      def test_product_validator():
+          with pytest.raises(Exception):
+              Product(id=1, title="x", price=-1.0, discount=None)
+
+
+      def test_order_to_json():
+          o = Order(id=1, user_id=2, total=9.99, status=None)
+          j = o.to_json_str()
+          assert "total" in j
+
+
+      def test_tag_slug_auto():
+          t = Tag(name="Hello World", slug=None)
+          assert t.slug == "hello-world"
+
+
+      def test_review_rating_range():
+          with pytest.raises(Exception):
+              Review(product_id=1, rating=6, comment=None)
+
+
+      def test_inventory_from_data():
+          inv = Inventory.from_data({"product_id=1": 1, "product_id": 1, "quantity": 10, "warehouse": None})
+          assert inv.quantity == 10
+      PYEOF
+
+issue:
+  description: |
+    The file models_v1.py contains 8 Pydantic models written in Pydantic v1
+    style. The project has upgraded to Pydantic v2 and these models must be
+    migrated. The tests in tests/test_models_v1.py use v1-style method calls
+    and also need updating.
+
+    Migrate ALL 8 models (User, Address, Product, Order, Tag, Config, Review,
+    Inventory) to Pydantic v2 patterns:
+
+    - Replace `class Config:` with `model_config = ConfigDict(...)`
+    - Replace `.dict()` calls with `.model_dump()`
+    - Replace `.json()` calls with `.model_dump_json()`
+    - Replace `parse_obj()` calls with `model_validate()`
+    - Replace `Optional[X]` with `X | None`
+    - Replace `@validator` with `@field_validator`
+    - Import ConfigDict, field_validator from pydantic
+
+    Update tests/test_models_v1.py to use v2 method names where tests call
+    model methods directly.
+
+    All 9 tests must pass after migration. No v1 patterns may remain in
+    models_v1.py.
+  files_to_examine:
+    - "models_v1.py"
+    - "tests/test_models_v1.py"
+
+verification:
+  test_commands:
+    - "source .venv/bin/activate && python3 -m pytest tests/test_models_v1.py -v"
+  lint_commands:
+    - "source .venv/bin/activate && ruff check models_v1.py tests/test_models_v1.py"
+  security_commands: []
+  partial_credit:
+    - criterion: "User model uses ConfigDict and field_validator"
+      points: 10
+      check: "grep -qE 'ConfigDict|field_validator' models_v1.py && python3 -c \"import ast, sys; src=open('models_v1.py').read(); assert 'class Config' not in src, 'v1 Config class still present'\""
+    - criterion: "Address model uses ConfigDict"
+      points: 10
+      check: "grep -q 'ConfigDict' models_v1.py"
+    - criterion: "No .dict() calls remain in models_v1.py"
+      points: 10
+      check: "! grep -qE '\\.dict\\(\\)' models_v1.py"
+    - criterion: "No .json() calls remain in models_v1.py"
+      points: 10
+      check: "! grep -qE '\\.json\\(\\)' models_v1.py"
+    - criterion: "No parse_obj() calls remain in models_v1.py"
+      points: 10
+      check: "! grep -q 'parse_obj' models_v1.py"
+    - criterion: "No Optional[X] remains in models_v1.py"
+      points: 10
+      check: "! grep -q 'Optional\\[' models_v1.py"
+    - criterion: "No @validator remains in models_v1.py"
+      points: 10
+      check: "! grep -qE '^\\s*@validator' models_v1.py"
+    - criterion: "No v1 class Config: remains in models_v1.py"
+      points: 10
+      check: "! grep -qE '^\\s+class Config:' models_v1.py"
+    - criterion: "Tests pass after migration"
+      points: 20
+      check: "source .venv/bin/activate && python3 -m pytest tests/test_models_v1.py -v"
+
+constraints:
+  max_iterations: 25
+  timeout_seconds: 900

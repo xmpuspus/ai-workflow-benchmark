@@ -582,13 +582,14 @@ ai-workflow-benchmark/
 │   └── tasks/
 │       ├── schema.json           # Task YAML JSON Schema
 │       ├── _template.yaml        # Task template
-│       ├── bug-fix/              # 13 tasks (BF-001 to BF-014, no BF-002)
-│       ├── feature-addition/     # 12 tasks (FA-001 to FA-012)
-│       ├── refactoring/          # 12 tasks (RF-001 to RF-012)
-│       ├── code-review/          # 10 tasks (CR-001 to CR-010)
-│       ├── debugging/            # 11 tasks (DB-001 to DB-011)
-│       ├── multi-file/           # 10 tasks (MF-001 to MF-010)
-│       └── legacy-code/          # 12 tasks (LC-001 to LC-012)
+│       ├── bug-fix/              # 12 tasks (BF-001 to BF-014, gaps at BF-002, BF-007)
+│       ├── feature-addition/     # 9 tasks (FA-001 to FA-010, gaps at FA-003, FA-011, FA-012)
+│       ├── refactoring/          # 11 tasks (RF-001 to RF-012, gap at RF-004)
+│       ├── code-review/          # 9 tasks (CR-001 to CR-010, gap at CR-006)
+│       ├── debugging/            # 10 tasks (DB-001 to DB-011, gap at DB-004)
+│       ├── multi-file/           # 7 tasks (MF-001 to MF-009, gaps at MF-002, MF-008, MF-010)
+│       ├── legacy-code/          # 12 tasks (LC-001 to LC-012)
+│       └── workflow/             # 10 tasks (WF-001 to WF-010) — workflow differentiation
 ├── tests/                        # pytest suite (75 tests)
 ├── results/
 │   ├── schema.json               # Result JSON Schema
@@ -598,5 +599,5 @@ ai-workflow-benchmark/
 ├── README.md
 ├── METHODOLOGY.md
 ├── ARCHITECTURE.md
-└── pyproject.toml                # v0.4.1
+└── pyproject.toml                # v0.5.0
 ```

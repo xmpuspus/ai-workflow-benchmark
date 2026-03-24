@@ -80,6 +80,7 @@ class TaskDefinition:
     capabilities: list[str] = field(default_factory=list)
     issue_description: str = ""
     files_to_examine: list[str] = field(default_factory=list)
+    workspace_claude_md: str = ""
 
 
 @dataclass

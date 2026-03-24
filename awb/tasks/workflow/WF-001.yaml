@@ -1,0 +1,171 @@
+id: WF-001
+category: workflow
+title: "Fix all 8 TODO items in a FastAPI utility module"
+difficulty: easy
+estimated_minutes: 15
+languages: [python]
+tags: [fastapi, completeness, todo, one-liners]
+capabilities: [completeness_tracking]
+
+repo:
+  url: "https://github.com/tiangolo/fastapi"
+  commit: "628c34e0cae200564d191c95d7edea78c88c4b5e"
+  setup_commands:
+    - "python3 -m venv .venv && source .venv/bin/activate && pip install -e '.[all]' && pip install pytest httpx"
+    - "mkdir -p tests"
+    - |
+      python3 -c "
+      from pathlib import Path
+      Path('app.py').write_text('''# Utility functions for a small FastAPI service.
+      # Each function has exactly one TODO that is a one-line fix.
+
+      def get_greeting(name: str) -> str:
+          # TODO: return f\"Hello, {name}!\"
+          pass
+
+
+      def add_numbers(a: int, b: int) -> int:
+          # TODO: return a + b
+          pass
+
+
+      def is_even(n: int) -> bool:
+          # TODO: return n % 2 == 0
+          pass
+
+
+      def reverse_string(s: str) -> str:
+          # TODO: return s[::-1]
+          pass
+
+
+      def clamp(value: int, low: int, high: int) -> int:
+          # TODO: return max(low, min(high, value))
+          pass
+
+
+      def to_uppercase(s: str) -> str:
+          # TODO: return s.upper()
+          pass
+
+
+      def count_vowels(s: str) -> int:
+          # TODO: return sum(1 for c in s.lower() if c in \"aeiou\")
+          pass
+
+
+      def safe_divide(a: float, b: float) -> float:
+          # TODO: return a / b if b != 0 else 0.0
+          pass
+      ''')
+      "
+    - |
+      python3 -c "
+      from pathlib import Path
+      Path('tests/test_app.py').write_text('''import pytest
+      from app import (
+          get_greeting,
+          add_numbers,
+          is_even,
+          reverse_string,
+          clamp,
+          to_uppercase,
+          count_vowels,
+          safe_divide,
+      )
+
+
+      def test_get_greeting():
+          assert get_greeting(\"Alice\") == \"Hello, Alice!\"
+
+
+      def test_add_numbers():
+          assert add_numbers(3, 4) == 7
+
+
+      def test_is_even():
+          assert is_even(4) is True
+          assert is_even(3) is False
+
+
+      def test_reverse_string():
+          assert reverse_string(\"abc\") == \"cba\"
+
+
+      def test_clamp():
+          assert clamp(5, 0, 10) == 5
+          assert clamp(-1, 0, 10) == 0
+          assert clamp(11, 0, 10) == 10
+
+
+      def test_to_uppercase():
+          assert to_uppercase(\"hello\") == \"HELLO\"
+
+
+      def test_count_vowels():
+          assert count_vowels(\"hello\") == 2
+
+
+      def test_safe_divide():
+          assert safe_divide(10.0, 2.0) == 5.0
+          assert safe_divide(5.0, 0.0) == 0.0
+      ''')
+      "
+
+issue:
+  description: |
+    The file app.py contains 8 utility functions. Every function has exactly
+    one TODO comment indicating a one-line fix. None of the fixes requires
+    more than a single return statement.
+
+    Fix all 8 TODO items in app.py so that the test suite in
+    tests/test_app.py passes completely. Do not modify the tests.
+
+    The functions are:
+    1. get_greeting(name) — return a greeting string
+    2. add_numbers(a, b) — return the sum
+    3. is_even(n) — return whether n is even
+    4. reverse_string(s) — return the reversed string
+    5. clamp(value, low, high) — clamp value to [low, high]
+    6. to_uppercase(s) — return s in uppercase
+    7. count_vowels(s) — count vowels in s
+    8. safe_divide(a, b) — return a/b, or 0.0 if b is zero
+  files_to_examine:
+    - "app.py"
+    - "tests/test_app.py"
+
+verification:
+  test_commands:
+    - "source .venv/bin/activate && python3 -m pytest tests/test_app.py -v"
+  lint_commands:
+    - "source .venv/bin/activate && ruff check app.py"
+  security_commands: []
+  partial_credit:
+    - criterion: "TODO 1 resolved: get_greeting returns correct string"
+      points: 12
+      check: "grep -v 'TODO' app.py | grep -q 'get_greeting'"
+    - criterion: "TODO 2 resolved: add_numbers returns sum"
+      points: 12
+      check: "source .venv/bin/activate && python3 -c \"from app import add_numbers; assert add_numbers(3,4)==7\""
+    - criterion: "TODO 3 resolved: is_even returns correct boolean"
+      points: 12
+      check: "source .venv/bin/activate && python3 -c \"from app import is_even; assert is_even(4) is True\""
+    - criterion: "TODO 4 resolved: reverse_string returns reversed text"
+      points: 12
+      check: "source .venv/bin/activate && python3 -c \"from app import reverse_string; assert reverse_string('abc')=='cba'\""
+    - criterion: "TODO 5 resolved: clamp constrains value to range"
+      points: 12
+      check: "source .venv/bin/activate && python3 -c \"from app import clamp; assert clamp(11,0,10)==10\""
+    - criterion: "TODO 6 resolved: to_uppercase returns uppercase text"
+      points: 12
+      check: "source .venv/bin/activate && python3 -c \"from app import to_uppercase; assert to_uppercase('hi')=='HI'\""
+    - criterion: "TODO 7 resolved: count_vowels counts correctly"
+      points: 12
+      check: "source .venv/bin/activate && python3 -c \"from app import count_vowels; assert count_vowels('hello')==2\""
+    - criterion: "TODO 8 resolved: safe_divide handles zero denominator"
+      points: 16
+      check: "source .venv/bin/activate && python3 -c \"from app import safe_divide; assert safe_divide(5.0,0.0)==0.0\""
+
+constraints:
+  max_iterations: 15
+  timeout_seconds: 300
