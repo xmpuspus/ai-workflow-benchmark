@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.5.2 (2026-03-24)
+
+### Fixed
+- Vanilla adapter environment isolation now correctly applied — vanilla runs use an empty config directory with no hooks or custom instructions
+- Workflow task setup reliability improvements: valid repo commits, grep-based verification checks, calibrated difficulty
+
 ## 0.5.0 (2026-03-24)
 
 ### Added
