@@ -11,7 +11,7 @@
   <br/>
   <img src="demos/awb-showcase.gif" alt="AWB Demo — install, validate, run, analyze" width="680"/>
   <br/>
-  <sub>Install from PyPI, validate 80 tasks, run vanilla vs custom, get capability profiles and improvement suggestions.</sub>
+  <sub>Install from PyPI, validate 100 tasks, run vanilla vs custom, get capability profiles and improvement suggestions.</sub>
 </div>
 
 ---
@@ -142,9 +142,22 @@ Top Suggestions
 3. Use --think flag for debugging tasks (impact: medium)
 ```
 
+## Vanilla vs Custom
+
+AWB ships two Claude Code adapters that run the same model with different configurations:
+
+| | Vanilla | Custom |
+|---|---|---|
+| Hooks | Disabled | Your full hook suite |
+| Skills | Disabled | Your registered skills |
+| Auto-memory | Disabled | Active |
+| System prompt | Generic | Default (loads CLAUDE.md) |
+
+Both use the same model, same API, same task prompts. The only difference is whether your workflow automation (hooks, skills, memory) is active. This isolates the contribution of workflow configuration from model capability.
+
 ## Workflow Lift Score
 
-When `awb run` executes both vanilla and custom (the default), it produces a **Workflow Lift** — a single number measuring how much your workflow configuration improves over the raw model:
+When `awb run` executes both vanilla and custom (the default), it produces a **Workflow Lift** — a single number measuring how much your workflow configuration improves over the baseline:
 
 ```
 Workflow Lift: +4.2 pts  (p=0.031, significant)
