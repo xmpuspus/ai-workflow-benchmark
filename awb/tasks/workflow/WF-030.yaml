@@ -1,0 +1,252 @@
+id: WF-030
+category: workflow
+title: "Add an email field to the User model and propagate it through the full stack"
+difficulty: medium
+estimated_minutes: 35
+languages: [python]
+tags: [multi-file, layered-architecture, model-propagation, context-discovery]
+capabilities: [context_discovery, multi_file_reasoning]
+
+workspace_claude_md: |
+  # Development Process
+
+  Before making changes that touch multiple files:
+  1. List ALL files that need modification
+  2. State your approach in one sentence
+  3. Proceed with changes
+
+  The app follows strict layered architecture. Changes to models always
+  propagate to: schemas, migrations, services, routes, tests.
+
+repo:
+  url: "https://github.com/tiangolo/fastapi"
+  commit: "628c34e0cae200564d191c95d7edea78c88c4b5e"
+  setup_commands:
+    - "python3 -m venv .venv && source .venv/bin/activate && pip install -e '.[all]' && pip install pytest httpx"
+    - |
+      mkdir -p app tests
+    - |
+      cat > app/__init__.py << 'PYEOF'
+      PYEOF
+    - |
+      cat > app/models.py << 'PYEOF'
+      """Domain models."""
+
+      from dataclasses import dataclass
+
+
+      @dataclass
+      class User:
+          id: int
+          name: str
+      PYEOF
+    - |
+      cat > app/schemas.py << 'PYEOF'
+      """Pydantic schemas for request/response validation."""
+
+      from pydantic import BaseModel
+
+
+      class UserCreate(BaseModel):
+          name: str
+
+
+      class UserResponse(BaseModel):
+          id: int
+          name: str
+      PYEOF
+    - |
+      cat > app/migrations.py << 'PYEOF'
+      """Database migration definitions (simplified in-memory version)."""
+
+      # Tracks schema versions applied
+      _applied: list[str] = []
+
+      SCHEMA_V1 = """
+      CREATE TABLE users (
+          id INTEGER PRIMARY KEY,
+          name TEXT NOT NULL
+      );
+      """
+
+
+      def get_schema():
+          """Return the current CREATE TABLE statement for users."""
+          return SCHEMA_V1
+
+
+      def apply(version: str):
+          _applied.append(version)
+      PYEOF
+    - |
+      cat > app/services.py << 'PYEOF'
+      """Business logic layer."""
+
+      from app.models import User
+
+      _users: list[User] = []
+      _next_id = 1
+
+
+      def create_user(name: str) -> User:
+          global _next_id
+          user = User(id=_next_id, name=name)
+          _users.append(user)
+          _next_id += 1
+          return user
+
+
+      def get_user(user_id: int) -> User | None:
+          return next((u for u in _users if u.id == user_id), None)
+
+
+      def list_users() -> list[User]:
+          return list(_users)
+      PYEOF
+    - |
+      cat > app/routes.py << 'PYEOF'
+      """HTTP route handlers."""
+
+      from fastapi import FastAPI, HTTPException
+
+      from app.schemas import UserCreate, UserResponse
+      from app.services import create_user, get_user, list_users
+
+      app = FastAPI()
+
+
+      @app.post("/users", status_code=201, response_model=UserResponse)
+      def post_user(body: UserCreate) -> UserResponse:
+          user = create_user(name=body.name)
+          return UserResponse(id=user.id, name=user.name)
+
+
+      @app.get("/users/{user_id}", response_model=UserResponse)
+      def get_user_route(user_id: int) -> UserResponse:
+          user = get_user(user_id)
+          if user is None:
+              raise HTTPException(status_code=404, detail="not found")
+          return UserResponse(id=user.id, name=user.name)
+
+
+      @app.get("/users", response_model=list[UserResponse])
+      def list_users_route() -> list[UserResponse]:
+          return [UserResponse(id=u.id, name=u.name) for u in list_users()]
+      PYEOF
+    - |
+      cat > tests/test_routes.py << 'PYEOF'
+      """Tests for the full user stack including email field."""
+
+      import pytest
+      from fastapi.testclient import TestClient
+
+      from app.routes import app
+
+      client = TestClient(app)
+
+
+      def test_create_user_with_email():
+          resp = client.post("/users", json={"name": "Alice", "email": "alice@example.com"})
+          assert resp.status_code == 201
+          data = resp.json()
+          assert data["name"] == "Alice"
+          assert data["email"] == "alice@example.com"
+
+
+      def test_get_user_includes_email():
+          resp = client.post("/users", json={"name": "Bob", "email": "bob@example.com"})
+          user_id = resp.json()["id"]
+          resp2 = client.get(f"/users/{user_id}")
+          assert resp2.status_code == 200
+          assert resp2.json()["email"] == "bob@example.com"
+
+
+      def test_list_users_includes_email():
+          client.post("/users", json={"name": "Carol", "email": "carol@example.com"})
+          resp = client.get("/users")
+          assert resp.status_code == 200
+          users = resp.json()
+          assert all("email" in u for u in users)
+
+
+      def test_create_user_missing_email_fails():
+          resp = client.post("/users", json={"name": "Dave"})
+          assert resp.status_code == 422
+
+
+      def test_model_has_email_field():
+          from app.models import User
+          u = User(id=1, name="Eve", email="eve@example.com")
+          assert u.email == "eve@example.com"
+
+
+      def test_schema_has_email_field():
+          from app.schemas import UserCreate, UserResponse
+          uc = UserCreate(name="Frank", email="frank@example.com")
+          assert uc.email == "frank@example.com"
+          ur = UserResponse(id=1, name="Frank", email="frank@example.com")
+          assert ur.email == "frank@example.com"
+
+
+      def test_migrations_schema_includes_email():
+          from app.migrations import get_schema
+          schema = get_schema()
+          assert "email" in schema.lower()
+      PYEOF
+
+issue:
+  description: |
+    The User model currently has only `id` and `name`. Add an `email`
+    field (string, required) and propagate the change through the entire
+    stack.
+
+    Files that need updating:
+    - app/models.py    — add email field to User dataclass
+    - app/schemas.py   — add email to UserCreate and UserResponse
+    - app/migrations.py — update SCHEMA_V1 to include email column
+    - app/services.py  — pass email through create_user()
+    - app/routes.py    — pass email in all UserResponse construction calls
+    - tests/test_routes.py — tests already assert email; make them pass
+
+    The CLAUDE.md for this project documents the propagation pattern.
+    All 7 tests in tests/test_routes.py must pass.
+  files_to_examine:
+    - "app/models.py"
+    - "app/schemas.py"
+    - "app/migrations.py"
+    - "app/services.py"
+    - "app/routes.py"
+    - "tests/test_routes.py"
+
+verification:
+  test_commands:
+    - "source .venv/bin/activate && python3 -m pytest tests/test_routes.py -v"
+  lint_commands:
+    - "source .venv/bin/activate && ruff check app/"
+  security_commands: []
+  partial_credit:
+    - criterion: "app/models.py User dataclass has email field"
+      points: 15
+      check: "source .venv/bin/activate && python3 -m pytest tests/test_routes.py::test_model_has_email_field -v"
+    - criterion: "app/schemas.py UserCreate and UserResponse have email field"
+      points: 15
+      check: "source .venv/bin/activate && python3 -m pytest tests/test_routes.py::test_schema_has_email_field -v"
+    - criterion: "app/migrations.py SCHEMA_V1 includes email column"
+      points: 15
+      check: "source .venv/bin/activate && python3 -m pytest tests/test_routes.py::test_migrations_schema_includes_email -v"
+    - criterion: "POST /users accepts and returns email"
+      points: 15
+      check: "source .venv/bin/activate && python3 -m pytest tests/test_routes.py::test_create_user_with_email -v"
+    - criterion: "GET /users/{id} returns email"
+      points: 15
+      check: "source .venv/bin/activate && python3 -m pytest tests/test_routes.py::test_get_user_includes_email -v"
+    - criterion: "GET /users list includes email on all users"
+      points: 15
+      check: "source .venv/bin/activate && python3 -m pytest tests/test_routes.py::test_list_users_includes_email -v"
+    - criterion: "All 7 tests pass"
+      points: 10
+      check: "source .venv/bin/activate && python3 -m pytest tests/test_routes.py -v"
+
+constraints:
+  max_iterations: 20
+  timeout_seconds: 600

@@ -1,0 +1,151 @@
+id: WF-015
+category: workflow
+title: "Fix 5 common mistakes in a GitHub Actions workflow file"
+difficulty: medium
+estimated_minutes: 20
+languages: [yaml]
+tags: [github-actions, ci, yaml, pitfalls, devops]
+capabilities: [convention_adherence, framework_knowledge]
+
+repo:
+  url: "https://github.com/pallets/flask"
+  commit: "49a6863ec5637a046dac5e94c3bcf93fb6a07d18"
+  setup_commands:
+    - "python3 -m venv .venv && source .venv/bin/activate && pip install pytest pyyaml"
+    - |
+      mkdir -p .github/workflows tests
+    - |
+      cat > .github/workflows/test.yml << 'PYEOF'
+      # This workflow has 5 mistakes. Fix all of them.
+      name: Run Tests
+
+      on:
+        push:
+          # MISTAKE 3: missing branches filter — triggers on all branches
+        pull_request:
+
+      jobs:
+        test:
+          # MISTAKE 4: wrong runner format — should be ubuntu-latest
+          runs-on: ubuntu-latest-22.04
+
+          steps:
+            - name: Install dependencies
+              # MISTAKE 2: pip install before checkout — no source code present yet
+              run: pip install -r requirements.txt
+
+            - name: Checkout code
+              uses: actions/checkout@v4
+
+            - name: Set up Python
+              uses: actions/setup-python@v5
+              with:
+                # MISTAKE 1: unquoted float — YAML parses 3.11 as a number, not string
+                python-version: 3.11
+
+            - name: Run tests
+              # MISTAKE 5: pytest without venv activation — uses system python
+              run: pytest tests/
+      PYEOF
+    - |
+      cat > tests/test_workflow.py << 'PYEOF'
+      """Checks that the workflow YAML has been corrected."""
+      import yaml
+      from pathlib import Path
+
+
+      def load_workflow():
+          return yaml.safe_load(Path(".github/workflows/test.yml").read_text())
+
+
+      def get_steps(wf):
+          return wf["jobs"]["test"]["steps"]
+
+
+      def test_python_version_is_string():
+          wf = load_workflow()
+          steps = get_steps(wf)
+          setup_step = next(s for s in steps if s.get("uses", "").startswith("actions/setup-python"))
+          version = setup_step["with"]["python-version"]
+          assert isinstance(version, str), f"python-version must be a string, got {type(version).__name__}"
+          assert version == "3.11"
+
+
+      def test_checkout_before_install():
+          wf = load_workflow()
+          steps = get_steps(wf)
+          names = [s.get("name", s.get("uses", "")) for s in steps]
+          checkout_idx = next(i for i, n in enumerate(names) if "checkout" in n.lower())
+          install_idx = next(i for i, n in enumerate(names) if "install" in n.lower() or "dependencies" in n.lower())
+          assert checkout_idx < install_idx, "Checkout must come before dependency install"
+
+
+      def test_push_trigger_has_branches():
+          wf = load_workflow()
+          push_trigger = wf["on"].get("push", {})
+          assert "branches" in push_trigger, "push trigger must include a branches filter"
+
+
+      def test_runner_is_ubuntu_latest():
+          wf = load_workflow()
+          runner = wf["jobs"]["test"]["runs-on"]
+          assert runner == "ubuntu-latest", f"Expected 'ubuntu-latest', got '{runner}'"
+
+
+      def test_pytest_uses_venv():
+          wf = load_workflow()
+          steps = get_steps(wf)
+          pytest_step = next(
+              (s for s in steps if "run" in s and "pytest" in s["run"]),
+              None,
+          )
+          assert pytest_step is not None, "No pytest step found"
+          run_cmd = pytest_step["run"]
+          assert "venv" in run_cmd or "activate" in run_cmd or "source" in run_cmd, \
+              "pytest must be run inside the venv (activate it first)"
+      PYEOF
+
+issue:
+  description: |
+    The file .github/workflows/test.yml contains 5 mistakes that will cause
+    the CI pipeline to fail or behave incorrectly. Fix all 5 issues.
+
+    Run `python3 -m pytest tests/test_workflow.py -v` to verify.
+
+    The 5 issues are:
+    1. python-version is an unquoted float (3.11) — YAML parses it as a number
+    2. pip install step comes before the checkout step — no source code yet
+    3. push trigger has no branches filter — triggers on every branch
+    4. runs-on uses the wrong format (ubuntu-latest-22.04)
+    5. pytest is run without venv activation — uses system python
+
+    Do not modify tests/test_workflow.py.
+  files_to_examine:
+    - ".github/workflows/test.yml"
+    - "tests/test_workflow.py"
+
+verification:
+  test_commands:
+    - "source .venv/bin/activate && python3 -m pytest tests/test_workflow.py -v"
+  lint_commands: []
+  security_commands: []
+  partial_credit:
+    - criterion: "Fix 1: python-version is quoted as a string"
+      points: 20
+      check: "source .venv/bin/activate && python3 -m pytest tests/test_workflow.py::test_python_version_is_string -v"
+    - criterion: "Fix 2: checkout step appears before install step"
+      points: 20
+      check: "source .venv/bin/activate && python3 -m pytest tests/test_workflow.py::test_checkout_before_install -v"
+    - criterion: "Fix 3: push trigger includes a branches filter"
+      points: 20
+      check: "source .venv/bin/activate && python3 -m pytest tests/test_workflow.py::test_push_trigger_has_branches -v"
+    - criterion: "Fix 4: runs-on is ubuntu-latest"
+      points: 20
+      check: "source .venv/bin/activate && python3 -m pytest tests/test_workflow.py::test_runner_is_ubuntu_latest -v"
+    - criterion: "Fix 5: pytest step activates the venv"
+      points: 20
+      check: "source .venv/bin/activate && python3 -m pytest tests/test_workflow.py::test_pytest_uses_venv -v"
+
+constraints:
+  max_iterations: 15
+  timeout_seconds: 300

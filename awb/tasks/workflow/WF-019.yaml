@@ -1,0 +1,216 @@
+id: WF-019
+category: workflow
+title: "Replace 6 bare except clauses with specific exception types"
+difficulty: medium
+estimated_minutes: 25
+languages: [python]
+tags: [error-handling, exceptions, security, bare-except, debugging]
+capabilities: [security_methodology, code_comprehension]
+
+repo:
+  url: "https://github.com/pallets/click"
+  commit: "1d038f270701498433cb432f54db89f95f07a845"
+  setup_commands:
+    - "python3 -m venv .venv && source .venv/bin/activate && pip install pytest"
+    - |
+      mkdir -p tests
+    - |
+      cat > handlers.py << 'PYEOF'
+      """Request handlers with intentionally broad exception clauses."""
+      import json
+      import logging
+      import os
+
+      logger = logging.getLogger(__name__)
+
+
+      def load_config(path: str) -> dict:
+          """Load JSON config from path. Returns {} if file is missing."""
+          try:
+              with open(path) as f:
+                  return json.load(f)
+          except:
+              return {}
+
+
+      def parse_page_number(value: str) -> int:
+          """Parse a page number from a string. Returns 1 on failure."""
+          try:
+              return int(value)
+          except:
+              return 1
+
+
+      def fetch_env_var(key: str) -> str:
+          """Return environment variable value. Raises RuntimeError if missing."""
+          try:
+              return os.environ[key]
+          except:
+              raise RuntimeError(f"Missing required environment variable: {key}")
+
+
+      def divide(a: float, b: float) -> float:
+          """Divide a by b. Returns 0.0 if division is impossible."""
+          try:
+              return a / b
+          except:
+              return 0.0
+
+
+      def read_first_line(path: str) -> str:
+          """Return the first line of a file. Returns '' if unreadable."""
+          try:
+              with open(path) as f:
+                  return f.readline().strip()
+          except:
+              return ""
+
+
+      def safe_cast_float(value) -> float:
+          """Cast value to float. Raises TypeError for non-numeric types."""
+          try:
+              return float(value)
+          except:
+              raise TypeError(f"Cannot convert {type(value).__name__!r} to float")
+      PYEOF
+    - |
+      cat > tests/test_handlers.py << 'PYEOF'
+      import pytest
+      import os
+      import json
+      from handlers import (
+          load_config,
+          parse_page_number,
+          fetch_env_var,
+          divide,
+          read_first_line,
+          safe_cast_float,
+      )
+
+
+      def test_load_config_missing_file(tmp_path):
+          result = load_config(str(tmp_path / "missing.json"))
+          assert result == {}
+
+
+      def test_load_config_valid(tmp_path):
+          p = tmp_path / "config.json"
+          p.write_text('{"key": "value"}')
+          assert load_config(str(p)) == {"key": "value"}
+
+
+      def test_parse_page_number_valid():
+          assert parse_page_number("5") == 5
+
+
+      def test_parse_page_number_invalid():
+          assert parse_page_number("abc") == 1
+
+
+      def test_fetch_env_var_present(monkeypatch):
+          monkeypatch.setenv("MY_VAR", "hello")
+          assert fetch_env_var("MY_VAR") == "hello"
+
+
+      def test_fetch_env_var_missing(monkeypatch):
+          monkeypatch.delenv("MY_VAR", raising=False)
+          with pytest.raises(RuntimeError, match="Missing required"):
+              fetch_env_var("MY_VAR")
+
+
+      def test_divide_normal():
+          assert divide(10.0, 2.0) == 5.0
+
+
+      def test_divide_by_zero():
+          assert divide(5.0, 0.0) == 0.0
+
+
+      def test_read_first_line_valid(tmp_path):
+          p = tmp_path / "data.txt"
+          p.write_text("hello\nworld\n")
+          assert read_first_line(str(p)) == "hello"
+
+
+      def test_read_first_line_missing(tmp_path):
+          assert read_first_line(str(tmp_path / "nope.txt")) == ""
+
+
+      def test_safe_cast_float_numeric():
+          assert safe_cast_float("3.14") == 3.14
+
+
+      def test_safe_cast_float_list_raises():
+          with pytest.raises(TypeError):
+              safe_cast_float([1, 2])
+
+
+      # Verify no bare except remains in handlers.py
+      def test_no_bare_except_in_handlers():
+          src = open("handlers.py").read()
+          import re
+          bare = re.findall(r'^\s*except\s*:', src, re.MULTILINE)
+          assert not bare, f"Found {len(bare)} bare except clause(s) — replace with specific types"
+
+
+      def test_no_except_exception_in_handlers():
+          src = open("handlers.py").read()
+          import re
+          broad = re.findall(r'^\s*except\s+Exception\s*:', src, re.MULTILINE)
+          assert not broad, f"Found {len(broad)} 'except Exception:' clause(s) — use specific types"
+      PYEOF
+
+issue:
+  description: |
+    handlers.py contains 6 bare `except:` clauses. Each should catch only the
+    specific exception type that the code can actually raise.
+
+    Replace all 6 bare except clauses with specific exception types. There are
+    6 to fix — one per function. Do not change any other logic.
+
+    The 6 functions and their expected specific exception:
+    1. load_config     — catches FileNotFoundError (missing file)
+    2. parse_page_number — catches ValueError (int() on non-numeric string)
+    3. fetch_env_var   — catches KeyError (missing dict/env key)
+    4. divide          — catches ZeroDivisionError
+    5. read_first_line — catches OSError (file open failures)
+    6. safe_cast_float — catches ValueError (float() on non-convertible value)
+
+    All 14 tests must pass and the two structural tests (no bare except,
+    no except Exception) must also pass.
+  files_to_examine:
+    - "handlers.py"
+    - "tests/test_handlers.py"
+
+verification:
+  test_commands:
+    - "source .venv/bin/activate && python3 -m pytest tests/test_handlers.py -v"
+  lint_commands:
+    - "source .venv/bin/activate && ruff check handlers.py"
+  security_commands: []
+  partial_credit:
+    - criterion: "load_config uses FileNotFoundError (or OSError)"
+      points: 15
+      check: "grep -qE 'except (FileNotFoundError|OSError)' handlers.py && source .venv/bin/activate && python3 -m pytest tests/test_handlers.py::test_load_config_missing_file tests/test_handlers.py::test_load_config_valid -v"
+    - criterion: "parse_page_number uses ValueError"
+      points: 15
+      check: "grep -q 'except ValueError' handlers.py && source .venv/bin/activate && python3 -m pytest tests/test_handlers.py::test_parse_page_number_valid tests/test_handlers.py::test_parse_page_number_invalid -v"
+    - criterion: "fetch_env_var uses KeyError"
+      points: 15
+      check: "grep -q 'except KeyError' handlers.py && source .venv/bin/activate && python3 -m pytest tests/test_handlers.py::test_fetch_env_var_present tests/test_handlers.py::test_fetch_env_var_missing -v"
+    - criterion: "divide uses ZeroDivisionError"
+      points: 15
+      check: "grep -q 'except ZeroDivisionError' handlers.py && source .venv/bin/activate && python3 -m pytest tests/test_handlers.py::test_divide_normal tests/test_handlers.py::test_divide_by_zero -v"
+    - criterion: "read_first_line uses OSError (or FileNotFoundError)"
+      points: 15
+      check: "source .venv/bin/activate && python3 -m pytest tests/test_handlers.py::test_read_first_line_valid tests/test_handlers.py::test_read_first_line_missing -v"
+    - criterion: "safe_cast_float uses ValueError"
+      points: 15
+      check: "source .venv/bin/activate && python3 -m pytest tests/test_handlers.py::test_safe_cast_float_numeric tests/test_handlers.py::test_safe_cast_float_list_raises -v"
+    - criterion: "No bare except or except Exception remains"
+      points: 10
+      check: "source .venv/bin/activate && python3 -m pytest tests/test_handlers.py::test_no_bare_except_in_handlers tests/test_handlers.py::test_no_except_exception_in_handlers -v"
+
+constraints:
+  max_iterations: 15
+  timeout_seconds: 400

@@ -1,0 +1,249 @@
+id: WF-023
+category: workflow
+title: "Replace all print() calls with proper logging across a 5-file Python app"
+difficulty: medium
+estimated_minutes: 30
+languages: [python]
+tags: [logging, refactoring, convention-adherence, python]
+capabilities: [convention_adherence, code_comprehension]
+
+repo:
+  url: "https://github.com/encode/httpx"
+  commit: "26d48e0634e6ee9cdc0533996db289ce4b430177"
+  setup_commands:
+    - "python3 -m venv .venv && source .venv/bin/activate && pip install pytest"
+    - |
+      rm -f tests/conftest.py
+      mkdir -p app tests
+      touch app/__init__.py
+    - |
+      cat > app/auth.py << 'PYEOF'
+      """Authentication helpers."""
+
+
+      def login(username, password):
+          print(f"Login attempt for {username}")
+          if not username or not password:
+              print("ERROR: Missing credentials")
+              return False
+          print(f"User {username} authenticated successfully")
+          return True
+
+
+      def logout(username):
+          print(f"User {username} logged out")
+      PYEOF
+    - |
+      cat > app/database.py << 'PYEOF'
+      """Database access layer."""
+
+
+      _store = {}
+
+
+      def save(key, value):
+          print(f"Saving key={key}")
+          _store[key] = value
+          print(f"Saved {key} successfully")
+
+
+      def load(key):
+          print(f"Loading key={key}")
+          result = _store.get(key)
+          if result is None:
+              print(f"WARNING: key={key} not found")
+          return result
+      PYEOF
+    - |
+      cat > app/processor.py << 'PYEOF'
+      """Data processing utilities."""
+
+
+      def process(data):
+          print("Starting data processing")
+          if not data:
+              print("WARNING: empty data received")
+              return []
+          result = [x * 2 for x in data]
+          print(f"Processed {len(result)} items")
+          return result
+      PYEOF
+    - |
+      cat > app/notifier.py << 'PYEOF'
+      """Notification dispatcher."""
+
+
+      def send(recipient, message):
+          print(f"Sending notification to {recipient}")
+          if not recipient:
+              print("ERROR: No recipient specified")
+              return False
+          print(f"Notification sent: {message[:20]}")
+          return True
+      PYEOF
+    - |
+      cat > app/scheduler.py << 'PYEOF'
+      """Job scheduler."""
+
+
+      _jobs = []
+
+
+      def schedule(job_name, interval):
+          print(f"Scheduling job: {job_name}")
+          _jobs.append({"name": job_name, "interval": interval})
+          print(f"Job {job_name} scheduled every {interval}s")
+
+
+      def list_jobs():
+          print(f"Active jobs: {len(_jobs)}")
+          return list(_jobs)
+      PYEOF
+    - |
+      cat > tests/test_app.py << 'PYEOF'
+      """Tests that verify no print() calls remain and logging is configured."""
+
+      import ast
+      import logging
+      from pathlib import Path
+
+      import pytest
+
+      APP_FILES = [
+          "app/auth.py",
+          "app/database.py",
+          "app/processor.py",
+          "app/notifier.py",
+          "app/scheduler.py",
+      ]
+
+
+      def _has_print_call(filepath):
+          source = Path(filepath).read_text()
+          tree = ast.parse(source)
+          for node in ast.walk(tree):
+              if isinstance(node, ast.Call):
+                  func = node.func
+                  if isinstance(func, ast.Name) and func.id == "print":
+                      return True
+          return False
+
+
+      def _has_logging_import(filepath):
+          source = Path(filepath).read_text()
+          return "import logging" in source or "from logging" in source
+
+
+      def test_auth_no_print():
+          assert not _has_print_call("app/auth.py"), "app/auth.py still uses print()"
+
+
+      def test_database_no_print():
+          assert not _has_print_call("app/database.py"), "app/database.py still uses print()"
+
+
+      def test_processor_no_print():
+          assert not _has_print_call("app/processor.py"), "app/processor.py still uses print()"
+
+
+      def test_notifier_no_print():
+          assert not _has_print_call("app/notifier.py"), "app/notifier.py still uses print()"
+
+
+      def test_scheduler_no_print():
+          assert not _has_print_call("app/scheduler.py"), "app/scheduler.py still uses print()"
+
+
+      def test_logging_levels_used():
+          """At least one file should use WARNING or ERROR level logging."""
+          all_source = "".join(Path(f).read_text() for f in APP_FILES)
+          has_warning = "logging.warning" in all_source or ".warning(" in all_source
+          has_error = "logging.error" in all_source or ".error(" in all_source
+          assert has_warning or has_error, "No WARNING or ERROR log levels found across any file"
+
+
+      def test_functions_still_work():
+          from app.auth import login, logout
+          from app.database import save, load
+          from app.processor import process
+          from app.notifier import send
+          from app.scheduler import schedule, list_jobs
+
+          assert login("alice", "secret") is True
+          assert login("", "") is False
+          logout("alice")
+
+          save("k1", 42)
+          assert load("k1") == 42
+          assert load("missing") is None
+
+          assert process([1, 2, 3]) == [2, 4, 6]
+          assert process([]) == []
+
+          assert send("bob@example.com", "Hello there") is True
+          assert send("", "msg") is False
+
+          schedule("cleanup", 3600)
+          jobs = list_jobs()
+          assert len(jobs) == 1
+      PYEOF
+
+issue:
+  description: |
+    The app in the app/ directory contains 5 modules, each using print()
+    for debugging and operational output. There are 3 print() calls per
+    file (15 total).
+
+    Replace all print() calls across all 5 files with proper logging using
+    Python's standard library logging module. Use appropriate log levels:
+
+    - DEBUG for detailed diagnostic output
+    - INFO for normal operational events (startup, success)
+    - WARNING for unexpected-but-handled situations
+    - ERROR for failures
+
+    Each file should have `import logging` and obtain a logger via
+    `logger = logging.getLogger(__name__)`.
+
+    Do not modify tests/test_app.py. The functions must continue to work
+    correctly (test_functions_still_work must pass).
+  files_to_examine:
+    - "app/auth.py"
+    - "app/database.py"
+    - "app/processor.py"
+    - "app/notifier.py"
+    - "app/scheduler.py"
+    - "tests/test_app.py"
+
+verification:
+  test_commands:
+    - "source .venv/bin/activate && python3 -m pytest tests/test_app.py -v"
+  lint_commands:
+    - "source .venv/bin/activate && ruff check app/"
+  security_commands: []
+  partial_credit:
+    - criterion: "app/auth.py has no print() calls"
+      points: 15
+      check: "source .venv/bin/activate && python3 -m pytest tests/test_app.py::test_auth_no_print -v"
+    - criterion: "app/database.py has no print() calls"
+      points: 15
+      check: "source .venv/bin/activate && python3 -m pytest tests/test_app.py::test_database_no_print -v"
+    - criterion: "app/processor.py has no print() calls"
+      points: 15
+      check: "source .venv/bin/activate && python3 -m pytest tests/test_app.py::test_processor_no_print -v"
+    - criterion: "app/notifier.py has no print() calls"
+      points: 15
+      check: "source .venv/bin/activate && python3 -m pytest tests/test_app.py::test_notifier_no_print -v"
+    - criterion: "app/scheduler.py has no print() calls"
+      points: 15
+      check: "source .venv/bin/activate && python3 -m pytest tests/test_app.py::test_scheduler_no_print -v"
+    - criterion: "WARNING or ERROR log levels used appropriately"
+      points: 10
+      check: "source .venv/bin/activate && python3 -m pytest tests/test_app.py::test_logging_levels_used -v"
+    - criterion: "All functions still work correctly"
+      points: 15
+      check: "source .venv/bin/activate && python3 -m pytest tests/test_app.py::test_functions_still_work -v"
+
+constraints:
+  max_iterations: 20
+  timeout_seconds: 400

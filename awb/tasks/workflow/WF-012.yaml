@@ -1,0 +1,160 @@
+id: WF-012
+category: workflow
+title: "Diagnose intermittent wrong totals in POST /orders due to shared mutable state"
+difficulty: hard
+estimated_minutes: 40
+languages: [python]
+tags: [fastapi, debugging, shared-state, module-level, concurrency, red-herring]
+capabilities: [bug_diagnosis, code_comprehension]
+
+repo:
+  url: "https://github.com/tiangolo/fastapi"
+  commit: "628c34e0cae200564d191c95d7edea78c88c4b5e"
+  setup_commands:
+    - "python3 -m venv .venv && source .venv/bin/activate && pip install -e '.[all]' && pip install pytest httpx"
+    - |
+      rm -rf app tests
+      mkdir -p app tests
+      touch app/__init__.py
+    - |
+      cat > app/currency.py << 'PYEOF'
+      # Red herring 1: currency formatter — this is correct.
+
+      def format_currency(amount: float, symbol: str = "$") -> str:
+          """Format a float as a currency string."""
+          return f"{symbol}{amount:.2f}"
+      PYEOF
+    - |
+      cat > app/tax.py << 'PYEOF'
+      # Red herring 2: tax calculator — this is correct.
+
+      TAX_RATE = 0.08
+
+
+      def apply_tax(subtotal: float) -> float:
+          """Return subtotal plus tax."""
+          return round(subtotal * (1 + TAX_RATE), 2)
+      PYEOF
+    - |
+      cat > app/rounding.py << 'PYEOF'
+      # Red herring 3: rounding utility — this is correct.
+
+      def round_half_up(value: float, decimals: int = 2) -> float:
+          """Round value using half-up rule."""
+          import math
+          factor = 10 ** decimals
+          return math.floor(value * factor + 0.5) / factor
+      PYEOF
+    - |
+      cat > app/orders.py << 'PYEOF'
+      from fastapi import FastAPI
+      from app.tax import apply_tax
+      from app.rounding import round_half_up
+
+      app = FastAPI()
+
+      # BUG: this list is module-level and accumulates items across all requests.
+      # The second request sees items from the first request still in the list.
+      _current_items: list = []
+
+
+      @app.post("/orders")
+      def create_order(items: list[dict]) -> dict:
+          """Create an order and return its total."""
+          for item in items:
+              _current_items.append(item)
+
+          subtotal = sum(i["price"] * i["qty"] for i in _current_items)
+          total = apply_tax(round_half_up(subtotal))
+          return {"total": total, "item_count": len(_current_items)}
+      PYEOF
+    - |
+      cat > tests/test_orders.py << 'PYEOF'
+      import pytest
+      from fastapi.testclient import TestClient
+      from app.orders import app
+
+
+      client = TestClient(app)
+
+
+      def test_single_item_order():
+          response = client.post("/orders", json=[{"price": 10.0, "qty": 2}])
+          assert response.status_code == 200
+          data = response.json()
+          # 2 items at $10 each = $20 subtotal, 8% tax = $21.60
+          assert data["total"] == 21.60
+          assert data["item_count"] == 2
+
+
+      def test_second_order_is_independent():
+          # A fresh order for 1 item at $5 should not include items from prior requests
+          response = client.post("/orders", json=[{"price": 5.0, "qty": 1}])
+          assert response.status_code == 200
+          data = response.json()
+          # $5 subtotal, 8% tax = $5.40
+          assert data["total"] == 5.40
+          assert data["item_count"] == 1
+
+
+      def test_multi_item_order():
+          response = client.post("/orders", json=[
+              {"price": 100.0, "qty": 1},
+              {"price": 50.0, "qty": 2},
+          ])
+          assert response.status_code == 200
+          data = response.json()
+          # $200 subtotal, 8% tax = $216.00
+          assert data["total"] == 216.00
+          assert data["item_count"] == 3
+      PYEOF
+
+issue:
+  description: |
+    Multiple customers have reported that POST /orders sometimes returns the
+    wrong total — it looks like items from earlier orders are being included
+    in later orders. Run the tests to reproduce:
+
+        python3 -m pytest tests/test_orders.py -v
+
+    The app has these files:
+    - app/orders.py   — FastAPI app with the /orders endpoint
+    - app/tax.py      — tax calculator
+    - app/rounding.py — rounding utility
+    - app/currency.py — currency formatter
+
+    Diagnose the root cause. The bug is not in tax.py, rounding.py, or
+    currency.py — those are correct. Fix only the file containing the bug
+    so that each request processes only its own items.
+
+    All 3 tests must pass. Do not modify the tests.
+  files_to_examine:
+    - "app/orders.py"
+    - "app/tax.py"
+    - "app/rounding.py"
+    - "app/currency.py"
+    - "tests/test_orders.py"
+
+verification:
+  test_commands:
+    - "source .venv/bin/activate && python3 -m pytest tests/test_orders.py -v"
+  lint_commands:
+    - "source .venv/bin/activate && ruff check app/"
+  security_commands: []
+  partial_credit:
+    - criterion: "Root cause identified: fix is in app/orders.py (shared list)"
+      points: 25
+      check: "git diff app/orders.py | grep -q '^+'"
+    - criterion: "Fix uses request-scoped state: items list initialised inside the handler"
+      points: 25
+      check: "grep -qE 'items.*=.*\\[\\]' app/orders.py && ! grep -q '^_current_items.*=.*\\[\\]' app/orders.py"
+    - criterion: "Red herring modules not modified"
+      points: 25
+      check: "! git diff app/tax.py app/rounding.py app/currency.py | grep -q '^+'"
+    - criterion: "All 3 tests pass"
+      points: 25
+      check: "source .venv/bin/activate && python3 -m pytest tests/test_orders.py -v"
+
+constraints:
+  max_iterations: 20
+  timeout_seconds: 600

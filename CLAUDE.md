@@ -3,7 +3,7 @@
 ## Project Structure
 
 - `awb/` — Main package
-- `awb/tasks/` — Task YAML definitions (80 tasks across 8 categories)
+- `awb/tasks/` — Task YAML definitions (100 tasks across 8 categories)
 - `awb/scoring/` — Sigmoid normalization, composite scoring, capability profiles, stability metrics, statistics
 - `awb/analysis/` — Gap analysis engine, workflow improvement suggestions, difficulty/timeout calibrators
 - `awb/submission/` — External submission format and cross-submission comparison

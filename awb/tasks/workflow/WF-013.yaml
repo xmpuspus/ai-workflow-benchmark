@@ -1,0 +1,88 @@
+id: WF-013
+category: workflow
+title: "Fix a date formatting bug without adding unnecessary abstractions"
+difficulty: easy
+estimated_minutes: 10
+languages: [python]
+tags: [formatting, over-engineering, minimal-change, refactoring]
+capabilities: [convention_adherence, refactoring_discipline]
+
+repo:
+  url: "https://github.com/encode/httpx"
+  commit: "26d48e0634e6ee9cdc0533996db289ce4b430177"
+  setup_commands:
+    - "python3 -m venv .venv && source .venv/bin/activate && pip install pytest"
+    - |
+      rm -f tests/conftest.py
+      mkdir -p tests
+    - |
+      cat > formatter.py << 'PYEOF'
+      from datetime import date
+
+
+      def format_date(d: date) -> str:
+          """Return date formatted as YYYY-MM-DD."""
+          # BUG: uses American MM/DD/YYYY format instead of ISO YYYY-MM-DD
+          return d.strftime("%m/%d/%Y")
+
+
+      def format_greeting(name: str) -> str:
+          return f"Hello, {name}!"
+
+
+      def format_price(amount: float) -> str:
+          return f"${amount:.2f}"
+      PYEOF
+    - |
+      cat > tests/test_formatter.py << 'PYEOF'
+      from datetime import date
+      from formatter import format_date, format_greeting, format_price
+
+
+      def test_format_date_iso():
+          d = date(2024, 3, 15)
+          assert format_date(d) == "2024-03-15"
+
+
+      def test_format_greeting():
+          assert format_greeting("Alice") == "Hello, Alice!"
+
+
+      def test_format_price():
+          assert format_price(9.5) == "$9.50"
+      PYEOF
+
+issue:
+  description: |
+    The function format_date() in formatter.py returns the wrong format.
+    It currently returns MM/DD/YYYY but should return YYYY-MM-DD.
+
+    Fix the date formatting bug in format_date(). The function should return
+    YYYY-MM-DD format.
+
+    Do not modify any other functions. Do not add new files, helpers, or
+    abstractions. The fix is a single line change.
+  files_to_examine:
+    - "formatter.py"
+    - "tests/test_formatter.py"
+
+verification:
+  test_commands:
+    - "source .venv/bin/activate && python3 -m pytest tests/test_formatter.py -v"
+  lint_commands:
+    - "source .venv/bin/activate && ruff check formatter.py"
+  security_commands: []
+  partial_credit:
+    - criterion: "format_date returns YYYY-MM-DD format"
+      points: 40
+      check: "source .venv/bin/activate && python3 -c \"from datetime import date; from formatter import format_date; assert format_date(date(2024, 3, 15)) == '2024-03-15'\""
+    - criterion: "format_date body is still under 5 lines (no unnecessary abstractions added)"
+      points: 30
+      check: "python3 -c \"import ast, inspect; from formatter import format_date; src = inspect.getsource(format_date); lines = [l for l in src.splitlines() if l.strip() and not l.strip().startswith('def ') and not l.strip().startswith('#') and not l.strip().startswith('\"\"\"')]; assert len(lines) <= 4, f'Too many lines: {len(lines)}'\""
+    - criterion: "No new files created"
+      points: 30
+      check: "! git ls-files --others --exclude-standard | grep -qv 'tests/'"
+
+constraints:
+  max_iterations: 10
+  timeout_seconds: 180

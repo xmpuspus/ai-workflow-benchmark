@@ -1,0 +1,136 @@
+id: WF-027
+category: workflow
+title: "Write comprehensive tests for 6 untested utility functions"
+difficulty: hard
+estimated_minutes: 35
+languages: [python]
+tags: [testing, tdd, edge-cases, coverage]
+capabilities: [test_writing, code_comprehension]
+
+repo:
+  url: "https://github.com/encode/httpx"
+  commit: "26d48e0634e6ee9cdc0533996db289ce4b430177"
+  setup_commands:
+    - "python3 -m venv .venv && source .venv/bin/activate && pip install pytest"
+    - |
+      rm -f tests/conftest.py
+      mkdir -p tests
+    - |
+      cat > utils.py << 'PYEOF'
+      """Utility functions with no existing tests."""
+
+
+      def slugify(text):
+          """Convert text to a URL-friendly slug."""
+          import re
+          text = text.lower().strip()
+          text = re.sub(r"[^\w\s-]", "", text)
+          text = re.sub(r"[\s_]+", "-", text)
+          text = re.sub(r"-+", "-", text)
+          return text.strip("-")
+
+
+      def chunk(lst, size):
+          """Split a list into chunks of at most `size` elements."""
+          if size <= 0:
+              raise ValueError("chunk size must be positive")
+          return [lst[i : i + size] for i in range(0, len(lst), size)]
+
+
+      def deep_get(d, *keys, default=None):
+          """Traverse nested dicts safely; return default if any key is missing."""
+          cur = d
+          for key in keys:
+              if not isinstance(cur, dict):
+                  return default
+              cur = cur.get(key, default)
+              if cur is default:
+                  return default
+          return cur
+
+
+      def clamp(value, lo, hi):
+          """Constrain value to the closed interval [lo, hi]."""
+          if lo > hi:
+              raise ValueError("lo must be <= hi")
+          return max(lo, min(hi, value))
+
+
+      def flatten(nested, depth=1):
+          """Flatten a nested list up to `depth` levels."""
+          if depth == 0:
+              return list(nested)
+          result = []
+          for item in nested:
+              if isinstance(item, list):
+                  result.extend(flatten(item, depth - 1))
+              else:
+                  result.append(item)
+          return result
+
+
+      def truncate(text, max_len, suffix="..."):
+          """Truncate text to at most max_len characters, appending suffix if cut."""
+          if max_len < len(suffix):
+              raise ValueError("max_len must be >= len(suffix)")
+          if len(text) <= max_len:
+              return text
+          return text[: max_len - len(suffix)] + suffix
+      PYEOF
+
+issue:
+  description: |
+    utils.py contains 6 utility functions that have zero tests. Each
+    function has edge cases that need coverage.
+
+    Write comprehensive tests in tests/test_utils.py. Cover:
+    - Happy path (normal inputs)
+    - Edge cases (empty input, None where applicable, boundary values)
+    - Error conditions (invalid inputs that should raise exceptions)
+
+    Aim for at least 2 tests per function (12 total test functions).
+
+    Functions to test:
+    1. slugify(text)             — URL-friendly slug conversion
+    2. chunk(lst, size)          — split list into chunks
+    3. deep_get(d, *keys)        — safe nested dict access
+    4. clamp(value, lo, hi)      — constrain value to range
+    5. flatten(nested, depth=1)  — flatten nested list
+    6. truncate(text, max_len)   — truncate string with suffix
+
+    Do not modify utils.py.
+  files_to_examine:
+    - "utils.py"
+
+verification:
+  test_commands:
+    - "source .venv/bin/activate && python3 -m pytest tests/test_utils.py -v"
+  lint_commands:
+    - "source .venv/bin/activate && ruff check tests/test_utils.py"
+  security_commands: []
+  partial_credit:
+    - criterion: "slugify tests pass (at least 2 test functions)"
+      points: 15
+      check: "source .venv/bin/activate && python3 -m pytest tests/test_utils.py -k 'slugify' -v && python3 -m pytest tests/test_utils.py -k 'slugify' --collect-only -q 2>/dev/null | grep -c 'test_' | awk '{exit ($1 < 2)}'"
+    - criterion: "chunk tests pass (at least 2 test functions)"
+      points: 15
+      check: "source .venv/bin/activate && python3 -m pytest tests/test_utils.py -k 'chunk' -v && python3 -m pytest tests/test_utils.py -k 'chunk' --collect-only -q 2>/dev/null | grep -c 'test_' | awk '{exit ($1 < 2)}'"
+    - criterion: "deep_get tests pass (at least 2 test functions)"
+      points: 15
+      check: "source .venv/bin/activate && python3 -m pytest tests/test_utils.py -k 'deep_get' -v && python3 -m pytest tests/test_utils.py -k 'deep_get' --collect-only -q 2>/dev/null | grep -c 'test_' | awk '{exit ($1 < 2)}'"
+    - criterion: "clamp tests pass (at least 2 test functions)"
+      points: 15
+      check: "source .venv/bin/activate && python3 -m pytest tests/test_utils.py -k 'clamp' -v && python3 -m pytest tests/test_utils.py -k 'clamp' --collect-only -q 2>/dev/null | grep -c 'test_' | awk '{exit ($1 < 2)}'"
+    - criterion: "flatten tests pass (at least 2 test functions)"
+      points: 15
+      check: "source .venv/bin/activate && python3 -m pytest tests/test_utils.py -k 'flatten' -v && python3 -m pytest tests/test_utils.py -k 'flatten' --collect-only -q 2>/dev/null | grep -c 'test_' | awk '{exit ($1 < 2)}'"
+    - criterion: "truncate tests pass (at least 2 test functions)"
+      points: 15
+      check: "source .venv/bin/activate && python3 -m pytest tests/test_utils.py -k 'truncate' -v && python3 -m pytest tests/test_utils.py -k 'truncate' --collect-only -q 2>/dev/null | grep -c 'test_' | awk '{exit ($1 < 2)}'"
+    - criterion: "At least 12 total test functions collected"
+      points: 10
+      check: "source .venv/bin/activate && python3 -m pytest tests/test_utils.py --collect-only -q 2>/dev/null | grep -c 'test_' | awk '{exit ($1 < 12)}'"
+
+constraints:
+  max_iterations: 20
+  timeout_seconds: 400

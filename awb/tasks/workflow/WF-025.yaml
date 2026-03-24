@@ -1,0 +1,129 @@
+id: WF-025
+category: workflow
+title: "Implement a Calculator class so that all pre-written tests pass"
+difficulty: hard
+estimated_minutes: 35
+languages: [python]
+tags: [tdd, test-driven, implementation, context-discovery]
+capabilities: [context_discovery, test_writing]
+
+repo:
+  url: "https://github.com/encode/httpx"
+  commit: "26d48e0634e6ee9cdc0533996db289ce4b430177"
+  setup_commands:
+    - "python3 -m venv .venv && source .venv/bin/activate && pip install pytest"
+    - |
+      rm -f tests/conftest.py
+      mkdir -p tests
+    - |
+      cat > tests/test_calculator.py << 'PYEOF'
+      """Tests for Calculator class — implement calculator.py to make these pass."""
+
+      import pytest
+      from calculator import Calculator
+
+
+      @pytest.fixture
+      def calc():
+          return Calculator()
+
+
+      def test_add(calc):
+          assert calc.add(3, 4) == 7
+          assert calc.add(-1, 1) == 0
+          assert calc.add(0, 0) == 0
+
+
+      def test_subtract(calc):
+          assert calc.subtract(10, 4) == 6
+          assert calc.subtract(0, 5) == -5
+
+
+      def test_multiply(calc):
+          assert calc.multiply(3, 4) == 12
+          assert calc.multiply(-2, 5) == -10
+          assert calc.multiply(0, 100) == 0
+
+
+      def test_divide(calc):
+          assert calc.divide(10, 2) == 5.0
+          assert calc.divide(7, 2) == 3.5
+
+
+      def test_divide_by_zero(calc):
+          with pytest.raises(ValueError, match="Cannot divide by zero"):
+              calc.divide(5, 0)
+
+
+      def test_power(calc):
+          assert calc.power(2, 10) == 1024
+          assert calc.power(5, 0) == 1
+          assert calc.power(3, 3) == 27
+
+
+      def test_sqrt(calc):
+          assert calc.sqrt(9) == 3.0
+          assert calc.sqrt(2) == pytest.approx(1.4142, rel=1e-3)
+
+
+      def test_sqrt_negative(calc):
+          with pytest.raises(ValueError, match="Cannot take square root of negative number"):
+              calc.sqrt(-1)
+      PYEOF
+
+issue:
+  description: |
+    The file tests/test_calculator.py contains a complete test suite for a
+    Calculator class that does not exist yet.
+
+    Read the tests carefully — they define the exact expected behaviour.
+    Implement the Calculator class in calculator.py so that all 8 test
+    functions pass.
+
+    The class must implement these methods:
+    - add(a, b)        — return a + b
+    - subtract(a, b)   — return a - b
+    - multiply(a, b)   — return a * b
+    - divide(a, b)     — return a / b; raise ValueError("Cannot divide by zero") if b == 0
+    - power(base, exp) — return base ** exp
+    - sqrt(n)          — return square root of n; raise ValueError("Cannot take square root of negative number") if n < 0
+
+    Do not modify tests/test_calculator.py.
+  files_to_examine:
+    - "tests/test_calculator.py"
+
+verification:
+  test_commands:
+    - "source .venv/bin/activate && python3 -m pytest tests/test_calculator.py -v"
+  lint_commands:
+    - "source .venv/bin/activate && ruff check calculator.py"
+  security_commands: []
+  partial_credit:
+    - criterion: "calculator.py exists and Calculator class is defined"
+      points: 4
+      check: "python3 -c \"from calculator import Calculator; c = Calculator()\""
+    - criterion: "test_add passes"
+      points: 12
+      check: "source .venv/bin/activate && python3 -m pytest tests/test_calculator.py::test_add -v"
+    - criterion: "test_subtract passes"
+      points: 12
+      check: "source .venv/bin/activate && python3 -m pytest tests/test_calculator.py::test_subtract -v"
+    - criterion: "test_multiply passes"
+      points: 12
+      check: "source .venv/bin/activate && python3 -m pytest tests/test_calculator.py::test_multiply -v"
+    - criterion: "test_divide passes"
+      points: 12
+      check: "source .venv/bin/activate && python3 -m pytest tests/test_calculator.py::test_divide -v"
+    - criterion: "test_divide_by_zero passes (raises ValueError with correct message)"
+      points: 12
+      check: "source .venv/bin/activate && python3 -m pytest tests/test_calculator.py::test_divide_by_zero -v"
+    - criterion: "test_power passes"
+      points: 12
+      check: "source .venv/bin/activate && python3 -m pytest tests/test_calculator.py::test_power -v"
+    - criterion: "test_sqrt and test_sqrt_negative both pass"
+      points: 24
+      check: "source .venv/bin/activate && python3 -m pytest tests/test_calculator.py::test_sqrt tests/test_calculator.py::test_sqrt_negative -v"
+
+constraints:
+  max_iterations: 15
+  timeout_seconds: 300

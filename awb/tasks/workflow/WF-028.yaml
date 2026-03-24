@@ -1,0 +1,198 @@
+id: WF-028
+category: workflow
+title: "Refactor a deeply nested order processor while keeping all 10 tests green"
+difficulty: hard
+estimated_minutes: 40
+languages: [python]
+tags: [refactoring, complexity, regression, safe-refactoring]
+capabilities: [refactoring_discipline, test_writing]
+
+repo:
+  url: "https://github.com/encode/httpx"
+  commit: "26d48e0634e6ee9cdc0533996db289ce4b430177"
+  setup_commands:
+    - "python3 -m venv .venv && source .venv/bin/activate && pip install pytest"
+    - |
+      rm -f tests/conftest.py
+      mkdir -p tests
+    - |
+      cat > order_processor.py << 'PYEOF'
+      """Order processing module — needs refactoring."""
+
+
+      def process_order(order):
+          """Process an order dict and return a result dict."""
+          if order is None:
+              return {"status": "error", "message": "order cannot be None"}
+          if not isinstance(order, dict):
+              return {"status": "error", "message": "order must be a dict"}
+          if "items" not in order:
+              return {"status": "error", "message": "order missing items"}
+          if not order["items"]:
+              return {"status": "error", "message": "order has no items"}
+          if "customer" not in order:
+              return {"status": "error", "message": "order missing customer"}
+          if not order["customer"].get("name"):
+              return {"status": "error", "message": "customer name required"}
+          if not order["customer"].get("email"):
+              return {"status": "error", "message": "customer email required"}
+          total = 0
+          item_lines = []
+          for item in order["items"]:
+              if "price" not in item:
+                  return {"status": "error", "message": f"item missing price: {item}"}
+              if "qty" not in item:
+                  return {"status": "error", "message": f"item missing qty: {item}"}
+              if item["price"] < 0:
+                  return {"status": "error", "message": f"negative price: {item}"}
+              if item["qty"] <= 0:
+                  return {"status": "error", "message": f"non-positive qty: {item}"}
+              line_total = item["price"] * item["qty"]
+              total = total + line_total
+              item_lines.append({
+                  "name": item.get("name", "unnamed"),
+                  "price": item["price"],
+                  "qty": item["qty"],
+                  "line_total": line_total,
+              })
+          if "discount" in order:
+              discount = order["discount"]
+              if discount < 0 or discount > 100:
+                  return {"status": "error", "message": "discount must be 0-100"}
+              total = total * (1 - discount / 100)
+          tax_rate = order.get("tax_rate", 0.0)
+          if tax_rate < 0:
+              return {"status": "error", "message": "tax_rate cannot be negative"}
+          tax = total * tax_rate
+          total_with_tax = total + tax
+          return {
+              "status": "ok",
+              "customer": order["customer"]["name"],
+              "email": order["customer"]["email"],
+              "items": item_lines,
+              "subtotal": round(total, 2),
+              "tax": round(tax, 2),
+              "total": round(total_with_tax, 2),
+          }
+      PYEOF
+    - |
+      cat > tests/test_order_processor.py << 'PYEOF'
+      import pytest
+      from order_processor import process_order
+
+
+      VALID_ORDER = {
+          "customer": {"name": "Alice", "email": "alice@example.com"},
+          "items": [
+              {"name": "Widget", "price": 10.00, "qty": 2},
+              {"name": "Gadget", "price": 5.50, "qty": 1},
+          ],
+      }
+
+
+      def test_valid_order_returns_ok():
+          result = process_order(VALID_ORDER)
+          assert result["status"] == "ok"
+
+
+      def test_valid_order_total():
+          result = process_order(VALID_ORDER)
+          assert result["total"] == 25.5
+
+
+      def test_discount_applied():
+          order = {**VALID_ORDER, "discount": 10}
+          result = process_order(order)
+          assert result["status"] == "ok"
+          assert result["total"] == pytest.approx(22.95)
+
+
+      def test_tax_applied():
+          order = {**VALID_ORDER, "tax_rate": 0.1}
+          result = process_order(order)
+          assert result["status"] == "ok"
+          assert result["total"] == pytest.approx(28.05)
+
+
+      def test_none_order_returns_error():
+          result = process_order(None)
+          assert result["status"] == "error"
+
+
+      def test_missing_customer_returns_error():
+          order = {"items": [{"name": "X", "price": 1.0, "qty": 1}]}
+          result = process_order(order)
+          assert result["status"] == "error"
+
+
+      def test_empty_items_returns_error():
+          order = {"customer": {"name": "Bob", "email": "bob@example.com"}, "items": []}
+          result = process_order(order)
+          assert result["status"] == "error"
+
+
+      def test_negative_price_returns_error():
+          order = {
+              "customer": {"name": "Bob", "email": "bob@example.com"},
+              "items": [{"name": "X", "price": -1.0, "qty": 1}],
+          }
+          result = process_order(order)
+          assert result["status"] == "error"
+
+
+      def test_invalid_discount_returns_error():
+          order = {**VALID_ORDER, "discount": 150}
+          result = process_order(order)
+          assert result["status"] == "error"
+
+
+      def test_customer_name_in_result():
+          result = process_order(VALID_ORDER)
+          assert result["customer"] == "Alice"
+          assert result["email"] == "alice@example.com"
+      PYEOF
+
+issue:
+  description: |
+    order_processor.py contains process_order() — a working but deeply
+    nested function that is over 50 lines long with repetitive validation
+    logic and mixed concerns (validation, calculation, formatting).
+
+    Refactor process_order() to reduce complexity. Goals:
+    - No single function over 30 lines
+    - Extract repeated patterns into helper functions (e.g., validation,
+      line-total calculation)
+    - Reduce nesting depth
+
+    All 10 tests in tests/test_order_processor.py must continue to pass
+    after the refactor. Do not modify the tests.
+
+    The external behaviour (inputs, return values, error messages) must
+    remain identical — only the internal structure should change.
+  files_to_examine:
+    - "order_processor.py"
+    - "tests/test_order_processor.py"
+
+verification:
+  test_commands:
+    - "source .venv/bin/activate && python3 -m pytest tests/test_order_processor.py -v"
+  lint_commands:
+    - "source .venv/bin/activate && ruff check order_processor.py"
+  security_commands: []
+  partial_credit:
+    - criterion: "process_order() function body is 30 lines or fewer"
+      points: 20
+      check: "python3 -c \"\nimport ast, pathlib\ntree = ast.parse(pathlib.Path('order_processor.py').read_text())\nfor node in ast.walk(tree):\n    if isinstance(node, ast.FunctionDef) and node.name == 'process_order':\n        lines = node.end_lineno - node.lineno\n        assert lines <= 30, f'process_order is {lines} lines'\nprint('ok')\n\""
+    - criterion: "At least one helper function extracted from process_order()"
+      points: 20
+      check: "python3 -c \"\nimport ast, pathlib\ntree = ast.parse(pathlib.Path('order_processor.py').read_text())\nfuncs = [n.name for n in ast.walk(tree) if isinstance(n, ast.FunctionDef)]\nassert len(funcs) >= 2, f'only {len(funcs)} functions found'\nprint('ok')\n\""
+    - criterion: "All 10 existing tests still pass"
+      points: 40
+      check: "source .venv/bin/activate && python3 -m pytest tests/test_order_processor.py -v"
+    - criterion: "No new test failures introduced"
+      points: 20
+      check: "source .venv/bin/activate && python3 -m pytest tests/test_order_processor.py -v --tb=short 2>&1 | grep -q '10 passed'"
+
+constraints:
+  max_iterations: 20
+  timeout_seconds: 400

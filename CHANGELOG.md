@@ -3,12 +3,13 @@
 ## 0.5.0 (2026-03-24)
 
 ### Added
-- New **workflow** task category (10 tasks: WF-001 to WF-010) testing completeness tracking, convention discovery, security methodology, context utilization, and iterative test fixing
+- New **workflow** task category (30 tasks: WF-001 to WF-030) testing completeness tracking, convention discovery, security methodology, context utilization, async safety, dead code removal, config extraction, test-driven implementation, structured debugging, and more
 - `workspace_claude_md` field in task schema — injects project-level CLAUDE.md into workspaces for tasks that test context discovery
 - New capabilities: `completeness_tracking`, `convention_adherence`, `context_discovery`, `security_methodology`
+- Benchmark grows from 80 to 100 tasks — workflow category is 30% of total score
 
 ### Changed
-- Replaced 10 zero-signal tasks with 10 workflow-differentiation tasks (stays at 80 total)
+- Removed 10 zero-signal tasks that never passed or had extreme variance
 
 ### Removed
 - FA-003, FA-011, FA-012 (high variance or broken verification)

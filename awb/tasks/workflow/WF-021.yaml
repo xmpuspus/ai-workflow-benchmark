@@ -1,0 +1,147 @@
+id: WF-021
+category: workflow
+title: "Update 4 endpoints to use the project's standard response envelope"
+difficulty: easy
+estimated_minutes: 15
+languages: [python]
+tags: [fastapi, conventions, envelope, convention-adherence]
+capabilities: [convention_adherence]
+
+workspace_claude_md: |
+  # API Standards
+
+  All endpoints must return responses in envelope format:
+  ```json
+  {"data": <result>, "meta": {"count": <n>}}
+  ```
+  For single items, count is 1. For lists, count is the list length.
+
+repo:
+  url: "https://github.com/tiangolo/fastapi"
+  commit: "628c34e0cae200564d191c95d7edea78c88c4b5e"
+  setup_commands:
+    - "python3 -m venv .venv && source .venv/bin/activate && pip install -e '.[all]' && pip install pytest httpx"
+    - |
+      cat > api.py << 'PYEOF'
+      """API with 4 endpoints that need envelope wrapping."""
+
+      from fastapi import FastAPI
+
+      app = FastAPI()
+
+      _products = [
+          {"id": 1, "name": "Widget", "price": 9.99},
+          {"id": 2, "name": "Gadget", "price": 19.99},
+      ]
+      _orders = [
+          {"id": 1, "product_id": 1, "qty": 3},
+      ]
+
+
+      @app.get("/products")
+      def list_products():
+          return _products
+
+
+      @app.get("/products/{product_id}")
+      def get_product(product_id: int):
+          item = next((p for p in _products if p["id"] == product_id), None)
+          return item
+
+
+      @app.get("/orders")
+      def list_orders():
+          return _orders
+
+
+      @app.get("/orders/{order_id}")
+      def get_order(order_id: int):
+          order = next((o for o in _orders if o["id"] == order_id), None)
+          return order
+      PYEOF
+    - |
+      cat > tests/test_api.py << 'PYEOF'
+      import pytest
+      from fastapi.testclient import TestClient
+      from api import app
+
+      client = TestClient(app)
+
+
+      def test_list_products_envelope():
+          resp = client.get("/products")
+          assert resp.status_code == 200
+          body = resp.json()
+          assert "data" in body
+          assert "meta" in body
+          assert body["meta"]["count"] == 2
+
+
+      def test_get_product_envelope():
+          resp = client.get("/products/1")
+          assert resp.status_code == 200
+          body = resp.json()
+          assert "data" in body
+          assert "meta" in body
+          assert body["meta"]["count"] == 1
+
+
+      def test_list_orders_envelope():
+          resp = client.get("/orders")
+          assert resp.status_code == 200
+          body = resp.json()
+          assert "data" in body
+          assert "meta" in body
+          assert body["meta"]["count"] == 1
+
+
+      def test_get_order_envelope():
+          resp = client.get("/orders/1")
+          assert resp.status_code == 200
+          body = resp.json()
+          assert "data" in body
+          assert "meta" in body
+          assert body["meta"]["count"] == 1
+      PYEOF
+
+issue:
+  description: |
+    The project's CLAUDE.md documents a standard response envelope for all
+    endpoints:
+
+        {"data": <result>, "meta": {"count": <n>}}
+
+    For lists, count is the list length. For single items, count is 1.
+
+    The 4 endpoints in api.py currently return raw data with no envelope.
+    Update all 4 so they conform to the documented standard.
+
+    The tests in tests/test_api.py verify the envelope format on all 4
+    endpoints. Do not modify the tests.
+  files_to_examine:
+    - "api.py"
+    - "tests/test_api.py"
+
+verification:
+  test_commands:
+    - "source .venv/bin/activate && python3 -m pytest tests/test_api.py -v"
+  lint_commands:
+    - "source .venv/bin/activate && ruff check api.py"
+  security_commands: []
+  partial_credit:
+    - criterion: "GET /products returns {\"data\": [...], \"meta\": {\"count\": 2}}"
+      points: 25
+      check: "source .venv/bin/activate && python3 -m pytest tests/test_api.py::test_list_products_envelope -v"
+    - criterion: "GET /products/{id} returns {\"data\": {...}, \"meta\": {\"count\": 1}}"
+      points: 25
+      check: "source .venv/bin/activate && python3 -m pytest tests/test_api.py::test_get_product_envelope -v"
+    - criterion: "GET /orders returns {\"data\": [...], \"meta\": {\"count\": 1}}"
+      points: 25
+      check: "source .venv/bin/activate && python3 -m pytest tests/test_api.py::test_list_orders_envelope -v"
+    - criterion: "GET /orders/{id} returns {\"data\": {...}, \"meta\": {\"count\": 1}}"
+      points: 25
+      check: "source .venv/bin/activate && python3 -m pytest tests/test_api.py::test_get_order_envelope -v"
+
+constraints:
+  max_iterations: 10
+  timeout_seconds: 300

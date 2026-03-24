@@ -1,0 +1,208 @@
+id: WF-018
+category: workflow
+title: "Remove 8 dead functions from utils.py without breaking live functionality"
+difficulty: easy
+estimated_minutes: 20
+languages: [python]
+tags: [dead-code, refactoring, code-comprehension, cleanup]
+capabilities: [refactoring_discipline, code_comprehension]
+
+repo:
+  url: "https://github.com/encode/httpx"
+  commit: "26d48e0634e6ee9cdc0533996db289ce4b430177"
+  setup_commands:
+    - "python3 -m venv .venv && source .venv/bin/activate && pip install pytest"
+    - |
+      rm -f tests/conftest.py
+      mkdir -p tests
+    - |
+      cat > utils.py << 'PYEOF'
+      """Utility functions for the application."""
+
+
+      # --- LIVE: used by app.py ---
+
+      def slugify(text: str) -> str:
+          """Convert text to a URL-friendly slug."""
+          return text.lower().replace(" ", "-")
+
+
+      def truncate(text: str, max_len: int) -> str:
+          """Truncate text to max_len characters, appending ellipsis if cut."""
+          if len(text) <= max_len:
+              return text
+          return text[: max_len - 3] + "..."
+
+
+      def parse_int(value: str) -> int:
+          """Parse a string as an integer, raising ValueError on failure."""
+          return int(value)
+
+
+      def clamp(value: int, low: int, high: int) -> int:
+          """Clamp value to the range [low, high]."""
+          return max(low, min(high, value))
+
+
+      # --- DEAD: never imported or called anywhere ---
+
+      def old_format_date(d) -> str:
+          """Legacy date formatter replaced in v2."""
+          return d.strftime("%d-%m-%Y")
+
+
+      def deprecated_hash(s: str) -> int:
+          """Old hash function, replaced by hashlib."""
+          return sum(ord(c) for c in s)
+
+
+      def _unused_helper(x):
+          return x * 2
+
+
+      def build_legacy_url(host, path):
+          """Leftover from the old monolith."""
+          return f"http://{host}/{path}"
+
+
+      def compute_old_score(hits, misses):
+          """Pre-v3 scoring algorithm, never used."""
+          return hits / (hits + misses) if (hits + misses) > 0 else 0.0
+
+
+      def format_xml_tag(name, value):
+          """XML formatter from when the API used XML."""
+          return f"<{name}>{value}</{name}>"
+
+
+      def retry_legacy(fn, times=3):
+          """Old retry wrapper superseded by tenacity."""
+          for _ in range(times):
+              try:
+                  return fn()
+              except Exception:
+                  pass
+
+
+      def normalize_legacy_phone(phone: str) -> str:
+          """Phone normalizer from old CRM integration."""
+          return phone.replace("-", "").replace(" ", "").replace("(", "").replace(")", "")
+      PYEOF
+    - |
+      cat > app.py << 'PYEOF'
+      from utils import slugify, truncate, parse_int, clamp
+
+
+      def process(title: str, body: str, page: str, limit: str) -> dict:
+          return {
+              "slug": slugify(title),
+              "preview": truncate(body, 100),
+              "page": clamp(parse_int(page), 1, 100),
+              "limit": clamp(parse_int(limit), 1, 50),
+          }
+      PYEOF
+    - |
+      cat > tests/test_app.py << 'PYEOF'
+      import pytest
+      from app import process
+      from utils import slugify, truncate, parse_int, clamp
+
+
+      def test_slugify():
+          assert slugify("Hello World") == "hello-world"
+
+
+      def test_truncate_short():
+          assert truncate("hi", 10) == "hi"
+
+
+      def test_truncate_long():
+          assert truncate("abcdefghij", 7) == "abcd..."
+
+
+      def test_parse_int():
+          assert parse_int("42") == 42
+
+
+      def test_clamp():
+          assert clamp(5, 1, 10) == 5
+          assert clamp(0, 1, 10) == 1
+          assert clamp(15, 1, 10) == 10
+
+
+      def test_process():
+          result = process("My Title", "x" * 200, "3", "20")
+          assert result["slug"] == "my-title"
+          assert len(result["preview"]) <= 100
+          assert result["page"] == 3
+          assert result["limit"] == 20
+      PYEOF
+
+issue:
+  description: |
+    utils.py contains 12 functions. 4 are used by app.py; 8 are dead code
+    that were never cleaned up.
+
+    Remove all 8 dead functions from utils.py. Do not modify app.py or the
+    tests, and do not break any live functionality.
+
+    The 4 live functions (keep these):
+    - slugify
+    - truncate
+    - parse_int
+    - clamp
+
+    The 8 dead functions (remove these):
+    - old_format_date
+    - deprecated_hash
+    - _unused_helper
+    - build_legacy_url
+    - compute_old_score
+    - format_xml_tag
+    - retry_legacy
+    - normalize_legacy_phone
+
+    All 6 existing tests must still pass after cleanup.
+  files_to_examine:
+    - "utils.py"
+    - "app.py"
+    - "tests/test_app.py"
+
+verification:
+  test_commands:
+    - "source .venv/bin/activate && python3 -m pytest tests/test_app.py -v"
+  lint_commands:
+    - "source .venv/bin/activate && ruff check utils.py"
+  security_commands: []
+  partial_credit:
+    - criterion: "old_format_date removed"
+      points: 10
+      check: "! grep -q 'def old_format_date' utils.py"
+    - criterion: "deprecated_hash removed"
+      points: 10
+      check: "! grep -q 'def deprecated_hash' utils.py"
+    - criterion: "_unused_helper removed"
+      points: 10
+      check: "! grep -q 'def _unused_helper' utils.py"
+    - criterion: "build_legacy_url removed"
+      points: 10
+      check: "! grep -q 'def build_legacy_url' utils.py"
+    - criterion: "compute_old_score removed"
+      points: 10
+      check: "! grep -q 'def compute_old_score' utils.py"
+    - criterion: "format_xml_tag removed"
+      points: 10
+      check: "! grep -q 'def format_xml_tag' utils.py"
+    - criterion: "retry_legacy removed"
+      points: 10
+      check: "! grep -q 'def retry_legacy' utils.py"
+    - criterion: "normalize_legacy_phone removed"
+      points: 10
+      check: "! grep -q 'def normalize_legacy_phone' utils.py"
+    - criterion: "All 6 existing tests still pass"
+      points: 20
+      check: "source .venv/bin/activate && python3 -m pytest tests/test_app.py -v"
+
+constraints:
+  max_iterations: 15
+  timeout_seconds: 300

@@ -1,0 +1,125 @@
+id: WF-022
+category: workflow
+title: "Pin 4 unpinned dependencies in requirements.txt to exact versions"
+difficulty: easy
+estimated_minutes: 15
+languages: [python]
+tags: [security, dependencies, pinning, requirements]
+capabilities: [security_methodology]
+
+repo:
+  url: "https://github.com/encode/httpx"
+  commit: "26d48e0634e6ee9cdc0533996db289ce4b430177"
+  setup_commands:
+    - "python3 -m venv .venv && source .venv/bin/activate && pip install requests==2.31.0 flask==3.0.3 pydantic==2.7.1 pyyaml==6.0.1 pytest==8.1.1 click==8.1.7 httpx==0.27.0 certifi==2024.2.2"
+    - |
+      rm -f tests/conftest.py
+    - |
+      cat > requirements.txt << 'PYEOF'
+      # Pinned (good)
+      pytest==8.1.1
+      click==8.1.7
+      httpx==0.27.0
+      certifi==2024.2.2
+      # Unpinned (needs fixing)
+      requests>=2.0
+      flask
+      pydantic>=2
+      pyyaml
+      PYEOF
+    - |
+      cat > tests/test_requirements.py << 'PYEOF'
+      """Verify requirements.txt pins all dependencies to exact versions."""
+
+      import re
+      from pathlib import Path
+
+
+      def _parse_requirements():
+          lines = Path("requirements.txt").read_text().splitlines()
+          packages = []
+          for line in lines:
+              line = line.strip()
+              if not line or line.startswith("#"):
+                  continue
+              packages.append(line)
+          return packages
+
+
+      def test_no_unpinned_packages():
+          packages = _parse_requirements()
+          for pkg in packages:
+              assert "==" in pkg and ">=" not in pkg and "~=" not in pkg and "^" not in pkg, (
+                  f"Package not exactly pinned: {pkg}"
+              )
+
+
+      def test_requests_is_pinned():
+          text = Path("requirements.txt").read_text()
+          assert re.search(r"requests==\d+\.\d+\.\d+", text), "requests must be pinned with =="
+
+
+      def test_flask_is_pinned():
+          text = Path("requirements.txt").read_text()
+          assert re.search(r"[Ff]lask==\d+\.\d+\.\d+", text), "flask must be pinned with =="
+
+
+      def test_pydantic_is_pinned():
+          text = Path("requirements.txt").read_text()
+          assert re.search(r"pydantic==\d+\.\d+\.\d+", text), "pydantic must be pinned with =="
+
+
+      def test_pyyaml_is_pinned():
+          text = Path("requirements.txt").read_text()
+          assert re.search(r"[Pp][Yy][Yy][Aa][Mm][Ll]==\d+\.\d+\.\d+", text), (
+              "pyyaml must be pinned with =="
+          )
+      PYEOF
+
+issue:
+  description: |
+    requirements.txt contains 8 packages. Four are already pinned to exact
+    versions with ==. The other four use imprecise specifiers (>=) or no
+    version at all:
+
+        requests>=2.0
+        flask
+        pydantic>=2
+        pyyaml
+
+    Pin these 4 packages to exact versions. Check what is currently installed
+    in the virtual environment and pin to those versions.
+
+    The installed versions are:
+      requests  2.31.0
+      flask     3.0.3
+      pydantic  2.7.1
+      pyyaml    6.0.1
+
+    The already-pinned packages (pytest, click, httpx, certifi) must stay
+    unchanged.
+  files_to_examine:
+    - "requirements.txt"
+
+verification:
+  test_commands:
+    - "source .venv/bin/activate && python3 -m pytest tests/test_requirements.py -v"
+  lint_commands: []
+  security_commands: []
+  partial_credit:
+    - criterion: "requests pinned to exact version (requests==X.Y.Z)"
+      points: 25
+      check: "source .venv/bin/activate && python3 -m pytest tests/test_requirements.py::test_requests_is_pinned -v"
+    - criterion: "flask pinned to exact version (flask==X.Y.Z)"
+      points: 25
+      check: "source .venv/bin/activate && python3 -m pytest tests/test_requirements.py::test_flask_is_pinned -v"
+    - criterion: "pydantic pinned to exact version (pydantic==X.Y.Z)"
+      points: 25
+      check: "source .venv/bin/activate && python3 -m pytest tests/test_requirements.py::test_pydantic_is_pinned -v"
+    - criterion: "pyyaml pinned to exact version (pyyaml==X.Y.Z)"
+      points: 25
+      check: "source .venv/bin/activate && python3 -m pytest tests/test_requirements.py::test_pyyaml_is_pinned -v"
+
+constraints:
+  max_iterations: 10
+  timeout_seconds: 300

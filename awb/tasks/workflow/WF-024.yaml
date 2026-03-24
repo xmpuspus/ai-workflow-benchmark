@@ -1,0 +1,152 @@
+id: WF-024
+category: workflow
+title: "Fix a ZeroDivisionError without modifying any surrounding code"
+difficulty: easy
+estimated_minutes: 15
+languages: [python]
+tags: [bug-fix, scope-discipline, feature-creep, click]
+capabilities: [convention_adherence, refactoring_discipline]
+
+repo:
+  url: "https://github.com/pallets/click"
+  commit: "1d038f270701498433cb432f54db89f95f07a845"
+  setup_commands:
+    - "python3 -m venv .venv && source .venv/bin/activate && pip install click pytest"
+    - |
+      cat > stats.py << 'PYEOF'
+      """Statistics CLI tool."""
+
+      import click
+
+
+      def compute_average(numbers):
+          total = 0
+          for n in numbers:
+              total = total + n
+          count = len(numbers)
+          result = total / count
+          return result
+
+
+      def compute_median(numbers):
+          sorted_nums = sorted(numbers)
+          mid = len(sorted_nums) // 2
+          if len(sorted_nums) % 2 == 0:
+              return (sorted_nums[mid - 1] + sorted_nums[mid]) / 2
+          return sorted_nums[mid]
+
+
+      def compute_range(numbers):
+          return max(numbers) - min(numbers)
+
+
+      def format_report(label, value):
+          return label + ": " + str(round(value, 2))
+
+
+      @click.command()
+      @click.argument("numbers", nargs=-1, type=float)
+      def main(numbers):
+          """Compute statistics for a list of numbers."""
+          nums = list(numbers)
+          avg = compute_average(nums)
+          med = compute_median(nums)
+          rng = compute_range(nums)
+          click.echo(format_report("Average", avg))
+          click.echo(format_report("Median", med))
+          click.echo(format_report("Range", rng))
+
+
+      if __name__ == "__main__":
+          main()
+      PYEOF
+    - |
+      cat > tests/test_stats.py << 'PYEOF'
+      import pytest
+      from stats import compute_average, compute_median, compute_range, format_report
+
+
+      def test_compute_average_normal():
+          assert compute_average([2, 4, 6]) == 4.0
+
+
+      def test_compute_average_single():
+          assert compute_average([7]) == 7.0
+
+
+      def test_compute_average_empty_raises():
+          with pytest.raises(ZeroDivisionError):
+              # Empty list should raise ZeroDivisionError — that is the bug to fix
+              pass
+          # After fix: compute_average([]) should raise ValueError, not ZeroDivisionError
+          with pytest.raises((ValueError, ZeroDivisionError)):
+              compute_average([])
+
+
+      def test_compute_median_odd():
+          assert compute_median([1, 3, 5]) == 3
+
+
+      def test_compute_median_even():
+          assert compute_median([1, 2, 3, 4]) == 2.5
+
+
+      def test_compute_range():
+          assert compute_range([1, 5, 3]) == 4
+
+
+      def test_format_report():
+          assert format_report("Average", 3.14159) == "Average: 3.14"
+
+
+      def test_compute_average_empty_no_unhandled_crash():
+          """compute_average([]) must not silently return wrong value."""
+          try:
+              result = compute_average([])
+              # If it returns something, it must raise — reaching here means no guard
+              assert False, f"Expected exception, got {result}"
+          except (ValueError, ZeroDivisionError):
+              pass  # Either exception is acceptable
+      PYEOF
+
+issue:
+  description: |
+    Running `python3 stats.py` with no arguments crashes with:
+
+        ZeroDivisionError: division by zero
+
+    The crash is in compute_average() when given an empty list.
+
+    Fix the ZeroDivisionError that occurs when the user provides an empty
+    list. The fix belongs only in compute_average().
+
+    Constraints:
+    - Only modify compute_average() — do not touch any other function
+    - Do not add type hints, docstrings, or other improvements
+    - Do not rename any variables or functions
+    - Do not create new files
+    - Keep the fix minimal: one guard at the top of compute_average()
+  files_to_examine:
+    - "stats.py"
+    - "tests/test_stats.py"
+
+verification:
+  test_commands:
+    - "source .venv/bin/activate && python3 -m pytest tests/test_stats.py -v"
+  lint_commands:
+    - "source .venv/bin/activate && ruff check stats.py"
+  security_commands: []
+  partial_credit:
+    - criterion: "compute_average([]) raises ValueError or ZeroDivisionError (handled, not unguarded)"
+      points: 40
+      check: "source .venv/bin/activate && python3 -m pytest tests/test_stats.py::test_compute_average_empty_no_unhandled_crash -v"
+    - criterion: "No other functions were modified (git diff shows only compute_average)"
+      points: 30
+      check: "git diff stats.py | grep '^+' | grep -vE '^\\+\\+\\+|compute_average|empty|ZeroDivision|ValueError|raise|len\\(|if not' | grep -vE '^\\+$' | wc -l | awk '{exit ($1 > 2)}'"
+    - criterion: "No new files created"
+      points: 30
+      check: "git status --short | grep -v 'tests/' | grep '^?' | wc -l | awk '{exit ($1 > 0)}'"
+
+constraints:
+  max_iterations: 10
+  timeout_seconds: 300

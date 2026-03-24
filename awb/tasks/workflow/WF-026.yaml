@@ -1,0 +1,235 @@
+id: WF-026
+category: workflow
+title: "Extract 8 hardcoded config values into a central config.py module"
+difficulty: medium
+estimated_minutes: 30
+languages: [python]
+tags: [refactoring, config, hardcoded-values, code-quality]
+capabilities: [refactoring_discipline, code_comprehension]
+
+repo:
+  url: "https://github.com/encode/httpx"
+  commit: "26d48e0634e6ee9cdc0533996db289ce4b430177"
+  setup_commands:
+    - "python3 -m venv .venv && source .venv/bin/activate && pip install pytest"
+    - |
+      rm -f tests/conftest.py
+      mkdir -p app tests
+      touch app/__init__.py
+    - |
+      cat > app/database.py << 'PYEOF'
+      """Database connection module."""
+
+
+      def get_connection_string():
+          return "postgresql://localhost:5432/myapp"
+
+
+      def get_pool_size():
+          return 10
+      PYEOF
+    - |
+      cat > app/api_client.py << 'PYEOF'
+      """External API client."""
+
+      import time
+
+
+      def fetch(endpoint):
+          timeout = 30
+          max_retries = 3
+          # simulated fetch
+          return {"endpoint": endpoint, "timeout": timeout, "max_retries": max_retries}
+      PYEOF
+    - |
+      cat > app/pagination.py << 'PYEOF'
+      """Pagination utilities."""
+
+
+      def paginate(items, page):
+          page_size = 20
+          start = page * page_size
+          return items[start : start + page_size]
+      PYEOF
+    - |
+      cat > app/cache.py << 'PYEOF'
+      """Cache layer."""
+
+      _cache = {}
+
+
+      def get(key):
+          return _cache.get(key)
+
+
+      def set(key, value):
+          cache_ttl = 300
+          _cache[key] = {"value": value, "ttl": cache_ttl}
+      PYEOF
+    - |
+      cat > app/server.py << 'PYEOF'
+      """Server entrypoint."""
+
+      import logging
+
+
+      def start():
+          log_level = "INFO"
+          port = 8080
+          logging.basicConfig(level=log_level)
+          return {"log_level": log_level, "port": port}
+      PYEOF
+    - |
+      cat > tests/test_app.py << 'PYEOF'
+      """Verify all config values are centralised in config.py."""
+
+      import ast
+      import re
+      from pathlib import Path
+
+      import pytest
+
+
+      def _source(filename):
+          return Path(filename).read_text()
+
+
+      def test_config_module_exists():
+          assert Path("app/config.py").exists(), "app/config.py does not exist"
+
+
+      def test_config_has_database_url():
+          cfg = _source("app/config.py")
+          assert "postgresql" in cfg or "DATABASE_URL" in cfg or "DB_URL" in cfg
+
+
+      def test_config_has_timeout():
+          cfg = _source("app/config.py")
+          assert "30" in cfg or "TIMEOUT" in cfg or "timeout" in cfg.lower()
+
+
+      def test_config_has_max_retries():
+          cfg = _source("app/config.py")
+          assert "3" in cfg or "MAX_RETRIES" in cfg or "max_retries" in cfg.lower()
+
+
+      def test_config_has_page_size():
+          cfg = _source("app/config.py")
+          assert "20" in cfg or "PAGE_SIZE" in cfg or "page_size" in cfg.lower()
+
+
+      def test_config_has_cache_ttl():
+          cfg = _source("app/config.py")
+          assert "300" in cfg or "CACHE_TTL" in cfg or "cache_ttl" in cfg.lower()
+
+
+      def test_config_has_log_level():
+          cfg = _source("app/config.py")
+          assert "INFO" in cfg or "LOG_LEVEL" in cfg or "log_level" in cfg.lower()
+
+
+      def test_config_has_port():
+          cfg = _source("app/config.py")
+          assert "8080" in cfg or "PORT" in cfg or "port" in cfg.lower()
+
+
+      def test_app_files_import_from_config():
+          """At least 3 app files should reference config after extraction."""
+          files = [
+              "app/database.py", "app/api_client.py",
+              "app/pagination.py", "app/cache.py", "app/server.py",
+          ]
+          imports_config = sum(1 for f in files if "config" in _source(f))
+          assert imports_config >= 3, (
+              f"Expected at least 3 app files to reference config, got {imports_config}"
+          )
+
+
+      def test_functions_return_correct_values():
+          from app.database import get_connection_string, get_pool_size
+          from app.api_client import fetch
+          from app.pagination import paginate
+          from app.cache import get, set as cache_set
+          from app.server import start
+
+          assert "postgresql" in get_connection_string()
+          assert get_pool_size() == 10
+
+          result = fetch("/api/v1/items")
+          assert result["timeout"] == 30
+          assert result["max_retries"] == 3
+
+          items = list(range(50))
+          assert paginate(items, 0) == list(range(20))
+
+          cache_set("key", "val")
+          assert get("key") is not None
+
+          srv = start()
+          assert srv["port"] == 8080
+      PYEOF
+
+issue:
+  description: |
+    The app in app/ has 8 hardcoded configuration values scattered across
+    4 source files:
+
+    - app/database.py   — database URL ("postgresql://localhost:5432/myapp"), pool size (10)
+    - app/api_client.py — timeout (30), max_retries (3)
+    - app/pagination.py — page_size (20)
+    - app/cache.py      — cache_ttl (300)
+    - app/server.py     — log_level ("INFO"), port (8080)
+
+    Create app/config.py with named constants for all 8 values. Then update
+    each source file to import and use the constants from config.py instead
+    of the hardcoded literals.
+
+    The functions must continue to return the same values — do not change
+    any behaviour, only centralise the constants.
+
+    Do not modify tests/test_app.py.
+  files_to_examine:
+    - "app/database.py"
+    - "app/api_client.py"
+    - "app/pagination.py"
+    - "app/cache.py"
+    - "app/server.py"
+
+verification:
+  test_commands:
+    - "source .venv/bin/activate && python3 -m pytest tests/test_app.py -v"
+  lint_commands:
+    - "source .venv/bin/activate && ruff check app/"
+  security_commands: []
+  partial_credit:
+    - criterion: "app/config.py created with DATABASE_URL constant"
+      points: 10
+      check: "source .venv/bin/activate && python3 -m pytest tests/test_app.py::test_config_has_database_url -v"
+    - criterion: "app/config.py has timeout constant"
+      points: 10
+      check: "source .venv/bin/activate && python3 -m pytest tests/test_app.py::test_config_has_timeout -v"
+    - criterion: "app/config.py has max_retries constant"
+      points: 10
+      check: "source .venv/bin/activate && python3 -m pytest tests/test_app.py::test_config_has_max_retries -v"
+    - criterion: "app/config.py has page_size constant"
+      points: 10
+      check: "source .venv/bin/activate && python3 -m pytest tests/test_app.py::test_config_has_page_size -v"
+    - criterion: "app/config.py has cache_ttl constant"
+      points: 10
+      check: "source .venv/bin/activate && python3 -m pytest tests/test_app.py::test_config_has_cache_ttl -v"
+    - criterion: "app/config.py has log_level constant"
+      points: 10
+      check: "source .venv/bin/activate && python3 -m pytest tests/test_app.py::test_config_has_log_level -v"
+    - criterion: "app/config.py has port constant"
+      points: 10
+      check: "source .venv/bin/activate && python3 -m pytest tests/test_app.py::test_config_has_port -v"
+    - criterion: "At least 3 app files import from config"
+      points: 10
+      check: "source .venv/bin/activate && python3 -m pytest tests/test_app.py::test_app_files_import_from_config -v"
+    - criterion: "All functions return correct values after refactor"
+      points: 20
+      check: "source .venv/bin/activate && python3 -m pytest tests/test_app.py::test_functions_return_correct_values -v"
+
+constraints:
+  max_iterations: 20
+  timeout_seconds: 400

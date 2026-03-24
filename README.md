@@ -4,7 +4,7 @@
   <p>
     <a href="https://pypi.org/project/awb/"><img src="https://img.shields.io/pypi/v/awb" alt="PyPI"></a>
     <a href="https://github.com/xmpuspus/ai-workflow-benchmark/actions"><img src="https://img.shields.io/github/actions/workflow/status/xmpuspus/ai-workflow-benchmark/test.yml" alt="Tests"></a>
-    <img src="https://img.shields.io/badge/tasks-80-blue" alt="Tasks">
+    <img src="https://img.shields.io/badge/tasks-100-blue" alt="Tasks">
     <img src="https://img.shields.io/badge/python-3.11%2B-blue" alt="Python">
     <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-green" alt="License"></a>
   </p>
@@ -20,7 +20,7 @@
 
 SWE-bench tests models. AWB tests workflows. The same model running vanilla Claude Code vs. a purpose-built setup with a tuned CLAUDE.md, hooks, and structured agents produces meaningfully different results on real engineering tasks. No existing benchmark captures that gap — they all evaluate the model in isolation.
 
-AWB benchmarks the full stack: **tool + configuration + workflow + model**, together, on 80 tasks drawn from real open-source repositories.
+AWB benchmarks the full stack: **tool + configuration + workflow + model**, together, on 100 tasks drawn from real open-source repositories.
 
 ## Quick Start
 
@@ -28,7 +28,8 @@ AWB benchmarks the full stack: **tool + configuration + workflow + model**, toge
 pip install awb
 
 awb quickstart                              # verify your setup
-awb run --runs 3 --parallel --adaptive      # full benchmark (parallel, smart re-runs)
+awb run --runs 3 --parallel --adaptive      # full 100-task benchmark (parallel, smart re-runs)
+awb run --category workflow --runs 1        # workflow tasks only (quick test)
 awb gap results/runs/<run_dir>/             # analyze capability gaps
 ```
 
@@ -89,12 +90,12 @@ Real open-source repos, pinned to release tag SHAs. Setup runs in under 15 secon
 | debugging | 10 | 7 / 0 / 3 | Performance profiling, regression bisection, stack trace diagnosis |
 | multi-file | 7 | 4 / 0 / 3 | Merge conflicts, plugin systems, auth chains |
 | legacy-code | 12 | 9 / 0 / 3 | SQLAlchemy 2.0 migration, 20-file codebase navigation, dead code removal |
-| workflow | 10 | 3 / 4 / 3 | Completeness tracking, convention discovery, security methodology, context utilization |
+| workflow | 30 | 9 / 12 / 9 | Completeness tracking, convention discovery, security methodology, context utilization, async safety, config extraction, test-driven implementation |
 
 **Repos used:** FastAPI, httpx, Flask, Starlette, Click, Pydantic, SQLAlchemy 2.0, Hono
 
 **Task IDs:**
-`BF-001–014` · `FA-001–010` · `RF-001–012` · `CR-001–010` · `DB-001–011` · `MF-001–009` · `LC-001–012` · `WF-001–010`
+`BF-001–014` · `FA-001–010` · `RF-001–012` · `CR-001–010` · `DB-001–011` · `MF-001–009` · `LC-001–012` · `WF-001–030`
 
 ## Capability Profiles
 

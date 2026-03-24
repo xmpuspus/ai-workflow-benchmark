@@ -589,7 +589,7 @@ ai-workflow-benchmark/
 │       ├── debugging/            # 10 tasks (DB-001 to DB-011, gap at DB-004)
 │       ├── multi-file/           # 7 tasks (MF-001 to MF-009, gaps at MF-002, MF-008, MF-010)
 │       ├── legacy-code/          # 12 tasks (LC-001 to LC-012)
-│       └── workflow/             # 10 tasks (WF-001 to WF-010) — workflow differentiation
+│       └── workflow/             # 30 tasks (WF-001 to WF-030) — workflow differentiation
 ├── tests/                        # pytest suite (75 tests)
 ├── results/
 │   ├── schema.json               # Result JSON Schema

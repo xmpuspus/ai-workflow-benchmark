@@ -1,0 +1,150 @@
+id: WF-016
+category: workflow
+title: "Optimize a Dockerfile by fixing 5 best-practice violations"
+difficulty: medium
+estimated_minutes: 20
+languages: [docker]
+tags: [docker, devops, layer-cache, best-practices, optimization]
+capabilities: [convention_adherence, framework_knowledge]
+
+repo:
+  url: "https://github.com/pallets/flask"
+  commit: "49a6863ec5637a046dac5e94c3bcf93fb6a07d18"
+  setup_commands:
+    - "python3 -m venv .venv && source .venv/bin/activate && pip install pytest"
+    - |
+      mkdir -p tests
+    - |
+      cat > requirements.txt << 'PYEOF'
+      flask==3.0.3
+      gunicorn==22.0.0
+      PYEOF
+    - |
+      cat > app.py << 'PYEOF'
+      from flask import Flask
+      app = Flask(__name__)
+
+      @app.route("/health")
+      def health():
+          return {"status": "ok"}
+      PYEOF
+    - |
+      cat > Dockerfile << 'PYEOF'
+      # This Dockerfile has 5 best-practice violations. Fix all of them.
+
+      # MISTAKE 1: full Python image instead of slim variant
+      FROM python:3.12
+
+      WORKDIR /app
+
+      # MISTAKE 2: source code copied before requirements — breaks layer cache
+      COPY . .
+
+      # MISTAKE 3: pip install without --no-cache-dir — wastes image space
+      RUN pip install -r requirements.txt
+
+      # MISTAKE 4: no EXPOSE directive
+
+      # MISTAKE 5: CMD uses shell form instead of exec form
+      CMD python app.py
+      PYEOF
+    - |
+      cat > tests/test_dockerfile.py << 'PYEOF'
+      """Checks that the Dockerfile follows best practices."""
+      from pathlib import Path
+
+
+      def read_dockerfile():
+          return Path("Dockerfile").read_text()
+
+
+      def test_uses_slim_base_image():
+          df = read_dockerfile()
+          from_line = next(l for l in df.splitlines() if l.strip().upper().startswith("FROM"))
+          assert "slim" in from_line, f"Base image must use slim variant, got: {from_line}"
+          assert "python:3.12" in from_line or "python:3." in from_line
+
+
+      def test_requirements_copied_before_source():
+          df = read_dockerfile()
+          lines = [l.strip() for l in df.splitlines() if l.strip()]
+          copy_req_idx = next(
+              (i for i, l in enumerate(lines) if l.startswith("COPY") and "requirements" in l),
+              None,
+          )
+          copy_src_idx = next(
+              (i for i, l in enumerate(lines) if l.startswith("COPY") and "requirements" not in l),
+              None,
+          )
+          assert copy_req_idx is not None, "No COPY requirements.txt line found"
+          assert copy_src_idx is not None, "No COPY for source code found"
+          assert copy_req_idx < copy_src_idx, "requirements.txt must be copied before source code"
+
+
+      def test_pip_install_uses_no_cache_dir():
+          df = read_dockerfile()
+          pip_lines = [l for l in df.splitlines() if "pip install" in l]
+          assert pip_lines, "No pip install line found"
+          for line in pip_lines:
+              assert "--no-cache-dir" in line, f"pip install must use --no-cache-dir: {line}"
+
+
+      def test_expose_present():
+          df = read_dockerfile()
+          expose_lines = [l.strip() for l in df.splitlines() if l.strip().upper().startswith("EXPOSE")]
+          assert expose_lines, "Dockerfile must have an EXPOSE directive"
+
+
+      def test_cmd_uses_exec_form():
+          df = read_dockerfile()
+          cmd_lines = [l.strip() for l in df.splitlines() if l.strip().upper().startswith("CMD")]
+          assert cmd_lines, "No CMD directive found"
+          cmd_line = cmd_lines[-1]
+          assert cmd_line.startswith('CMD ["') or cmd_line.startswith("CMD ["), \
+              f"CMD must use exec form (JSON array), got: {cmd_line}"
+      PYEOF
+
+issue:
+  description: |
+    The Dockerfile contains 5 best-practice violations that increase image size,
+    break layer caching, and make the container harder to manage. Fix all 5.
+
+    Run `python3 -m pytest tests/test_dockerfile.py -v` to verify.
+
+    The 5 issues are:
+    1. Base image uses full python:3.12 instead of the slim variant
+    2. Source code (COPY . .) appears before requirements.txt is installed — breaks layer cache
+    3. pip install is missing --no-cache-dir — wastes image layers
+    4. No EXPOSE directive
+    5. CMD uses shell form (CMD python app.py) instead of exec form
+
+    Do not modify tests/test_dockerfile.py.
+  files_to_examine:
+    - "Dockerfile"
+    - "tests/test_dockerfile.py"
+
+verification:
+  test_commands:
+    - "source .venv/bin/activate && python3 -m pytest tests/test_dockerfile.py -v"
+  lint_commands: []
+  security_commands: []
+  partial_credit:
+    - criterion: "Fix 1: slim base image used"
+      points: 20
+      check: "source .venv/bin/activate && python3 -m pytest tests/test_dockerfile.py::test_uses_slim_base_image -v"
+    - criterion: "Fix 2: requirements.txt copied and installed before source code"
+      points: 20
+      check: "source .venv/bin/activate && python3 -m pytest tests/test_dockerfile.py::test_requirements_copied_before_source -v"
+    - criterion: "Fix 3: pip install uses --no-cache-dir"
+      points: 20
+      check: "source .venv/bin/activate && python3 -m pytest tests/test_dockerfile.py::test_pip_install_uses_no_cache_dir -v"
+    - criterion: "Fix 4: EXPOSE directive present"
+      points: 20
+      check: "source .venv/bin/activate && python3 -m pytest tests/test_dockerfile.py::test_expose_present -v"
+    - criterion: "Fix 5: CMD uses exec form (JSON array)"
+      points: 20
+      check: "source .venv/bin/activate && python3 -m pytest tests/test_dockerfile.py::test_cmd_uses_exec_form -v"
+
+constraints:
+  max_iterations: 15
+  timeout_seconds: 300

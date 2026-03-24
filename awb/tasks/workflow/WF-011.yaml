@@ -1,0 +1,186 @@
+id: WF-011
+category: workflow
+title: "Fix 6 failing tests caused by subtle Python gotchas"
+difficulty: medium
+estimated_minutes: 35
+languages: [python]
+tags: [python-gotchas, mutable-defaults, closures, type-safety, debugging]
+capabilities: [framework_knowledge, bug_diagnosis]
+
+repo:
+  url: "https://github.com/encode/httpx"
+  commit: "26d48e0634e6ee9cdc0533996db289ce4b430177"
+  setup_commands:
+    - "python3 -m venv .venv && source .venv/bin/activate && pip install pytest"
+    - |
+      rm -f tests/conftest.py
+      mkdir -p app tests
+    - |
+      cat > app/gotcha1.py << 'PYEOF'
+      # Gotcha: dict.get() with a value that is None vs a missing key.
+      # The caller can't distinguish "key present, value is None" from "key missing".
+
+      def get_user_role(user_config: dict) -> str:
+          """Return the user's role, defaulting to 'viewer' when not set."""
+          # BUG: .get("role", "viewer") returns "viewer" only when key is absent,
+          # but returns None when the key is present with value None.
+          role = user_config.get("role", "viewer")
+          return role.upper()
+      PYEOF
+    - |
+      cat > app/gotcha2.py << 'PYEOF'
+      # Gotcha: mutable default argument — the list is shared across all calls.
+
+      def append_item(item: str, collection: list = []) -> list:
+          """Append item to collection and return it."""
+          collection.append(item)
+          return collection
+      PYEOF
+    - |
+      cat > app/gotcha3.py << 'PYEOF'
+      # Gotcha: late-binding closure — loop variable is captured by reference.
+
+      def make_multipliers(n: int) -> list:
+          """Return a list of n functions where multipliers[i](x) == i * x."""
+          multipliers = []
+          for i in range(n):
+              multipliers.append(lambda x: i * x)
+          return multipliers
+      PYEOF
+    - |
+      cat > app/gotcha4.py << 'PYEOF'
+      # Gotcha: using `is` for value equality on strings (works by accident for
+      # interned literals but fails on dynamically constructed strings).
+
+      def is_status_active(status: str) -> bool:
+          """Return True if status equals 'active'."""
+          return status is "active"
+      PYEOF
+    - |
+      cat > app/gotcha5.py << 'PYEOF'
+      import struct
+
+      # Gotcha: struct.pack format 'h' is a signed 16-bit short (-32768..32767).
+      # Values outside that range raise struct.error, not silently overflow.
+
+      def pack_value(value: int) -> bytes:
+          """Pack value as a signed 16-bit integer."""
+          # BUG: 'h' is only 16-bit; values > 32767 raise struct.error.
+          # Should use 'i' (signed 32-bit) or 'l' to handle larger ints.
+          return struct.pack('h', value)
+      PYEOF
+    - |
+      cat > app/gotcha6.py << 'PYEOF'
+      # Gotcha: float comparison with == is unreliable due to representation error.
+
+      def is_total_correct(subtotal: float, tax: float, expected_total: float) -> bool:
+          """Return True if subtotal + tax equals expected_total."""
+          return subtotal + tax == expected_total
+      PYEOF
+    - |
+      cat > tests/test_gotchas.py << 'PYEOF'
+      import pytest
+      from app.gotcha1 import get_user_role
+      from app.gotcha2 import append_item
+      from app.gotcha3 import make_multipliers
+      from app.gotcha4 import is_status_active
+      from app.gotcha5 import pack_value
+      from app.gotcha6 import is_total_correct
+
+
+      def test_get_user_role_none_value():
+          # Key is present but value is None — should still default to 'viewer'
+          config = {"role": None, "email": "a@b.com"}
+          assert get_user_role(config) == "VIEWER"
+
+
+      def test_append_item_independent_calls():
+          # Each call with no explicit collection should start fresh
+          result1 = append_item("a")
+          result2 = append_item("b")
+          assert result1 == ["a"]
+          assert result2 == ["b"]
+
+
+      def test_make_multipliers_correct_values():
+          fns = make_multipliers(3)
+          assert fns[0](10) == 0
+          assert fns[1](10) == 10
+          assert fns[2](10) == 20
+
+
+      def test_is_status_active_dynamic_string():
+          # Dynamically constructed string — 'is' comparison would fail
+          status = "acti" + "ve"
+          assert is_status_active(status) is True
+
+
+      def test_pack_value_large_int():
+          # 40000 is out of range for signed 16-bit
+          result = pack_value(40000)
+          import struct
+          assert struct.unpack('i', result)[0] == 40000
+
+
+      def test_is_total_correct_float():
+          # 0.1 + 0.2 != 0.3 exactly in IEEE 754
+          assert is_total_correct(0.1, 0.2, 0.3) is True
+      PYEOF
+
+issue:
+  description: |
+    6 tests in tests/test_gotchas.py are all failing. Each test targets one
+    Python gotcha in a separate module under app/. Fix all 6 bugs.
+
+    Run `python3 -m pytest tests/test_gotchas.py -v` to see the failures.
+
+    The bugs are:
+    1. app/gotcha1.py — dict.get() returns None when key is present with None value
+    2. app/gotcha2.py — mutable default argument shared across all calls
+    3. app/gotcha3.py — late-binding closure captures loop variable by reference
+    4. app/gotcha4.py — `is` used instead of `==` for string comparison
+    5. app/gotcha5.py — struct.pack 'h' (16-bit) overflows for values > 32767
+    6. app/gotcha6.py — float == comparison fails for 0.1 + 0.2
+
+    Do not modify tests/test_gotchas.py.
+  files_to_examine:
+    - "app/gotcha1.py"
+    - "app/gotcha2.py"
+    - "app/gotcha3.py"
+    - "app/gotcha4.py"
+    - "app/gotcha5.py"
+    - "app/gotcha6.py"
+    - "tests/test_gotchas.py"
+
+verification:
+  test_commands:
+    - "source .venv/bin/activate && python3 -m pytest tests/test_gotchas.py -v"
+  lint_commands:
+    - "source .venv/bin/activate && ruff check app/"
+  security_commands: []
+  partial_credit:
+    - criterion: "Gotcha 1 fixed: get_user_role handles None value with 'or' pattern"
+      points: 15
+      check: "source .venv/bin/activate && python3 -m pytest tests/test_gotchas.py::test_get_user_role_none_value -v"
+    - criterion: "Gotcha 2 fixed: append_item uses None default and creates fresh list each call"
+      points: 15
+      check: "source .venv/bin/activate && python3 -m pytest tests/test_gotchas.py::test_append_item_independent_calls -v"
+    - criterion: "Gotcha 3 fixed: make_multipliers uses default argument to capture loop variable"
+      points: 15
+      check: "source .venv/bin/activate && python3 -m pytest tests/test_gotchas.py::test_make_multipliers_correct_values -v"
+    - criterion: "Gotcha 4 fixed: is_status_active uses == not is"
+      points: 15
+      check: "source .venv/bin/activate && python3 -m pytest tests/test_gotchas.py::test_is_status_active_dynamic_string -v"
+    - criterion: "Gotcha 5 fixed: pack_value uses 'i' (32-bit) format"
+      points: 15
+      check: "source .venv/bin/activate && python3 -m pytest tests/test_gotchas.py::test_pack_value_large_int -v"
+    - criterion: "Gotcha 6 fixed: is_total_correct uses math.isclose or abs difference"
+      points: 15
+      check: "source .venv/bin/activate && python3 -m pytest tests/test_gotchas.py::test_is_total_correct_float -v"
+    - criterion: "All 6 tests pass"
+      points: 10
+      check: "source .venv/bin/activate && python3 -m pytest tests/test_gotchas.py -v"
+
+constraints:
+  max_iterations: 20
+  timeout_seconds: 500

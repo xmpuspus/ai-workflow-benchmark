@@ -1,0 +1,186 @@
+id: WF-029
+category: workflow
+title: "Fix all unsafe yaml.load() calls to use yaml.safe_load() across 4 files"
+difficulty: easy
+estimated_minutes: 15
+languages: [python]
+tags: [security, yaml, safe-load, security-methodology]
+capabilities: [security_methodology]
+
+repo:
+  url: "https://github.com/encode/httpx"
+  commit: "26d48e0634e6ee9cdc0533996db289ce4b430177"
+  setup_commands:
+    - "python3 -m venv .venv && source .venv/bin/activate && pip install pyyaml pytest"
+    - |
+      rm -f tests/conftest.py
+      mkdir -p app tests
+      touch app/__init__.py
+    - |
+      cat > app/config_loader.py << 'PYEOF'
+      """Load application configuration from YAML."""
+
+      import yaml
+
+
+      def load_config(path):
+          with open(path) as f:
+              return yaml.load(f, Loader=yaml.FullLoader)
+
+
+      def load_config_string(text):
+          return yaml.load(text)
+      PYEOF
+    - |
+      cat > app/pipeline.py << 'PYEOF'
+      """Data pipeline definition loader."""
+
+      import yaml
+
+
+      def load_pipeline(path):
+          with open(path) as f:
+              data = yaml.load(f)
+          return data
+
+
+      def parse_steps(text):
+          return yaml.load(text, Loader=yaml.Loader)
+      PYEOF
+    - |
+      cat > app/schema_validator.py << 'PYEOF'
+      """Schema validation utilities."""
+
+      import yaml
+
+
+      def load_schema(path):
+          with open(path) as f:
+              return yaml.load(f)
+
+
+      def validate_against_schema(data_text, schema_text):
+          data = yaml.load(data_text, Loader=yaml.FullLoader)
+          schema = yaml.load(schema_text)
+          return True
+      PYEOF
+    - |
+      cat > app/template_engine.py << 'PYEOF'
+      """Template variable substitution."""
+
+      import yaml
+
+
+      def load_template_vars(path):
+          with open(path) as f:
+              return yaml.load(f, Loader=yaml.Loader)
+
+
+      def parse_vars(text):
+          return yaml.load(text)
+      PYEOF
+    - |
+      cat > tests/test_yaml_safety.py << 'PYEOF'
+      """Verify all YAML loading uses safe_load or SafeLoader."""
+
+      import ast
+      from pathlib import Path
+
+      import pytest
+
+      APP_FILES = [
+          "app/config_loader.py",
+          "app/pipeline.py",
+          "app/schema_validator.py",
+          "app/template_engine.py",
+      ]
+
+      UNSAFE_PATTERNS = [
+          "yaml.load(",
+          "Loader=yaml.FullLoader",
+          "Loader=yaml.Loader",
+          "Loader=yaml.UnsafeLoader",
+          "Loader=yaml.BaseLoader",
+      ]
+
+      SAFE_PATTERNS = ["yaml.safe_load", "Loader=yaml.SafeLoader"]
+
+
+      def _source(filepath):
+          return Path(filepath).read_text()
+
+
+      def _is_safe(source):
+          for unsafe in UNSAFE_PATTERNS:
+              if unsafe in source:
+                  return False
+          return True
+
+
+      def test_config_loader_is_safe():
+          src = _source("app/config_loader.py")
+          assert _is_safe(src), "app/config_loader.py still has unsafe yaml.load()"
+
+
+      def test_pipeline_is_safe():
+          src = _source("app/pipeline.py")
+          assert _is_safe(src), "app/pipeline.py still has unsafe yaml.load()"
+
+
+      def test_schema_validator_is_safe():
+          src = _source("app/schema_validator.py")
+          assert _is_safe(src), "app/schema_validator.py still has unsafe yaml.load()"
+
+
+      def test_template_engine_is_safe():
+          src = _source("app/template_engine.py")
+          assert _is_safe(src), "app/template_engine.py still has unsafe yaml.load()"
+      PYEOF
+
+issue:
+  description: |
+    The app in app/ has 4 files that use yaml.load() without SafeLoader,
+    which is a known security vulnerability (arbitrary code execution via
+    crafted YAML). Each file contains 2 unsafe calls:
+
+    - app/config_loader.py   — yaml.load() without SafeLoader, yaml.FullLoader
+    - app/pipeline.py        — yaml.load() without SafeLoader, yaml.Loader
+    - app/schema_validator.py — yaml.load() without SafeLoader (x2)
+    - app/template_engine.py — yaml.load() with yaml.Loader, yaml.load() bare
+
+    Replace every unsafe call with yaml.safe_load() (no Loader argument
+    needed) or yaml.load(data, Loader=yaml.SafeLoader).
+
+    yaml.FullLoader and yaml.Loader are NOT safe — replace those too.
+
+    Do not modify tests/test_yaml_safety.py.
+  files_to_examine:
+    - "app/config_loader.py"
+    - "app/pipeline.py"
+    - "app/schema_validator.py"
+    - "app/template_engine.py"
+    - "tests/test_yaml_safety.py"
+
+verification:
+  test_commands:
+    - "source .venv/bin/activate && python3 -m pytest tests/test_yaml_safety.py -v"
+  lint_commands:
+    - "source .venv/bin/activate && ruff check app/"
+  security_commands: []
+  partial_credit:
+    - criterion: "app/config_loader.py uses only safe YAML loading"
+      points: 25
+      check: "source .venv/bin/activate && python3 -m pytest tests/test_yaml_safety.py::test_config_loader_is_safe -v"
+    - criterion: "app/pipeline.py uses only safe YAML loading"
+      points: 25
+      check: "source .venv/bin/activate && python3 -m pytest tests/test_yaml_safety.py::test_pipeline_is_safe -v"
+    - criterion: "app/schema_validator.py uses only safe YAML loading"
+      points: 25
+      check: "source .venv/bin/activate && python3 -m pytest tests/test_yaml_safety.py::test_schema_validator_is_safe -v"
+    - criterion: "app/template_engine.py uses only safe YAML loading"
+      points: 25
+      check: "source .venv/bin/activate && python3 -m pytest tests/test_yaml_safety.py::test_template_engine_is_safe -v"
+
+constraints:
+  max_iterations: 10
+  timeout_seconds: 300

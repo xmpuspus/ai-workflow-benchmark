@@ -1,0 +1,239 @@
+id: WF-020
+category: workflow
+title: "Rename User.name to User.display_name across a 6-file application"
+difficulty: hard
+estimated_minutes: 40
+languages: [python]
+tags: [multi-file, refactoring, rename, impact-analysis, models]
+capabilities: [multi_file_reasoning, refactoring_discipline]
+
+repo:
+  url: "https://github.com/encode/httpx"
+  commit: "26d48e0634e6ee9cdc0533996db289ce4b430177"
+  setup_commands:
+    - "python3 -m venv .venv && source .venv/bin/activate && pip install pytest"
+    - |
+      rm -f tests/conftest.py
+      mkdir -p app tests
+      touch app/__init__.py
+    - |
+      cat > app/models.py << 'PYEOF'
+      from dataclasses import dataclass
+      from typing import Optional
+
+
+      @dataclass
+      class User:
+          id: int
+          name: str
+          email: str
+          role: Optional[str] = None
+      PYEOF
+    - |
+      cat > app/schemas.py << 'PYEOF'
+      from dataclasses import dataclass
+      from typing import Optional
+
+
+      @dataclass
+      class UserCreateRequest:
+          name: str
+          email: str
+          role: Optional[str] = None
+
+
+      @dataclass
+      class UserResponse:
+          id: int
+          name: str
+          email: str
+          role: Optional[str] = None
+      PYEOF
+    - |
+      cat > app/repositories.py << 'PYEOF'
+      from app.models import User
+
+      _store: dict[int, User] = {}
+      _next_id = 1
+
+
+      def create_user(name: str, email: str, role: str = None) -> User:
+          global _next_id
+          user = User(id=_next_id, name=name, email=email, role=role)
+          _store[_next_id] = user
+          _next_id += 1
+          return user
+
+
+      def get_user(user_id: int) -> User:
+          return _store.get(user_id)
+
+
+      def list_users() -> list[User]:
+          return list(_store.values())
+      PYEOF
+    - |
+      cat > app/services.py << 'PYEOF'
+      from app.repositories import create_user, get_user, list_users
+      from app.schemas import UserCreateRequest, UserResponse
+
+
+      def register_user(req: UserCreateRequest) -> UserResponse:
+          user = create_user(name=req.name, email=req.email, role=req.role)
+          return UserResponse(id=user.id, name=user.name, email=user.email, role=user.role)
+
+
+      def get_user_profile(user_id: int) -> UserResponse:
+          user = get_user(user_id)
+          if user is None:
+              raise ValueError(f"User {user_id} not found")
+          return UserResponse(id=user.id, name=user.name, email=user.email, role=user.role)
+
+
+      def list_all_users() -> list[UserResponse]:
+          return [
+              UserResponse(id=u.id, name=u.name, email=u.email, role=u.role)
+              for u in list_users()
+          ]
+      PYEOF
+    - |
+      cat > app/routes.py << 'PYEOF'
+      from app.schemas import UserCreateRequest, UserResponse
+      from app.services import register_user, get_user_profile, list_all_users
+
+
+      def handle_create(payload: dict) -> dict:
+          req = UserCreateRequest(
+              name=payload["name"],
+              email=payload["email"],
+              role=payload.get("role"),
+          )
+          resp: UserResponse = register_user(req)
+          return {"id": resp.id, "name": resp.name, "email": resp.email}
+
+
+      def handle_get(user_id: int) -> dict:
+          resp: UserResponse = get_user_profile(user_id)
+          return {"id": resp.id, "name": resp.name, "email": resp.email}
+
+
+      def handle_list() -> list[dict]:
+          return [{"id": r.id, "name": r.name, "email": r.email} for r in list_all_users()]
+      PYEOF
+    - |
+      cat > tests/test_app.py << 'PYEOF'
+      import pytest
+      from app.models import User
+      from app.schemas import UserCreateRequest, UserResponse
+      from app.repositories import create_user, get_user
+      from app.services import register_user, get_user_profile, list_all_users
+      from app.routes import handle_create, handle_get, handle_list
+
+
+      def setup_function():
+          import app.repositories as repo
+          repo._store.clear()
+          repo._next_id = 1
+
+
+      def test_user_model_has_display_name():
+          u = User(id=1, display_name="Alice", email="a@example.com")
+          assert u.display_name == "Alice"
+
+
+      def test_user_create_request_has_display_name():
+          req = UserCreateRequest(display_name="Bob", email="b@example.com")
+          assert req.display_name == "Bob"
+
+
+      def test_user_response_has_display_name():
+          resp = UserResponse(id=1, display_name="Carol", email="c@example.com")
+          assert resp.display_name == "Carol"
+
+
+      def test_create_user_uses_display_name():
+          user = create_user(display_name="Dave", email="d@example.com")
+          assert user.display_name == "Dave"
+
+
+      def test_register_user_returns_display_name():
+          req = UserCreateRequest(display_name="Eve", email="e@example.com")
+          resp = register_user(req)
+          assert resp.display_name == "Eve"
+
+
+      def test_get_user_profile_returns_display_name():
+          req = UserCreateRequest(display_name="Frank", email="f@example.com")
+          register_user(req)
+          profile = get_user_profile(1)
+          assert profile.display_name == "Frank"
+
+
+      def test_routes_handle_create():
+          result = handle_create({"display_name": "Grace", "email": "g@example.com"})
+          assert result["display_name"] == "Grace"
+
+
+      def test_routes_handle_get():
+          handle_create({"display_name": "Heidi", "email": "h@example.com"})
+          result = handle_get(1)
+          assert result["display_name"] == "Heidi"
+
+
+      def test_routes_handle_list():
+          handle_create({"display_name": "Ivan", "email": "i@example.com"})
+          results = handle_list()
+          assert results[0]["display_name"] == "Ivan"
+      PYEOF
+
+issue:
+  description: |
+    The User model has a field called `name`. It must be renamed to
+    `display_name` across the entire codebase.
+
+    The rename touches all 6 files:
+    - app/models.py      — User dataclass field
+    - app/schemas.py     — UserCreateRequest and UserResponse fields
+    - app/repositories.py — create_user() parameter and User constructor call
+    - app/services.py    — all references to user.name, req.name, UserResponse(name=...)
+    - app/routes.py      — payload["name"], resp.name, dict keys
+    - tests/test_app.py  — already updated to expect display_name (do not change)
+
+    After the rename, all 9 tests must pass. Do not modify tests/test_app.py.
+  files_to_examine:
+    - "app/models.py"
+    - "app/schemas.py"
+    - "app/repositories.py"
+    - "app/services.py"
+    - "app/routes.py"
+    - "tests/test_app.py"
+
+verification:
+  test_commands:
+    - "source .venv/bin/activate && python3 -m pytest tests/test_app.py -v"
+  lint_commands:
+    - "source .venv/bin/activate && ruff check app/"
+  security_commands: []
+  partial_credit:
+    - criterion: "app/models.py updated: User.name renamed to display_name"
+      points: 15
+      check: "grep -q 'display_name' app/models.py && ! grep -qE '\\bname:\\s*str' app/models.py"
+    - criterion: "app/schemas.py updated: both UserCreateRequest and UserResponse use display_name"
+      points: 15
+      check: "grep -c 'display_name' app/schemas.py | grep -qE '[2-9]|[1-9][0-9]'"
+    - criterion: "app/repositories.py updated: create_user uses display_name parameter"
+      points: 15
+      check: "grep -q 'display_name' app/repositories.py && ! grep -qE 'def create_user\\(.*\\bname\\b' app/repositories.py"
+    - criterion: "app/services.py updated: all name references replaced"
+      points: 15
+      check: "grep -q 'display_name' app/services.py && ! grep -qE '\\buser\\.name\\b|\\breq\\.name\\b|\\bname=user\\.' app/services.py"
+    - criterion: "app/routes.py updated: payload key and dict output use display_name"
+      points: 15
+      check: "grep -q 'display_name' app/routes.py && ! grep -qE '\\[.name.\\]|\\bresp\\.name\\b' app/routes.py"
+    - criterion: "All 9 tests pass"
+      points: 25
+      check: "source .venv/bin/activate && python3 -m pytest tests/test_app.py -v"
+
+constraints:
+  max_iterations: 20
+  timeout_seconds: 600

@@ -1,0 +1,181 @@
+id: WF-017
+category: workflow
+title: "Add Pydantic server-side validation to 5 unvalidated FastAPI endpoints"
+difficulty: medium
+estimated_minutes: 30
+languages: [python]
+tags: [fastapi, pydantic, validation, security, input-validation]
+capabilities: [security_methodology, framework_knowledge]
+
+repo:
+  url: "https://github.com/tiangolo/fastapi"
+  commit: "628c34e0cae200564d191c95d7edea78c88c4b5e"
+  setup_commands:
+    - "python3 -m venv .venv && source .venv/bin/activate && pip install -e '.[all]' && pip install pytest httpx 'pydantic>=2.0' email-validator"
+    - |
+      rm -rf app tests
+      mkdir -p app tests
+      touch app/__init__.py
+    - |
+      cat > app/main.py << 'PYEOF'
+      from fastapi import FastAPI
+
+      app = FastAPI()
+
+
+      # ENDPOINT 1: email field — no format validation
+      @app.post("/register")
+      def register(data: dict):
+          email = data.get("email", "")
+          return {"registered": email}
+
+
+      # ENDPOINT 2: age field — no range check (negative or >150 allowed)
+      @app.post("/profile")
+      def update_profile(data: dict):
+          age = data.get("age", 0)
+          return {"age": age}
+
+
+      # ENDPOINT 3: quantity field — negative values allowed
+      @app.post("/cart")
+      def add_to_cart(data: dict):
+          quantity = data.get("quantity", 1)
+          return {"quantity": quantity}
+
+
+      # ENDPOINT 4: URL field — no scheme validation (http/https required)
+      @app.post("/webhook")
+      def set_webhook(data: dict):
+          url = data.get("url", "")
+          return {"webhook": url}
+
+
+      # ENDPOINT 5: date field — no format validation
+      @app.post("/schedule")
+      def schedule_event(data: dict):
+          date = data.get("date", "")
+          return {"date": date}
+      PYEOF
+    - |
+      cat > tests/test_validation.py << 'PYEOF'
+      import pytest
+      from fastapi.testclient import TestClient
+      from app.main import app
+
+
+      client = TestClient(app)
+
+
+      # Endpoint 1: email validation
+      def test_register_valid_email():
+          r = client.post("/register", json={"email": "user@example.com"})
+          assert r.status_code == 200
+
+      def test_register_invalid_email_rejected():
+          r = client.post("/register", json={"email": "not-an-email"})
+          assert r.status_code == 422
+
+
+      # Endpoint 2: age validation
+      def test_profile_valid_age():
+          r = client.post("/profile", json={"age": 25})
+          assert r.status_code == 200
+
+      def test_profile_negative_age_rejected():
+          r = client.post("/profile", json={"age": -1})
+          assert r.status_code == 422
+
+      def test_profile_age_over_150_rejected():
+          r = client.post("/profile", json={"age": 200})
+          assert r.status_code == 422
+
+
+      # Endpoint 3: quantity validation
+      def test_cart_valid_quantity():
+          r = client.post("/cart", json={"quantity": 3})
+          assert r.status_code == 200
+
+      def test_cart_negative_quantity_rejected():
+          r = client.post("/cart", json={"quantity": -5})
+          assert r.status_code == 422
+
+      def test_cart_zero_quantity_rejected():
+          r = client.post("/cart", json={"quantity": 0})
+          assert r.status_code == 422
+
+
+      # Endpoint 4: URL validation
+      def test_webhook_valid_https_url():
+          r = client.post("/webhook", json={"url": "https://example.com/hook"})
+          assert r.status_code == 200
+
+      def test_webhook_no_scheme_rejected():
+          r = client.post("/webhook", json={"url": "example.com/hook"})
+          assert r.status_code == 422
+
+      def test_webhook_ftp_scheme_rejected():
+          r = client.post("/webhook", json={"url": "ftp://example.com/hook"})
+          assert r.status_code == 422
+
+
+      # Endpoint 5: date validation
+      def test_schedule_valid_date():
+          r = client.post("/schedule", json={"date": "2024-03-15"})
+          assert r.status_code == 200
+
+      def test_schedule_invalid_date_format_rejected():
+          r = client.post("/schedule", json={"date": "15/03/2024"})
+          assert r.status_code == 422
+
+      def test_schedule_gibberish_date_rejected():
+          r = client.post("/schedule", json={"date": "not-a-date"})
+          assert r.status_code == 422
+      PYEOF
+
+issue:
+  description: |
+    The FastAPI app in app/main.py has 5 endpoints that accept user input as
+    raw dicts with no validation. All invalid inputs are currently accepted.
+
+    Add server-side Pydantic input validation to all 5 endpoints:
+    1. POST /register  — email field must be a valid email address
+    2. POST /profile   — age field must be an integer between 0 and 150 (inclusive)
+    3. POST /cart      — quantity must be a positive integer (>= 1)
+    4. POST /webhook   — url must start with http:// or https://
+    5. POST /schedule  — date must be in YYYY-MM-DD format
+
+    Use Pydantic request body models (not query params). Invalid input should
+    return HTTP 422. Do not modify tests/test_validation.py.
+
+    All 15 tests must pass.
+  files_to_examine:
+    - "app/main.py"
+    - "tests/test_validation.py"
+
+verification:
+  test_commands:
+    - "source .venv/bin/activate && python3 -m pytest tests/test_validation.py -v"
+  lint_commands:
+    - "source .venv/bin/activate && ruff check app/"
+  security_commands: []
+  partial_credit:
+    - criterion: "Endpoint 1 validated: email format enforced (2/2 tests pass)"
+      points: 20
+      check: "source .venv/bin/activate && python3 -m pytest tests/test_validation.py::test_register_valid_email tests/test_validation.py::test_register_invalid_email_rejected -v"
+    - criterion: "Endpoint 2 validated: age range enforced (3/3 tests pass)"
+      points: 20
+      check: "source .venv/bin/activate && python3 -m pytest tests/test_validation.py::test_profile_valid_age tests/test_validation.py::test_profile_negative_age_rejected tests/test_validation.py::test_profile_age_over_150_rejected -v"
+    - criterion: "Endpoint 3 validated: quantity >= 1 enforced (3/3 tests pass)"
+      points: 20
+      check: "source .venv/bin/activate && python3 -m pytest tests/test_validation.py::test_cart_valid_quantity tests/test_validation.py::test_cart_negative_quantity_rejected tests/test_validation.py::test_cart_zero_quantity_rejected -v"
+    - criterion: "Endpoint 4 validated: URL scheme enforced (3/3 tests pass)"
+      points: 20
+      check: "source .venv/bin/activate && python3 -m pytest tests/test_validation.py::test_webhook_valid_https_url tests/test_validation.py::test_webhook_no_scheme_rejected tests/test_validation.py::test_webhook_ftp_scheme_rejected -v"
+    - criterion: "Endpoint 5 validated: date format enforced (3/3 tests pass)"
+      points: 20
+      check: "source .venv/bin/activate && python3 -m pytest tests/test_validation.py::test_schedule_valid_date tests/test_validation.py::test_schedule_invalid_date_format_rejected tests/test_validation.py::test_schedule_gibberish_date_rejected -v"
+
+constraints:
+  max_iterations: 20
+  timeout_seconds: 600
