@@ -20,21 +20,28 @@ class ClaudeCodeVanillaAdapter(ToolAdapter):
     display_name = "Claude Code (Vanilla)"
 
     @staticmethod
-    def _clean_env(env: dict[str, str]) -> dict[str, str]:
-        """Remove vars that block nested Claude Code sessions."""
+    def _clean_env(env: dict[str, str], keep: set[str] | None = None) -> dict[str, str]:
+        """Remove inherited CLAUDE* vars that block nested sessions.
+
+        Args:
+            env: Environment dict to clean.
+            keep: Set of CLAUDE* keys to preserve (e.g., ones we just set).
+        """
+        keep = keep or set()
         for key in list(env):
-            if key.startswith("CLAUDE"):
+            if key.startswith("CLAUDE") and key not in keep:
                 env.pop(key)
         return env
 
     def _get_env(self) -> dict[str, str]:
         """Build environment dict. Override in subclasses to change config."""
         _VANILLA_CONFIG_DIR.mkdir(parents=True, exist_ok=True)
-        return self._clean_env({
+        env = {
             **os.environ,
             "CLAUDE_CONFIG_DIR": str(_VANILLA_CONFIG_DIR),
             "CLAUDE_SKIP_HOOKS": "1",
-        })
+        }
+        return self._clean_env(env, keep={"CLAUDE_CONFIG_DIR", "CLAUDE_SKIP_HOOKS"})
 
     async def execute(
         self,
