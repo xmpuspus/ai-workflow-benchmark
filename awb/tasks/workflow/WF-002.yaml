@@ -1,24 +1,27 @@
 id: WF-002
 category: workflow
-title: "Audit and fix 6 OWASP security issues in a Flask application"
+title: "Audit and fix 6 OWASP security issues in a FastAPI application"
 difficulty: medium
 estimated_minutes: 40
 languages: [python]
-tags: [flask, security, owasp, sql-injection, yaml, eval, open-redirect]
+tags: [fastapi, security, owasp, sql-injection, yaml, eval, open-redirect]
 capabilities: [security_methodology]
 
 repo:
-  url: "https://github.com/pallets/flask"
-  commit: "49a6863ec5637a046dac5e94c3bcf93fb6a07d18"
+  url: "https://github.com/tiangolo/fastapi"
+  commit: "628c34e0cae200564d191c95d7edea78c88c4b5e"
   setup_commands:
-    - "python3 -m venv .venv && source .venv/bin/activate && pip install flask pyyaml pytest"
+    - "python3 -m venv .venv && source .venv/bin/activate && pip install -e '.[all]' && pip install pyyaml pytest httpx aiosqlite"
+    - "mkdir -p tests"
     - |
       cat > app.py << 'PYEOF'
       import yaml
       import sqlite3
-      from flask import Flask, request, redirect
+      import os
+      from fastapi import FastAPI, Request
+      from fastapi.responses import RedirectResponse, JSONResponse
 
-      app = Flask(__name__)
+      app = FastAPI()
 
       # SECURITY ISSUE 4: hardcoded API key
       EXTERNAL_API_KEY = "sk-prod-abc123secretkey9999"
@@ -34,109 +37,96 @@ repo:
           return conn
 
 
-      @app.route("/user")
-      def get_user():
+      @app.get("/user")
+      def get_user(request: Request):
           # SECURITY ISSUE 1: SQL injection via string format
-          user_id = request.args.get("id", "1")
+          user_id = request.query_params.get("id", "1")
           conn = get_db()
           query = "SELECT * FROM users WHERE id = %s" % user_id
           result = conn.execute(query).fetchall()
           return {"users": result}
 
 
-      @app.route("/config", methods=["POST"])
-      def load_config():
+      @app.post("/config")
+      async def load_config(request: Request):
           # SECURITY ISSUE 2: yaml.load without SafeLoader
-          raw = request.data.decode()
+          raw = (await request.body()).decode()
           config = yaml.load(raw)
           return {"loaded": list(config.keys()) if config else []}
 
 
-      @app.route("/calc")
-      def calculate():
+      @app.get("/calc")
+      def calculate(request: Request):
           # SECURITY ISSUE 3: eval() on user input
-          expr = request.args.get("expr", "1+1")
+          expr = request.query_params.get("expr", "1+1")
           result = eval(expr)
           return {"result": result}
 
 
-      @app.route("/subscribe", methods=["POST"])
-      def subscribe():
+      @app.post("/subscribe")
+      async def subscribe(request: Request):
           # SECURITY ISSUE 5: no input validation on email field
-          email = request.form.get("email")
+          form = await request.form()
+          email = form.get("email")
           conn = get_db()
           conn.execute("INSERT INTO users (email) VALUES (?)", (email,))
           conn.commit()
           return {"subscribed": email}
 
 
-      @app.route("/goto")
-      def goto():
+      @app.get("/goto")
+      def goto(request: Request):
           # SECURITY ISSUE 6: open redirect
-          url = request.args.get("url", "/")
-          return redirect(url)
-
-
-      if __name__ == "__main__":
-          app.run()
+          url = request.query_params.get("url", "/")
+          return RedirectResponse(url=url)
       PYEOF
     - |
       cat > tests/test_app.py << 'PYEOF'
       import pytest
+      from fastapi.testclient import TestClient
       from app import app
 
 
-      @pytest.fixture
-      def client():
-          app.config["TESTING"] = True
-          with app.test_client() as c:
-              yield c
+      client = TestClient(app, raise_server_exceptions=False)
 
 
-      def test_get_user_no_injection(client):
-          # Parameterized query should not crash on special chars
+      def test_get_user_no_injection():
           resp = client.get("/user?id=1")
           assert resp.status_code == 200
 
 
-      def test_config_safe_load(client):
-          # Safe YAML should load fine
+      def test_config_safe_load():
           resp = client.post(
               "/config",
-              data=b"key: value",
-              content_type="application/octet-stream",
+              content=b"key: value",
+              headers={"content-type": "application/octet-stream"},
           )
           assert resp.status_code == 200
 
 
-      def test_subscribe_valid_email(client):
+      def test_subscribe_valid_email():
           resp = client.post("/subscribe", data={"email": "user@example.com"})
           assert resp.status_code == 200
 
 
-      def test_subscribe_invalid_email_rejected(client):
-          # Empty / missing email should be rejected with 400
+      def test_subscribe_invalid_email_rejected():
           resp = client.post("/subscribe", data={"email": ""})
-          assert resp.status_code == 400
+          assert resp.status_code in (400, 422)
 
 
-      def test_goto_external_blocked(client):
-          # Open redirect to external host must be blocked
+      def test_goto_external_blocked():
           resp = client.get("/goto?url=http://evil.com", follow_redirects=False)
           assert resp.status_code in (400, 403)
 
 
       def test_no_hardcoded_key():
-          import os
-          import app as app_module
-          # API key must come from env, not be a literal string in source
           src = open("app.py").read()
           assert "sk-prod-abc123secretkey9999" not in src
       PYEOF
 
 issue:
   description: |
-    The file app.py is a Flask application with 6 deliberate security
+    The file app.py is a FastAPI application with 6 deliberate security
     vulnerabilities. Find and fix every one of them. The issues are:
 
     1. SQL injection — the /user endpoint builds a query with string
@@ -169,18 +159,18 @@ verification:
     - criterion: "SQL injection fixed: parameterized query used in /user"
       points: 15
       check: "grep -qE 'execute\\(.*\\?' app.py"
-    - criterion: "YAML deserialization fixed: SafeLoader used in /config"
+    - criterion: "YAML deserialization fixed: safe_load or SafeLoader used in /config"
       points: 15
-      check: "grep -q 'SafeLoader' app.py"
+      check: "grep -qE 'safe_load|SafeLoader' app.py"
     - criterion: "eval() removed or sandboxed in /calc"
       points: 15
-      check: "grep -vq 'eval(' app.py || grep -q '#.*eval' app.py"
+      check: "! grep -qE '^[^#]*eval\\(' app.py"
     - criterion: "Hardcoded API key removed from source"
       points: 15
-      check: "grep -v 'sk-prod-abc123secretkey9999' app.py | grep -qE 'os\\.environ|os\\.getenv'"
+      check: "! grep -q 'sk-prod-abc123secretkey9999' app.py"
     - criterion: "Email validation added to /subscribe (returns 400 on bad input)"
       points: 15
-      check: "grep -qE '400|BadRequest|re\\.' app.py"
+      check: "grep -qE '400|BadRequest|re\\.|@.*\\..*|email.*validator|EmailStr' app.py"
     - criterion: "Open redirect restricted to relative paths in /goto"
       points: 15
       check: "grep -qE 'startswith|netloc|urlparse' app.py"

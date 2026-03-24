@@ -9,7 +9,7 @@ capabilities: [convention_adherence, refactoring_discipline]
 
 repo:
   url: "https://github.com/pallets/click"
-  commit: "1d038f270701498433cb432f54db89f95f07a845"
+  commit: "874ca2bc1c30d93a4ac6e36a15ed685eafe89097"
   setup_commands:
     - "python3 -m venv .venv && source .venv/bin/activate && pip install click pytest"
     - |

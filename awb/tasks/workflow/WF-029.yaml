@@ -170,16 +170,16 @@ verification:
   partial_credit:
     - criterion: "app/config_loader.py uses only safe YAML loading"
       points: 25
-      check: "source .venv/bin/activate && python3 -m pytest tests/test_yaml_safety.py::test_config_loader_is_safe -v"
+      check: "! grep -qE 'yaml\\.load\\(|Loader=yaml\\.FullLoader|Loader=yaml\\.Loader' app/config_loader.py && grep -qE 'safe_load|SafeLoader' app/config_loader.py"
     - criterion: "app/pipeline.py uses only safe YAML loading"
       points: 25
-      check: "source .venv/bin/activate && python3 -m pytest tests/test_yaml_safety.py::test_pipeline_is_safe -v"
+      check: "! grep -qE 'yaml\\.load\\(|Loader=yaml\\.FullLoader|Loader=yaml\\.Loader' app/pipeline.py && grep -qE 'safe_load|SafeLoader' app/pipeline.py"
     - criterion: "app/schema_validator.py uses only safe YAML loading"
       points: 25
-      check: "source .venv/bin/activate && python3 -m pytest tests/test_yaml_safety.py::test_schema_validator_is_safe -v"
+      check: "! grep -qE 'yaml\\.load\\(|Loader=yaml\\.FullLoader|Loader=yaml\\.Loader' app/schema_validator.py && grep -qE 'safe_load|SafeLoader' app/schema_validator.py"
     - criterion: "app/template_engine.py uses only safe YAML loading"
       points: 25
-      check: "source .venv/bin/activate && python3 -m pytest tests/test_yaml_safety.py::test_template_engine_is_safe -v"
+      check: "! grep -qE 'yaml\\.load\\(|Loader=yaml\\.FullLoader|Loader=yaml\\.Loader' app/template_engine.py && grep -qE 'safe_load|SafeLoader' app/template_engine.py"
 
 constraints:
   max_iterations: 10

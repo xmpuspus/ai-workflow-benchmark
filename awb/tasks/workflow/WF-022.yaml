@@ -8,12 +8,11 @@ tags: [security, dependencies, pinning, requirements]
 capabilities: [security_methodology]
 
 repo:
-  url: "https://github.com/encode/httpx"
-  commit: "26d48e0634e6ee9cdc0533996db289ce4b430177"
+  url: "https://github.com/tiangolo/fastapi"
+  commit: "628c34e0cae200564d191c95d7edea78c88c4b5e"
   setup_commands:
     - "python3 -m venv .venv && source .venv/bin/activate && pip install requests==2.31.0 flask==3.0.3 pydantic==2.7.1 pyyaml==6.0.1 pytest==8.1.1 click==8.1.7 httpx==0.27.0 certifi==2024.2.2"
-    - |
-      rm -f tests/conftest.py
+    - "mkdir -p tests"
     - |
       cat > requirements.txt << 'PYEOF'
       # Pinned (good)

@@ -8,12 +8,11 @@ tags: [github-actions, ci, yaml, pitfalls, devops]
 capabilities: [convention_adherence, framework_knowledge]
 
 repo:
-  url: "https://github.com/pallets/flask"
-  commit: "49a6863ec5637a046dac5e94c3bcf93fb6a07d18"
+  url: "https://github.com/tiangolo/fastapi"
+  commit: "628c34e0cae200564d191c95d7edea78c88c4b5e"
   setup_commands:
-    - "python3 -m venv .venv && source .venv/bin/activate && pip install pytest pyyaml"
-    - |
-      mkdir -p .github/workflows tests
+    - "python3 -m venv .venv && source .venv/bin/activate && pip install pytest pyyaml httpx"
+    - "mkdir -p .github/workflows tests"
     - |
       cat > .github/workflows/test.yml << 'PYEOF'
       # This workflow has 5 mistakes. Fix all of them.

@@ -1,8 +1,8 @@
 id: WF-009
 category: workflow
-title: "Debug a layered FastAPI app using project architecture docs to trace a 500 error"
+title: "Debug a layered FastAPI app using project architecture docs to trace two 500 errors"
 difficulty: medium
-estimated_minutes: 25
+estimated_minutes: 30
 languages: [python]
 tags: [fastapi, debugging, architecture, layered-design, context-discovery]
 capabilities: [context_discovery, code_comprehension]
@@ -12,8 +12,7 @@ repo:
   commit: "628c34e0cae200564d191c95d7edea78c88c4b5e"
   setup_commands:
     - "python3 -m venv .venv && source .venv/bin/activate && pip install -e '.[all]' && pip install pytest httpx"
-    - |
-      mkdir -p docs src tests
+    - "mkdir -p docs src tests"
     - |
       cat > docs/ARCHITECTURE.md << 'PYEOF'
       # Architecture Guide
@@ -38,11 +37,15 @@ repo:
 
       **models** (src/models.py): Item dataclass shared by all layers.
 
-      ## Common Bug Pattern
+      ## Common Bug Patterns
 
       If you see `AttributeError: 'dict' object has no attribute 'id'` in
       routes or services, the bug is in repositories.py — it is returning
       raw dicts instead of Item instances. Fix: wrap each result in Item(**data).
+
+      If you see `TypeError: unsupported operand type(s)` in services, a
+      field value may be the wrong type. Check that numeric fields are numeric,
+      not strings.
       PYEOF
     - |
       cat > src/__init__.py << 'PYEOF'
@@ -68,17 +71,22 @@ repo:
 
 
       def get_all_items():
-          # BUG: returns raw dicts instead of Item instances
+          # BUG 1: returns raw dicts instead of Item instances
           return list(_DB.values())
 
 
       def get_item_by_id(item_id: int):
-          # BUG: returns raw dict instead of Item instance
+          # BUG 1: returns raw dict instead of Item instance
           return _DB.get(item_id)
+
+
+      def get_items_above_price(threshold: float):
+          # BUG 2: price stored as float but compared as string — wrong type
+          return [v for v in _DB.values() if v["price"] > threshold]
       PYEOF
     - |
       cat > src/services.py << 'PYEOF'
-      from src.repositories import get_all_items, get_item_by_id
+      from src.repositories import get_all_items, get_item_by_id, get_items_above_price
 
 
       def list_items():
@@ -90,11 +98,17 @@ repo:
           if item is None:
               return None
           return item
+
+
+      def list_expensive_items(threshold: float):
+          raw = get_items_above_price(threshold)
+          # Service expects Item objects from repository
+          return raw
       PYEOF
     - |
       cat > src/routes.py << 'PYEOF'
       from fastapi import FastAPI, HTTPException
-      from src.services import list_items, fetch_item
+      from src.services import list_items, fetch_item, list_expensive_items
 
       app = FastAPI()
 
@@ -111,6 +125,12 @@ repo:
           if item is None:
               raise HTTPException(status_code=404, detail="not found")
           return {"id": item.id, "name": item.name, "price": item.price}
+
+
+      @app.get("/items/expensive/{threshold}")
+      def get_expensive(threshold: float):
+          items = list_expensive_items(threshold)
+          return [{"id": i.id, "name": i.name, "price": i.price} for i in items]
       PYEOF
     - |
       cat > tests/test_routes.py << 'PYEOF'
@@ -145,6 +165,21 @@ repo:
               assert "id" in item
               assert "name" in item
               assert "price" in item
+
+
+      def test_expensive_items_above_10():
+          response = client.get("/items/expensive/10")
+          assert response.status_code == 200
+          items = response.json()
+          assert all(i["price"] > 10 for i in items)
+          assert len(items) == 1  # Only Gadget at 19.99
+
+
+      def test_expensive_items_above_5():
+          response = client.get("/items/expensive/5")
+          assert response.status_code == 200
+          items = response.json()
+          assert len(items) == 2  # Widget (9.99) and Gadget (19.99)
       PYEOF
 
 workspace_claude_md: |
@@ -162,14 +197,17 @@ workspace_claude_md: |
 
 issue:
   description: |
-    Users report a 500 error on GET /items and GET /items/{id}. The error
-    message is "AttributeError: 'dict' object has no attribute 'id'".
+    Users report two 500 errors:
+    1. GET /items and GET /items/{id} crash with "AttributeError: 'dict' object
+       has no attribute 'id'".
+    2. GET /items/expensive/{threshold} crashes with "AttributeError: 'dict'
+       object has no attribute 'id'" as well.
 
     The app is in the src/ directory and follows a layered architecture
     described in docs/ARCHITECTURE.md. Read the architecture documentation
     before investigating.
 
-    Debug and fix the issue so that all 4 tests in tests/test_routes.py pass.
+    Debug and fix both issues so that all 6 tests in tests/test_routes.py pass.
 
     Do not modify routes.py or services.py — the fix belongs in the layer
     that is violating the architecture contract.
@@ -188,16 +226,19 @@ verification:
   security_commands: []
   partial_credit:
     - criterion: "Fix is in repositories.py (not routes.py or services.py)"
-      points: 25
+      points: 20
       check: "grep -qE 'Item\\(' src/repositories.py"
     - criterion: "get_all_items uses Item constructor"
-      points: 25
+      points: 20
       check: "grep -A5 'def get_all_items' src/repositories.py | grep -qE 'Item\\('"
+    - criterion: "get_items_above_price also returns Item instances"
+      points: 20
+      check: "grep -A5 'def get_items_above_price' src/repositories.py | grep -qE 'Item\\('"
     - criterion: "GET /items returns correct response after fix"
-      points: 25
+      points: 20
       check: "source .venv/bin/activate && python3 -c \"from fastapi.testclient import TestClient; from src.routes import app; c = TestClient(app); r = c.get('/items'); assert r.status_code == 200 and len(r.json()) == 3\""
-    - criterion: "All 4 tests pass"
-      points: 25
+    - criterion: "All 6 tests pass"
+      points: 20
       check: "source .venv/bin/activate && python3 -m pytest tests/test_routes.py -v"
 
 constraints:

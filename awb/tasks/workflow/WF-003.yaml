@@ -13,6 +13,7 @@ workspace_claude_md: |
   - All Pydantic models use `model_config = ConfigDict(extra="forbid")`
   - All endpoints return `{"data": result}` envelope format
   - Use Google-style docstrings on all public functions
+  - All POST endpoints that create resources use status_code=201
   - Run `ruff check` before committing
 
 repo:
@@ -104,6 +105,11 @@ repo:
           assert "data" in resp.json()
 
 
+      def test_create_user_returns_201():
+          resp = client.post("/users", json={"name": "Alice", "email": "alice@example.com"})
+          assert resp.status_code == 201
+
+
       def test_create_user_returns_data_envelope():
           resp = client.post("/users", json={"name": "Alice", "email": "alice@example.com"})
           assert resp.status_code == 201
@@ -121,6 +127,11 @@ repo:
       def test_user_model_has_email():
           resp = client.post("/users", json={"name": "Carol", "email": "carol@example.com"})
           assert "email" in resp.json()["data"]
+
+
+      def test_create_user_missing_email_rejected():
+          resp = client.post("/users", json={"name": "Dave"})
+          assert resp.status_code == 422
       PYEOF
 
 issue:
@@ -131,6 +142,7 @@ issue:
     1. All Pydantic models use `model_config = ConfigDict(extra="forbid")`
     2. All endpoints return a `{"data": result}` envelope
     3. All public functions have Google-style docstrings
+    4. All POST endpoints that create resources use status_code=201
 
     Add a /users resource to api.py with these two endpoints:
 
@@ -139,6 +151,7 @@ issue:
 
     POST /users (status 201)
       Accepts a JSON body with `name` (str) and `email` (str).
+      Both fields are required — missing either should return 422.
       Creates a new user, appends it to the in-memory _users list with an
       auto-incremented integer id, and returns the created user in the
       {"data": {...}} envelope.
@@ -162,19 +175,25 @@ verification:
   security_commands: []
   partial_credit:
     - criterion: "User model uses ConfigDict(extra='forbid')"
-      points: 20
+      points: 15
       check: "grep -qE 'ConfigDict.*extra.*forbid|extra.*forbid.*ConfigDict' api.py"
     - criterion: "Both /users endpoints return {\"data\": ...} envelope"
-      points: 20
+      points: 15
       check: "grep -c '\"data\"' api.py | awk '{exit ($1 < 4)}'"
     - criterion: "Google-style docstrings present on new /users functions"
-      points: 15
+      points: 10
       check: "grep -qE 'Returns:|Args:' api.py"
-    - criterion: "GET /users returns 200"
-      points: 20
-      check: "source .venv/bin/activate && python3 -m pytest tests/test_api.py::test_list_users_returns_data_envelope -v"
+    - criterion: "POST /users uses status_code=201"
+      points: 15
+      check: "grep -qE 'status_code=201' api.py"
+    - criterion: "Missing email returns 422"
+      points: 15
+      check: "source .venv/bin/activate && python3 -m pytest tests/test_api.py::test_create_user_missing_email_rejected -v"
+    - criterion: "Extra field rejected with 422"
+      points: 10
+      check: "source .venv/bin/activate && python3 -m pytest tests/test_api.py::test_create_user_extra_field_rejected -v"
     - criterion: "All tests pass"
-      points: 25
+      points: 20
       check: "source .venv/bin/activate && python3 -m pytest tests/test_api.py -v"
 
 constraints:

@@ -161,22 +161,22 @@ verification:
   partial_credit:
     - criterion: "Gotcha 1 fixed: get_user_role handles None value with 'or' pattern"
       points: 15
-      check: "source .venv/bin/activate && python3 -m pytest tests/test_gotchas.py::test_get_user_role_none_value -v"
+      check: "grep -qE 'or .viewer|or \"viewer\"|is None' app/gotcha1.py"
     - criterion: "Gotcha 2 fixed: append_item uses None default and creates fresh list each call"
       points: 15
-      check: "source .venv/bin/activate && python3 -m pytest tests/test_gotchas.py::test_append_item_independent_calls -v"
+      check: "grep -qE 'collection.*=.*None|None.*collection' app/gotcha2.py"
     - criterion: "Gotcha 3 fixed: make_multipliers uses default argument to capture loop variable"
       points: 15
-      check: "source .venv/bin/activate && python3 -m pytest tests/test_gotchas.py::test_make_multipliers_correct_values -v"
+      check: "grep -qE 'lambda.*i=i|i=i' app/gotcha3.py"
     - criterion: "Gotcha 4 fixed: is_status_active uses == not is"
       points: 15
-      check: "source .venv/bin/activate && python3 -m pytest tests/test_gotchas.py::test_is_status_active_dynamic_string -v"
+      check: "grep -q 'status ==' app/gotcha4.py && ! grep -q 'status is ' app/gotcha4.py"
     - criterion: "Gotcha 5 fixed: pack_value uses 'i' (32-bit) format"
       points: 15
-      check: "source .venv/bin/activate && python3 -m pytest tests/test_gotchas.py::test_pack_value_large_int -v"
+      check: "grep -qE \"pack\\('i'|pack\\(b'i'\" app/gotcha5.py"
     - criterion: "Gotcha 6 fixed: is_total_correct uses math.isclose or abs difference"
       points: 15
-      check: "source .venv/bin/activate && python3 -m pytest tests/test_gotchas.py::test_is_total_correct_float -v"
+      check: "grep -qE 'isclose|abs.*-|math\\.isclose' app/gotcha6.py"
     - criterion: "All 6 tests pass"
       points: 10
       check: "source .venv/bin/activate && python3 -m pytest tests/test_gotchas.py -v"

@@ -1,6 +1,6 @@
 id: WF-004
 category: workflow
-title: "Implement a paginated /items endpoint satisfying 12 explicit requirements"
+title: "Implement a paginated /items endpoint satisfying 15 explicit requirements"
 difficulty: hard
 estimated_minutes: 60
 languages: [python]
@@ -119,12 +119,35 @@ repo:
           resp = client.get("/openapi.json")
           schema = resp.json()
           assert "/items" in schema["paths"]
+
+
+      # REQ 13: next_cursor is null when last page reached
+      def test_next_cursor_null_on_last_page():
+          resp = client.get("/items?limit=50&offset=0")
+          data = resp.json()
+          # total is 50, offset+limit=50 — no more pages
+          assert data["next_cursor"] is None
+
+
+      # REQ 14: total_count reflects filtering
+      def test_total_count_reflects_filter():
+          resp = client.get("/items?category=a&limit=5")
+          data = resp.json()
+          # 25 items are category "a" (even ids 2,4,...50)
+          assert data["total_count"] == 25
+
+
+      # REQ 15: sort=price sorts by price ascending
+      def test_sort_by_price():
+          resp = client.get("/items?sort=price&limit=5")
+          prices = [i["price"] for i in resp.json()["items"]]
+          assert prices == sorted(prices)
       PYEOF
 
 issue:
   description: |
     Create main.py implementing a single endpoint GET /items backed by the
-    seed data in models.py (50 items). The endpoint must satisfy all 12
+    seed data in models.py (50 items). The endpoint must satisfy all 15
     requirements below. Each requirement has a test in tests/test_items.py.
 
     Requirements:
@@ -145,6 +168,9 @@ issue:
         (return type or parameter).
     12. A Pydantic response model must be declared for the /items endpoint
         (verified via the OpenAPI schema).
+    13. next_cursor must be null (not a number) when offset+limit >= total_count.
+    14. total_count must reflect the filtered count, not the total dataset size.
+    15. `sort` also accepts "price" and sorts items by price ascending.
 
     Do not modify models.py or tests/test_items.py.
   files_to_examine:
@@ -159,43 +185,52 @@ verification:
   security_commands: []
   partial_credit:
     - criterion: "REQ 1: GET /items returns list under 'items' key"
-      points: 8
+      points: 6
       check: "source .venv/bin/activate && python3 -m pytest tests/test_items.py::test_get_items_returns_list -v"
     - criterion: "REQ 2: limit param controls page size"
-      points: 8
+      points: 6
       check: "source .venv/bin/activate && python3 -m pytest tests/test_items.py::test_limit_param -v"
     - criterion: "REQ 3: offset param skips items"
-      points: 8
+      points: 6
       check: "source .venv/bin/activate && python3 -m pytest tests/test_items.py::test_offset_param -v"
     - criterion: "REQ 4: sort param orders by name"
-      points: 8
+      points: 6
       check: "source .venv/bin/activate && python3 -m pytest tests/test_items.py::test_sort_param -v"
     - criterion: "REQ 5: category filter narrows results"
-      points: 8
+      points: 6
       check: "source .venv/bin/activate && python3 -m pytest tests/test_items.py::test_filter_param -v"
     - criterion: "REQ 6: total_count present in response"
-      points: 8
+      points: 6
       check: "source .venv/bin/activate && python3 -m pytest tests/test_items.py::test_total_count_in_response -v"
     - criterion: "REQ 7: next_cursor present in response"
-      points: 8
+      points: 6
       check: "source .venv/bin/activate && python3 -m pytest tests/test_items.py::test_next_cursor_in_response -v"
     - criterion: "REQ 8: negative limit returns 422"
-      points: 8
+      points: 6
       check: "source .venv/bin/activate && python3 -m pytest tests/test_items.py::test_invalid_limit_422 -v"
     - criterion: "REQ 9: default limit is 20"
-      points: 8
+      points: 6
       check: "source .venv/bin/activate && python3 -m pytest tests/test_items.py::test_default_limit -v"
     - criterion: "REQ 10: limit > 100 returns 422"
-      points: 8
+      points: 6
       check: "source .venv/bin/activate && python3 -m pytest tests/test_items.py::test_max_limit_rejected -v"
     - criterion: "REQ 11: list_items has type annotations"
-      points: 8
+      points: 6
       check: "source .venv/bin/activate && python3 -m pytest tests/test_items.py::test_type_hints_present -v"
     - criterion: "REQ 12: Pydantic response model declared"
-      points: 8
+      points: 6
       check: "source .venv/bin/activate && python3 -m pytest tests/test_items.py::test_pydantic_response_model -v"
-    - criterion: "All 12 tests pass"
-      points: 4
+    - criterion: "REQ 13: next_cursor is null on last page"
+      points: 6
+      check: "source .venv/bin/activate && python3 -m pytest tests/test_items.py::test_next_cursor_null_on_last_page -v"
+    - criterion: "REQ 14: total_count reflects filtering"
+      points: 6
+      check: "source .venv/bin/activate && python3 -m pytest tests/test_items.py::test_total_count_reflects_filter -v"
+    - criterion: "REQ 15: sort=price sorts by price ascending"
+      points: 6
+      check: "source .venv/bin/activate && python3 -m pytest tests/test_items.py::test_sort_by_price -v"
+    - criterion: "All 15 tests pass"
+      points: 10
       check: "source .venv/bin/activate && python3 -m pytest tests/test_items.py -v"
 
 constraints:

@@ -12,9 +12,10 @@ workspace_claude_md: |
 
   All endpoints must return responses in envelope format:
   ```json
-  {"data": <result>, "meta": {"count": <n>}}
+  {"data": <result>, "meta": {"count": <n>, "version": "1.0"}}
   ```
   For single items, count is 1. For lists, count is the list length.
+  The "version" field must always be the string "1.0".
 
 repo:
   url: "https://github.com/tiangolo/fastapi"
@@ -75,6 +76,7 @@ repo:
           assert "data" in body
           assert "meta" in body
           assert body["meta"]["count"] == 2
+          assert body["meta"]["version"] == "1.0"
 
 
       def test_get_product_envelope():
@@ -84,6 +86,7 @@ repo:
           assert "data" in body
           assert "meta" in body
           assert body["meta"]["count"] == 1
+          assert body["meta"]["version"] == "1.0"
 
 
       def test_list_orders_envelope():
@@ -93,6 +96,7 @@ repo:
           assert "data" in body
           assert "meta" in body
           assert body["meta"]["count"] == 1
+          assert body["meta"]["version"] == "1.0"
 
 
       def test_get_order_envelope():
@@ -102,6 +106,7 @@ repo:
           assert "data" in body
           assert "meta" in body
           assert body["meta"]["count"] == 1
+          assert body["meta"]["version"] == "1.0"
       PYEOF
 
 issue:
@@ -109,15 +114,16 @@ issue:
     The project's CLAUDE.md documents a standard response envelope for all
     endpoints:
 
-        {"data": <result>, "meta": {"count": <n>}}
+        {"data": <result>, "meta": {"count": <n>, "version": "1.0"}}
 
     For lists, count is the list length. For single items, count is 1.
+    The "version" field must always be the string "1.0".
 
     The 4 endpoints in api.py currently return raw data with no envelope.
     Update all 4 so they conform to the documented standard.
 
     The tests in tests/test_api.py verify the envelope format on all 4
-    endpoints. Do not modify the tests.
+    endpoints, including the version field. Do not modify the tests.
   files_to_examine:
     - "api.py"
     - "tests/test_api.py"
@@ -129,16 +135,16 @@ verification:
     - "source .venv/bin/activate && ruff check api.py"
   security_commands: []
   partial_credit:
-    - criterion: "GET /products returns {\"data\": [...], \"meta\": {\"count\": 2}}"
+    - criterion: "GET /products returns {\"data\": [...], \"meta\": {\"count\": 2, \"version\": \"1.0\"}}"
       points: 25
       check: "source .venv/bin/activate && python3 -m pytest tests/test_api.py::test_list_products_envelope -v"
-    - criterion: "GET /products/{id} returns {\"data\": {...}, \"meta\": {\"count\": 1}}"
+    - criterion: "GET /products/{id} returns {\"data\": {...}, \"meta\": {\"count\": 1, \"version\": \"1.0\"}}"
       points: 25
       check: "source .venv/bin/activate && python3 -m pytest tests/test_api.py::test_get_product_envelope -v"
-    - criterion: "GET /orders returns {\"data\": [...], \"meta\": {\"count\": 1}}"
+    - criterion: "GET /orders returns {\"data\": [...], \"meta\": {\"count\": 1, \"version\": \"1.0\"}}"
       points: 25
       check: "source .venv/bin/activate && python3 -m pytest tests/test_api.py::test_list_orders_envelope -v"
-    - criterion: "GET /orders/{id} returns {\"data\": {...}, \"meta\": {\"count\": 1}}"
+    - criterion: "GET /orders/{id} returns {\"data\": {...}, \"meta\": {\"count\": 1, \"version\": \"1.0\"}}"
       points: 25
       check: "source .venv/bin/activate && python3 -m pytest tests/test_api.py::test_get_order_envelope -v"
 

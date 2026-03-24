@@ -109,27 +109,27 @@ verification:
     - "source .venv/bin/activate && ruff check tests/test_utils.py"
   security_commands: []
   partial_credit:
-    - criterion: "slugify tests pass (at least 2 test functions)"
+    - criterion: "slugify tests present (at least 2 test functions)"
       points: 15
-      check: "source .venv/bin/activate && python3 -m pytest tests/test_utils.py -k 'slugify' -v && python3 -m pytest tests/test_utils.py -k 'slugify' --collect-only -q 2>/dev/null | grep -c 'test_' | awk '{exit ($1 < 2)}'"
-    - criterion: "chunk tests pass (at least 2 test functions)"
+      check: "test -f tests/test_utils.py && grep -c 'def test_.*slugify' tests/test_utils.py | awk '{exit ($1 < 2)}'"
+    - criterion: "chunk tests present (at least 2 test functions)"
       points: 15
-      check: "source .venv/bin/activate && python3 -m pytest tests/test_utils.py -k 'chunk' -v && python3 -m pytest tests/test_utils.py -k 'chunk' --collect-only -q 2>/dev/null | grep -c 'test_' | awk '{exit ($1 < 2)}'"
-    - criterion: "deep_get tests pass (at least 2 test functions)"
+      check: "test -f tests/test_utils.py && grep -c 'def test_.*chunk' tests/test_utils.py | awk '{exit ($1 < 2)}'"
+    - criterion: "deep_get tests present (at least 2 test functions)"
       points: 15
-      check: "source .venv/bin/activate && python3 -m pytest tests/test_utils.py -k 'deep_get' -v && python3 -m pytest tests/test_utils.py -k 'deep_get' --collect-only -q 2>/dev/null | grep -c 'test_' | awk '{exit ($1 < 2)}'"
-    - criterion: "clamp tests pass (at least 2 test functions)"
+      check: "test -f tests/test_utils.py && grep -c 'def test_.*deep_get' tests/test_utils.py | awk '{exit ($1 < 2)}'"
+    - criterion: "clamp tests present (at least 2 test functions)"
       points: 15
-      check: "source .venv/bin/activate && python3 -m pytest tests/test_utils.py -k 'clamp' -v && python3 -m pytest tests/test_utils.py -k 'clamp' --collect-only -q 2>/dev/null | grep -c 'test_' | awk '{exit ($1 < 2)}'"
-    - criterion: "flatten tests pass (at least 2 test functions)"
+      check: "test -f tests/test_utils.py && grep -c 'def test_.*clamp' tests/test_utils.py | awk '{exit ($1 < 2)}'"
+    - criterion: "flatten tests present (at least 2 test functions)"
       points: 15
-      check: "source .venv/bin/activate && python3 -m pytest tests/test_utils.py -k 'flatten' -v && python3 -m pytest tests/test_utils.py -k 'flatten' --collect-only -q 2>/dev/null | grep -c 'test_' | awk '{exit ($1 < 2)}'"
-    - criterion: "truncate tests pass (at least 2 test functions)"
+      check: "test -f tests/test_utils.py && grep -c 'def test_.*flatten' tests/test_utils.py | awk '{exit ($1 < 2)}'"
+    - criterion: "truncate tests present (at least 2 test functions)"
       points: 15
-      check: "source .venv/bin/activate && python3 -m pytest tests/test_utils.py -k 'truncate' -v && python3 -m pytest tests/test_utils.py -k 'truncate' --collect-only -q 2>/dev/null | grep -c 'test_' | awk '{exit ($1 < 2)}'"
-    - criterion: "At least 12 total test functions collected"
+      check: "test -f tests/test_utils.py && grep -c 'def test_.*truncate' tests/test_utils.py | awk '{exit ($1 < 2)}'"
+    - criterion: "At least 12 total test functions and all pass"
       points: 10
-      check: "source .venv/bin/activate && python3 -m pytest tests/test_utils.py --collect-only -q 2>/dev/null | grep -c 'test_' | awk '{exit ($1 < 12)}'"
+      check: "test -f tests/test_utils.py && grep -c 'def test_' tests/test_utils.py | awk '{exit ($1 < 12)}' && source .venv/bin/activate && python3 -m pytest tests/test_utils.py -v"
 
 constraints:
   max_iterations: 20

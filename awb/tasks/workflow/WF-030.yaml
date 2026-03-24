@@ -18,13 +18,14 @@ workspace_claude_md: |
   The app follows strict layered architecture. Changes to models always
   propagate to: schemas, migrations, services, routes, tests.
 
+  Pydantic model convention: all models use ConfigDict(extra="forbid").
+
 repo:
   url: "https://github.com/tiangolo/fastapi"
   commit: "628c34e0cae200564d191c95d7edea78c88c4b5e"
   setup_commands:
-    - "python3 -m venv .venv && source .venv/bin/activate && pip install -e '.[all]' && pip install pytest httpx"
-    - |
-      mkdir -p app tests
+    - "python3 -m venv .venv && source .venv/bin/activate && pip install -e '.[all]' && pip install pytest httpx email-validator"
+    - "mkdir -p app tests"
     - |
       cat > app/__init__.py << 'PYEOF'
       PYEOF
@@ -44,14 +45,16 @@ repo:
       cat > app/schemas.py << 'PYEOF'
       """Pydantic schemas for request/response validation."""
 
-      from pydantic import BaseModel
+      from pydantic import BaseModel, ConfigDict
 
 
       class UserCreate(BaseModel):
+          model_config = ConfigDict(extra="forbid")
           name: str
 
 
       class UserResponse(BaseModel):
+          model_config = ConfigDict(extra="forbid")
           id: int
           name: str
       PYEOF
@@ -174,6 +177,16 @@ repo:
           assert resp.status_code == 422
 
 
+      def test_create_user_invalid_email_fails():
+          resp = client.post("/users", json={"name": "Eve", "email": "not-an-email"})
+          assert resp.status_code == 422
+
+
+      def test_create_user_extra_field_rejected():
+          resp = client.post("/users", json={"name": "Frank", "email": "f@example.com", "role": "admin"})
+          assert resp.status_code == 422
+
+
       def test_model_has_email_field():
           from app.models import User
           u = User(id=1, name="Eve", email="eve@example.com")
@@ -208,8 +221,15 @@ issue:
     - app/routes.py    — pass email in all UserResponse construction calls
     - tests/test_routes.py — tests already assert email; make them pass
 
-    The CLAUDE.md for this project documents the propagation pattern.
-    All 7 tests in tests/test_routes.py must pass.
+    The CLAUDE.md for this project documents the propagation pattern and
+    also requires that all Pydantic models use ConfigDict(extra="forbid").
+
+    Additional requirements from CLAUDE.md:
+    - email must be a valid email format (use Pydantic's EmailStr)
+    - Missing email returns 422; invalid email format returns 422
+    - Extra fields like "role" must be rejected with 422 (extra="forbid")
+
+    All 9 tests in tests/test_routes.py must pass.
   files_to_examine:
     - "app/models.py"
     - "app/schemas.py"
@@ -226,26 +246,32 @@ verification:
   security_commands: []
   partial_credit:
     - criterion: "app/models.py User dataclass has email field"
-      points: 15
+      points: 10
       check: "source .venv/bin/activate && python3 -m pytest tests/test_routes.py::test_model_has_email_field -v"
     - criterion: "app/schemas.py UserCreate and UserResponse have email field"
-      points: 15
+      points: 10
       check: "source .venv/bin/activate && python3 -m pytest tests/test_routes.py::test_schema_has_email_field -v"
     - criterion: "app/migrations.py SCHEMA_V1 includes email column"
-      points: 15
+      points: 10
       check: "source .venv/bin/activate && python3 -m pytest tests/test_routes.py::test_migrations_schema_includes_email -v"
     - criterion: "POST /users accepts and returns email"
-      points: 15
+      points: 10
       check: "source .venv/bin/activate && python3 -m pytest tests/test_routes.py::test_create_user_with_email -v"
     - criterion: "GET /users/{id} returns email"
-      points: 15
+      points: 10
       check: "source .venv/bin/activate && python3 -m pytest tests/test_routes.py::test_get_user_includes_email -v"
     - criterion: "GET /users list includes email on all users"
-      points: 15
-      check: "source .venv/bin/activate && python3 -m pytest tests/test_routes.py::test_list_users_includes_email -v"
-    - criterion: "All 7 tests pass"
       points: 10
-      check: "source .venv/bin/activate && python3 -m pytest tests/test_routes.py -v"
+      check: "source .venv/bin/activate && python3 -m pytest tests/test_routes.py::test_list_users_includes_email -v"
+    - criterion: "Missing email returns 422"
+      points: 10
+      check: "source .venv/bin/activate && python3 -m pytest tests/test_routes.py::test_create_user_missing_email_fails -v"
+    - criterion: "Invalid email format returns 422"
+      points: 15
+      check: "source .venv/bin/activate && python3 -m pytest tests/test_routes.py::test_create_user_invalid_email_fails -v"
+    - criterion: "Extra fields rejected with 422 (extra='forbid')"
+      points: 15
+      check: "source .venv/bin/activate && python3 -m pytest tests/test_routes.py::test_create_user_extra_field_rejected -v"
 
 constraints:
   max_iterations: 20

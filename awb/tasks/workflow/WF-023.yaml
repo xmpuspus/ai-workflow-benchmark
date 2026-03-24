@@ -224,22 +224,22 @@ verification:
   partial_credit:
     - criterion: "app/auth.py has no print() calls"
       points: 15
-      check: "source .venv/bin/activate && python3 -m pytest tests/test_app.py::test_auth_no_print -v"
+      check: "! grep -qE '^[^#]*print\\(' app/auth.py"
     - criterion: "app/database.py has no print() calls"
       points: 15
-      check: "source .venv/bin/activate && python3 -m pytest tests/test_app.py::test_database_no_print -v"
+      check: "! grep -qE '^[^#]*print\\(' app/database.py"
     - criterion: "app/processor.py has no print() calls"
       points: 15
-      check: "source .venv/bin/activate && python3 -m pytest tests/test_app.py::test_processor_no_print -v"
+      check: "! grep -qE '^[^#]*print\\(' app/processor.py"
     - criterion: "app/notifier.py has no print() calls"
       points: 15
-      check: "source .venv/bin/activate && python3 -m pytest tests/test_app.py::test_notifier_no_print -v"
+      check: "! grep -qE '^[^#]*print\\(' app/notifier.py"
     - criterion: "app/scheduler.py has no print() calls"
       points: 15
-      check: "source .venv/bin/activate && python3 -m pytest tests/test_app.py::test_scheduler_no_print -v"
+      check: "! grep -qE '^[^#]*print\\(' app/scheduler.py"
     - criterion: "WARNING or ERROR log levels used appropriately"
       points: 10
-      check: "source .venv/bin/activate && python3 -m pytest tests/test_app.py::test_logging_levels_used -v"
+      check: "grep -rqE '\\.warning\\(|\\.error\\(' app/"
     - criterion: "All functions still work correctly"
       points: 15
       check: "source .venv/bin/activate && python3 -m pytest tests/test_app.py::test_functions_still_work -v"

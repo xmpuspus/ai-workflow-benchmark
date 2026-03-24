@@ -8,12 +8,12 @@ tags: [regex, performance, code-quality, completeness]
 capabilities: [completeness_tracking, code_comprehension]
 
 repo:
-  url: "https://github.com/psf/requests"
-  commit: "cb5765758a89fb6ceaad591e6b7a35f8e0e48302"
+  url: "https://github.com/tiangolo/fastapi"
+  commit: "628c34e0cae200564d191c95d7edea78c88c4b5e"
   setup_commands:
-    - "python3 -m venv .venv && source .venv/bin/activate && pip install pytest"
+    - "python3 -m venv .venv && source .venv/bin/activate && pip install -e '.[all]' && pip install pytest httpx"
+    - "mkdir -p patterns tests"
     - |
-      mkdir -p patterns tests
       cat > patterns/__init__.py << 'PYEOF'
       PYEOF
     - |
@@ -225,7 +225,7 @@ verification:
   partial_credit:
     - criterion: "validator.py has re.compile at module level"
       points: 10
-      check: "python3 -c \"import ast, sys; src=open('patterns/validator.py').read(); tree=ast.parse(src); top=[n for n in ast.walk(tree) if isinstance(n, ast.Call) and isinstance(n.func, ast.Attribute) and n.func.attr=='compile']; body=[n for n in ast.walk(ast.parse(src)) if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef))]; assert any(True for t in top if not any(t.col_offset > b.col_offset for b in body if hasattr(b, 'col_offset'))), 'still in function'\""
+      check: "! grep -A5 'def validate_email' patterns/validator.py | grep -q 're.compile'"
     - criterion: "No re.compile() inside function body in parser.py"
       points: 10
       check: "! grep -A5 'def parse_version' patterns/parser.py | grep -q 're.compile'"

@@ -2,7 +2,7 @@ id: WF-017
 category: workflow
 title: "Add Pydantic server-side validation to 5 unvalidated FastAPI endpoints"
 difficulty: medium
-estimated_minutes: 30
+estimated_minutes: 35
 languages: [python]
 tags: [fastapi, pydantic, validation, security, input-validation]
 capabilities: [security_methodology, framework_knowledge]
@@ -76,6 +76,10 @@ repo:
           r = client.post("/register", json={"email": "not-an-email"})
           assert r.status_code == 422
 
+      def test_register_extra_fields_rejected():
+          r = client.post("/register", json={"email": "user@example.com", "role": "admin"})
+          assert r.status_code == 422
+
 
       # Endpoint 2: age validation
       def test_profile_valid_age():
@@ -131,6 +135,16 @@ repo:
       def test_schedule_gibberish_date_rejected():
           r = client.post("/schedule", json={"date": "not-a-date"})
           assert r.status_code == 422
+
+
+      # Convention check: all models must use ConfigDict(extra="forbid")
+      def test_all_models_use_extra_forbid():
+          import ast
+          from pathlib import Path
+          src = Path("app/main.py").read_text()
+          assert "extra" in src and "forbid" in src, (
+              "All Pydantic models must use ConfigDict(extra='forbid')"
+          )
       PYEOF
 
 issue:
@@ -145,10 +159,15 @@ issue:
     4. POST /webhook   — url must start with http:// or https://
     5. POST /schedule  — date must be in YYYY-MM-DD format
 
+    Additional project convention (documented in CLAUDE.md):
+    - All Pydantic models must use ConfigDict(extra="forbid") so that extra
+      fields are rejected with 422. This is verified by test_all_models_use_extra_forbid
+      and by test_register_extra_fields_rejected.
+
     Use Pydantic request body models (not query params). Invalid input should
     return HTTP 422. Do not modify tests/test_validation.py.
 
-    All 15 tests must pass.
+    All 16 tests must pass.
   files_to_examine:
     - "app/main.py"
     - "tests/test_validation.py"
@@ -161,20 +180,26 @@ verification:
   security_commands: []
   partial_credit:
     - criterion: "Endpoint 1 validated: email format enforced (2/2 tests pass)"
-      points: 20
+      points: 15
       check: "source .venv/bin/activate && python3 -m pytest tests/test_validation.py::test_register_valid_email tests/test_validation.py::test_register_invalid_email_rejected -v"
+    - criterion: "Endpoint 1 uses ConfigDict(extra='forbid'): extra fields rejected"
+      points: 10
+      check: "source .venv/bin/activate && python3 -m pytest tests/test_validation.py::test_register_extra_fields_rejected -v"
     - criterion: "Endpoint 2 validated: age range enforced (3/3 tests pass)"
-      points: 20
+      points: 15
       check: "source .venv/bin/activate && python3 -m pytest tests/test_validation.py::test_profile_valid_age tests/test_validation.py::test_profile_negative_age_rejected tests/test_validation.py::test_profile_age_over_150_rejected -v"
     - criterion: "Endpoint 3 validated: quantity >= 1 enforced (3/3 tests pass)"
-      points: 20
+      points: 15
       check: "source .venv/bin/activate && python3 -m pytest tests/test_validation.py::test_cart_valid_quantity tests/test_validation.py::test_cart_negative_quantity_rejected tests/test_validation.py::test_cart_zero_quantity_rejected -v"
     - criterion: "Endpoint 4 validated: URL scheme enforced (3/3 tests pass)"
-      points: 20
+      points: 15
       check: "source .venv/bin/activate && python3 -m pytest tests/test_validation.py::test_webhook_valid_https_url tests/test_validation.py::test_webhook_no_scheme_rejected tests/test_validation.py::test_webhook_ftp_scheme_rejected -v"
     - criterion: "Endpoint 5 validated: date format enforced (3/3 tests pass)"
-      points: 20
+      points: 15
       check: "source .venv/bin/activate && python3 -m pytest tests/test_validation.py::test_schedule_valid_date tests/test_validation.py::test_schedule_invalid_date_format_rejected tests/test_validation.py::test_schedule_gibberish_date_rejected -v"
+    - criterion: "All models use ConfigDict(extra='forbid')"
+      points: 15
+      check: "source .venv/bin/activate && python3 -m pytest tests/test_validation.py::test_all_models_use_extra_forbid -v"
 
 constraints:
   max_iterations: 20

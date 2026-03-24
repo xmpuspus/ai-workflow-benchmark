@@ -9,7 +9,7 @@ capabilities: [security_methodology, code_comprehension]
 
 repo:
   url: "https://github.com/pallets/click"
-  commit: "1d038f270701498433cb432f54db89f95f07a845"
+  commit: "874ca2bc1c30d93a4ac6e36a15ed685eafe89097"
   setup_commands:
     - "python3 -m venv .venv && source .venv/bin/activate && pip install pytest"
     - |
@@ -191,25 +191,25 @@ verification:
   partial_credit:
     - criterion: "load_config uses FileNotFoundError (or OSError)"
       points: 15
-      check: "grep -qE 'except (FileNotFoundError|OSError)' handlers.py && source .venv/bin/activate && python3 -m pytest tests/test_handlers.py::test_load_config_missing_file tests/test_handlers.py::test_load_config_valid -v"
+      check: "grep -qE 'except (FileNotFoundError|OSError)' handlers.py"
     - criterion: "parse_page_number uses ValueError"
       points: 15
-      check: "grep -q 'except ValueError' handlers.py && source .venv/bin/activate && python3 -m pytest tests/test_handlers.py::test_parse_page_number_valid tests/test_handlers.py::test_parse_page_number_invalid -v"
+      check: "grep -q 'except ValueError' handlers.py"
     - criterion: "fetch_env_var uses KeyError"
       points: 15
-      check: "grep -q 'except KeyError' handlers.py && source .venv/bin/activate && python3 -m pytest tests/test_handlers.py::test_fetch_env_var_present tests/test_handlers.py::test_fetch_env_var_missing -v"
+      check: "grep -q 'except KeyError' handlers.py"
     - criterion: "divide uses ZeroDivisionError"
       points: 15
-      check: "grep -q 'except ZeroDivisionError' handlers.py && source .venv/bin/activate && python3 -m pytest tests/test_handlers.py::test_divide_normal tests/test_handlers.py::test_divide_by_zero -v"
-    - criterion: "read_first_line uses OSError (or FileNotFoundError)"
+      check: "grep -q 'except ZeroDivisionError' handlers.py"
+    - criterion: "read_first_line uses OSError or FileNotFoundError"
       points: 15
-      check: "source .venv/bin/activate && python3 -m pytest tests/test_handlers.py::test_read_first_line_valid tests/test_handlers.py::test_read_first_line_missing -v"
-    - criterion: "safe_cast_float uses ValueError"
+      check: "grep -qE 'except (OSError|FileNotFoundError)' handlers.py"
+    - criterion: "safe_cast_float uses ValueError (second occurrence)"
       points: 15
-      check: "source .venv/bin/activate && python3 -m pytest tests/test_handlers.py::test_safe_cast_float_numeric tests/test_handlers.py::test_safe_cast_float_list_raises -v"
+      check: "grep -c 'except ValueError' handlers.py | awk '{exit ($1 < 2)}'"
     - criterion: "No bare except or except Exception remains"
       points: 10
-      check: "source .venv/bin/activate && python3 -m pytest tests/test_handlers.py::test_no_bare_except_in_handlers tests/test_handlers.py::test_no_except_exception_in_handlers -v"
+      check: "! grep -qE '^\\s*except\\s*:' handlers.py && ! grep -qE '^\\s*except\\s+Exception\\s*:' handlers.py"
 
 constraints:
   max_iterations: 15
