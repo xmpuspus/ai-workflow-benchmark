@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.5.5 (2026-03-26)
+
+### Added
+- Pre-flight auth check before benchmark runs — detects "Not logged in" and exits with clear instructions instead of silently scoring 0
+- Adapter prints claude stderr to console when it fails (visible red error message)
+
 ## 0.5.4 (2026-03-25)
 
 ### Fixed

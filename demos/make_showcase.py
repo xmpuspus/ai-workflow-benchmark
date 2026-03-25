@@ -1,22 +1,22 @@
 #!/usr/bin/env python3
-"""Generate a LinkedIn-worthy showcase GIF demonstrating AWB v0.5.4."""
+"""Generate a LinkedIn-worthy showcase GIF demonstrating AWB v0.5.5."""
 import sys
 sys.path.insert(0, "/Users/xavier/.claude/skills/terminal-gif")
 from terminal_gif import TerminalGIF, G, D, F, C, Y, R
 
 OUT = "/Users/xavier/Desktop/ai-workflow-benchmark/demos/awb-showcase.gif"
 
-gif = TerminalGIF(preset="full", title="AI Workflow Benchmark v0.5.4")
+gif = TerminalGIF(preset="full", title="AI Workflow Benchmark v0.5.5")
 
 # --- Scene 1: Install + Version ---
 gif.pause(500)
 
 s1 = [
     [D("$"), F(" pip install awb")],
-    [G("Successfully installed"), F(" awb-"), Y("0.5.4")],
+    [G("Successfully installed"), F(" awb-"), Y("0.5.5")],
     "",
     [D("$"), F(" awb --version")],
-    [C("awb"), F(", version "), Y("0.5.4")],
+    [C("awb"), F(", version "), Y("0.5.5")],
     "",
     [D("$"), F(" awb tools")],
     [F("  claude-code-vanilla   "), G("Available")],

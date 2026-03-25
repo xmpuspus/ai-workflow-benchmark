@@ -80,9 +80,18 @@ class ClaudeCodeVanillaAdapter(ToolAdapter):
 
             if proc.returncode != 0 and not stdout_bytes.strip():
                 stderr_text = stderr_bytes.decode(errors="replace")[:500]
-                import logging
-                logging.getLogger(__name__).warning(
-                    "claude exited with code %d: %s", proc.returncode, stderr_text
+                from rich.console import Console
+                Console(stderr=True).print(
+                    f"[red]claude failed (exit {proc.returncode}):[/red] {stderr_text}"
+                )
+
+            # Check for "Not logged in" in stream output
+            raw_check = stdout_bytes.decode(errors="replace")
+            if "Not logged in" in raw_check:
+                from rich.console import Console
+                Console(stderr=True).print(
+                    "[red]Claude Code is not logged in.[/red] "
+                    "Run [bold]claude[/bold] interactively first to authenticate."
                 )
         except TimeoutError:
             proc.kill()

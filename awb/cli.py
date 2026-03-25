@@ -229,6 +229,27 @@ def run(tool: str | None, workflow: str | None, task_id: str | None,
 
     console.print(f"Running {len(tasks)} task(s) x {runs} run(s) with [bold]{tool}[/bold]")
 
+    # Pre-flight: verify claude is authenticated and responsive
+    from awb.adapters.registry import get_adapter as _get_adapter
+    adapter = _get_adapter(tool)
+    if hasattr(adapter, '_get_cmd'):
+        import subprocess as _sp
+        test_cmd = adapter._get_cmd("echo test", 1)
+        test_env = adapter._get_env()
+        try:
+            preflight = _sp.run(
+                test_cmd, capture_output=True, text=True, env=test_env, timeout=30,
+            )
+            if "Not logged in" in preflight.stdout:
+                console.print(
+                    "[red]Claude Code is not logged in.[/red] "
+                    "Run [bold]claude[/bold] interactively first to authenticate, "
+                    "then re-run awb."
+                )
+                sys.exit(1)
+        except (_sp.TimeoutExpired, FileNotFoundError):
+            pass  # Timeout = probably working; FileNotFound caught by check_available
+
     if dry_run:
         table = Table(title="Tasks (dry run)")
         table.add_column("ID")
