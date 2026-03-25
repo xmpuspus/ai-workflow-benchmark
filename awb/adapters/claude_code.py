@@ -74,9 +74,16 @@ class ClaudeCodeVanillaAdapter(ToolAdapter):
                 env=full_env,
             )
 
-            stdout_bytes, _ = await asyncio.wait_for(
+            stdout_bytes, stderr_bytes = await asyncio.wait_for(
                 proc.communicate(), timeout=timeout_seconds
             )
+
+            if proc.returncode != 0 and not stdout_bytes.strip():
+                stderr_text = stderr_bytes.decode(errors="replace")[:500]
+                import logging
+                logging.getLogger(__name__).warning(
+                    "claude exited with code %d: %s", proc.returncode, stderr_text
+                )
         except TimeoutError:
             proc.kill()
             await proc.communicate()

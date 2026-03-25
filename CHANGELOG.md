@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.5.4 (2026-03-25)
+
+### Fixed
+- Package build now includes awb.analysis module (was excluded by .gitignore pattern matching awb/analysis/)
+- Adapter logs stderr when claude exits with non-zero code instead of silently discarding errors
+
 ## 0.5.3 (2026-03-24)
 
 ### Changed

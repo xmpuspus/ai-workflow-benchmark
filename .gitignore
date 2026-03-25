@@ -13,7 +13,7 @@ venv/
 results/runs/
 !results/examples/
 leaderboard/output/
-analysis/
+/analysis/
 *.jsonl
 .env
 .DS_Store
