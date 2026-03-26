@@ -77,7 +77,7 @@ Seven dimensions, sigmoid-normalized with per-task baselines derived from diffic
 | Speed | 50% / 100% of estimated_minutes | same | same |
 | Iterations | 3 / max_iters | 8 / max_iters | 15 / max_iters |
 
-## The 80 Tasks
+## The 100 Tasks
 
 Real open-source repos, pinned to release tag SHAs. Setup runs in under 15 seconds via venv + pip (Python) or npm (TypeScript).
 
@@ -170,7 +170,7 @@ Workflow Lift: +4.2 pts  (p=0.031, significant)
     security awareness         +5.4 pts  (10 tasks)
 
   Where it hurts:
-    cost discipline            -4.2 pts  (80 tasks)
+    cost discipline            -4.2 pts  (100 tasks)
 
   Biggest task-level differences:
     BF-014   +40  (V=35 C=75)

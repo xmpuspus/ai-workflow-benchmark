@@ -81,7 +81,7 @@ s4 = [
     [F("    security awareness    "), G(" +5.4 pts"), F("  (10 tasks)")],
     "",
     [F("  "), C("Where it hurts:")],
-    [F("    cost discipline       "), R(" -4.2 pts"), F("  (80 tasks)")],
+    [F("    cost discipline       "), R(" -4.2 pts"), F("  (100 tasks)")],
     "",
     [F("  "), C("Biggest task-level differences:")],
     [F("    BF-014  "), G("+40"), F("  (V=35  C=75)")],
