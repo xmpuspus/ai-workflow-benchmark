@@ -303,6 +303,22 @@ def test_stability_weight_unstable():
     assert 0.3 < weights["FA-003"] < 1.0
 
 
+def test_weight_profile_sums_to_one():
+    """All weight profiles must sum to 1.0."""
+    from awb.scoring.composite import _weight_cache, load_weight_profile
+    _weight_cache.clear()  # Clear cache to force reload
+    for profile in ("default", "correctness_focused", "production"):
+        weights = load_weight_profile(profile)
+        total = sum(weights.values())
+        assert abs(total - 1.0) < 0.001, f"{profile} sums to {total}"
+
+
+def test_integrity_constant_defined():
+    """Integrity module uses named constant for plausibility threshold."""
+    from awb.scoring.integrity import MIN_PLAUSIBLE_SECONDS
+    assert MIN_PLAUSIBLE_SECONDS == 10
+
+
 def test_report_metric_keys_match_weights():
     """report.py normalized keys must match weights.yaml keys."""
     from awb.scoring.composite import load_weight_profile

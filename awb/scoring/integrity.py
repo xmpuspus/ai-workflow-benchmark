@@ -7,6 +7,8 @@ from dataclasses import dataclass
 
 from awb.core.config import RunResult
 
+MIN_PLAUSIBLE_SECONDS = 10
+
 
 @dataclass
 class IntegrityWarning:
@@ -25,7 +27,7 @@ def detect_contamination(results: list[RunResult]) -> list[IntegrityWarning]:
 
     for result in results:
         # Suspiciously fast with success
-        if result.metrics.wall_clock_seconds < 10 and result.outcome.success:
+        if result.metrics.wall_clock_seconds < MIN_PLAUSIBLE_SECONDS and result.outcome.success:
             warnings.append(IntegrityWarning(
                 task_id=result.task_id,
                 category="contamination",

@@ -5,9 +5,17 @@ import time
 
 from awb.core.config import RunCost, RunMetrics
 
-# Pricing per 1M tokens (Opus)
-INPUT_PRICE_PER_M = 15.0
-OUTPUT_PRICE_PER_M = 75.0
+# Pricing per 1M tokens by model family
+MODEL_PRICING: dict[str, dict[str, float]] = {
+    "opus": {"input_per_m": 15.0, "output_per_m": 75.0},
+    "sonnet": {"input_per_m": 3.0, "output_per_m": 15.0},
+    "haiku": {"input_per_m": 0.25, "output_per_m": 1.25},
+    "default": {"input_per_m": 15.0, "output_per_m": 75.0},
+}
+
+# Backward compat
+INPUT_PRICE_PER_M = MODEL_PRICING["default"]["input_per_m"]
+OUTPUT_PRICE_PER_M = MODEL_PRICING["default"]["output_per_m"]
 
 
 class MetricCollector:

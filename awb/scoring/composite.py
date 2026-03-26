@@ -33,7 +33,11 @@ def load_weight_profile(profile: str = "default") -> dict[str, float]:
         all_profiles = yaml.safe_load(f)
     if profile not in all_profiles:
         raise ValueError(f"Unknown weight profile: {profile}. Available: {list(all_profiles)}")
-    _weight_cache[profile] = all_profiles[profile]
+    weights = all_profiles[profile]
+    weight_sum = sum(weights.values())
+    if abs(weight_sum - 1.0) > 0.001:
+        raise ValueError(f"Weight profile '{profile}' sums to {weight_sum}, expected 1.0")
+    _weight_cache[profile] = weights
     return _weight_cache[profile]
 
 
