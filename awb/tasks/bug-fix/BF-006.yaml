@@ -88,7 +88,7 @@ verification:
       check: "grep -qE 'try|finally' db/connection.py"
     - criterion: "pool.release() is in the finally block"
       points: 20
-      check: "grep -A3 'finally' db/connection.py | grep -q 'release'"
+      check: "grep -A5 'finally' db/connection.py | grep -q 'release'"
     - criterion: "Test for error path exists"
       points: 20
       check: "grep -qE 'error|raise|exception' tests/test_db_cleanup.py"

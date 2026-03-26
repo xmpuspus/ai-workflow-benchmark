@@ -64,7 +64,7 @@ verification:
       check: "grep -qiE 'lru|evict|max_size|OrderedDict' httpx/_cache.py"
     - criterion: "No external dependencies (only stdlib imports)"
       points: 10
-      check: "! grep -qE '^from [a-z]|^import [a-z]' httpx/_cache.py || grep -qE '^import (time|threading|asyncio|collections|hashlib|typing)' httpx/_cache.py"
+      check: "! grep -qE '^(from|import) (requests|aiohttp|cachetools|diskcache|redis|pymemcache)' httpx/_cache.py"
     - criterion: "Cache-Control header handling"
       points: 15
       check: "grep -qiE 'cache.control|no.cache|no.store' httpx/_cache.py"

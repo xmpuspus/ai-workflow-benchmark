@@ -82,7 +82,7 @@ verification:
   partial_credit:
     - criterion: "RETRYABLE_STATUS_CODES contains 429, 500, 502, 503, 504"
       points: 25
-      check: "grep -qE '429.*503|503.*429|RETRYABLE.*5[0-9][0-9]' client/retry_transport.py"
+      check: "grep -qE '429' client/retry_transport.py && grep -qE '500' client/retry_transport.py && grep -qE '502' client/retry_transport.py && grep -qE '503' client/retry_transport.py && grep -qE '504' client/retry_transport.py"
     - criterion: "Test proves 401 is not retried"
       points: 25
       check: "grep -qE '401.*not_retried|test_401|assert.*401' tests/test_retry_transport.py"

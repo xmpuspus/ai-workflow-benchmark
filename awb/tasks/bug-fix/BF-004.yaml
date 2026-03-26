@@ -78,7 +78,7 @@ verification:
       check: "grep -q 'calculate_total' utils/pricing.py"
     - criterion: "Service layer unchanged (fix is only in pricing.py)"
       points: 15
-      check: "grep -qv 'try\\|except\\|None' services/order_service.py"
+      check: "! grep -qE '\\b(try|except)\\b' services/order_service.py"
     - criterion: "Tests demonstrate the bug with None price"
       points: 20
       check: "grep -qE 'None.*price|price.*None' tests/test_pricing.py"

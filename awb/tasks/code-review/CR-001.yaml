@@ -87,7 +87,7 @@ verification:
       check: "grep -qi 'injection\\|f-string\\|f\"SELECT\\|fstring\\|dynamic.*query\\|unsanitized' review/findings.md"
     - criterion: "Fix uses parameterized query"
       points: 10
-      check: "! grep -q \"f\\\"SELECT\" auth/login.py && grep -qE 'execute\\(.*(\\?,|:username)' auth/login.py"
+      check: "! grep -q \"f\\\"SELECT\" auth/login.py && grep -qE 'execute\\(.*([?,]|:username|%\\(|\\$[0-9])' auth/login.py"
     - criterion: "Password hashing upgraded from MD5 to bcrypt"
       points: 20
       check: "! grep -q 'hashlib.md5' auth/login.py && grep -q 'bcrypt' auth/login.py"

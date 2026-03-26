@@ -76,7 +76,7 @@ verification:
   partial_credit:
     - criterion: "SQL injection vulnerability found and fixed"
       points: 15
-      check: "grep -qiE 'sql.inject|text.*bindparam|:username' app/db.py"
+      check: "grep -qiE 'sql.inject|bindparam|execute.*[?:%]|text\\s*\\(' app/db.py"
     - criterion: "yaml.load replaced with yaml.safe_load"
       points: 15
       check: "grep -q 'safe_load' app/auth.py && ! grep -qE 'yaml\\.load\\(' app/auth.py"

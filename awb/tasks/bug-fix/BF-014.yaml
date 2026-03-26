@@ -153,7 +153,7 @@ verification:
   partial_credit:
     - criterion: "Identifies N+1 as the root cause (names it in a comment or uses eager loading)"
       points: 20
-      check: "grep -qEi 'n.?1|n\\+1|lazy.?load|eager.?load|selectinload|joinedload' app/main.py"
+      check: "grep -qEi 'n\\+1|lazy.?load|eager.?load|selectinload|joinedload' app/main.py"
     - criterion: "Uses selectinload or joinedload on the query"
       points: 25
       check: "grep -qE 'selectinload|joinedload' app/main.py"

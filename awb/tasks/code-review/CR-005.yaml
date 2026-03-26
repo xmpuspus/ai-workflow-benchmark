@@ -87,10 +87,10 @@ verification:
   partial_credit:
     - criterion: "CORS allow_origins is not wildcard ['*']"
       points: 20
-      check: "! grep -q 'allow_origins=\\[\"\\*\"\\]' main.py"
+      check: "! grep -qE 'allow_origins\\s*=\\s*\\[\\s*[\"'\\''']\\*[\"'\\'']' main.py"
     - criterion: "All 3 admin endpoints have Depends(require_admin_token)"
       points: 25
-      check: "count=$(grep -c 'Depends' main.py); [ \"$count\" -ge 3 ]"
+      check: "count=$(grep -c 'require_admin_token' main.py); [ \"$count\" -ge 3 ]"
     - criterion: "Tests for unauthorized access return 401/422"
       points: 20
       check: "grep -qE '401|422|Unauthorized' tests/test_security.py"

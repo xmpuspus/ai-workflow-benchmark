@@ -84,7 +84,7 @@ verification:
       check: "grep -qE 'ValidationError|validation_error' tests/test_invoice_model.py"
     - criterion: "Test for valid integer acceptance exists"
       points: 15
-      check: "grep -qE 'test_valid|valid_int|amount.*150[^.]' tests/test_invoice_model.py"
+      check: "grep -qE 'def test_.*valid|def test_.*accept|test.*amount.*int|valid_int' tests/test_invoice_model.py"
     - criterion: "Test for float truncation data loss documented"
       points: 15
       check: "grep -qE '150\\.75|truncat|coer' tests/test_invoice_model.py"

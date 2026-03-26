@@ -62,7 +62,7 @@ verification:
   partial_credit:
     - criterion: "Off-by-one fixed: next_cursor = cursor + page_size"
       points: 25
-      check: "grep -qE 'cursor \\+ page_size$|cursor\\+page_size$' utils/pagination.py"
+      check: "grep -qE 'cursor \\+ page_size[^-]|cursor\\+page_size[^-]' utils/pagination.py"
     - criterion: "Test iterates all pages collecting every item"
       points: 25
       check: "grep -qE 'while|for.*page|collect|all_items' tests/test_pagination.py"

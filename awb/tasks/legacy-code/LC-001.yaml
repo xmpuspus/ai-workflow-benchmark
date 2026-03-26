@@ -85,7 +85,7 @@ verification:
   partial_credit:
     - criterion: "All 5 functions have annotations"
       points: 25
-      check: "grep -cE 'def .+\\(.+:.+\\).+->' legacy/utils.py | grep -q '^5$'"
+      check: "count=$(grep -cE 'def .+\\(.+:.+\\).+->' legacy/utils.py); [ \"$count\" -ge 5 ]"
     - criterion: "Annotations match actual usage in tests"
       points: 20
       check: "source .venv/bin/activate && mypy legacy/utils.py --ignore-missing-imports"

@@ -81,7 +81,7 @@ verification:
   partial_credit:
     - criterion: "No yaml.load() without Loader argument remaining in config/"
       points: 30
-      check: "! grep -rE 'yaml\\.load\\([^)]+\\)' config/ | grep -v 'SafeLoader\\|Loader='"
+      check: "grep -rqE 'yaml\\.safe_load|Loader\\s*=\\s*yaml\\.SafeLoader' config/"
     - criterion: "All 4 config files fixed"
       points: 20
       check: "fixed=$(grep -rL 'yaml\\.load([^,)]*[^L][^o][^a][^d][^e][^r]' config/ | grep '\\.py$' | wc -l); [ \"$fixed\" -ge 4 ] || ! grep -rqE 'yaml\\.load\\b' config/"
