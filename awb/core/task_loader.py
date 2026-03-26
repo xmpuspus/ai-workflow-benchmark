@@ -116,4 +116,12 @@ def validate_task_yaml(path: Path) -> list[str]:
         validate(instance=raw, schema=schema)
     except ValidationError as e:
         errors.append(e.message)
+
+    # Check partial credit sums to 100
+    pc = (raw or {}).get("verification", {}).get("partial_credit", [])
+    if pc:
+        total = sum(c.get("points", 0) for c in pc)
+        if total != 100:
+            errors.append(f"partial_credit points sum to {total}, expected 100")
+
     return errors

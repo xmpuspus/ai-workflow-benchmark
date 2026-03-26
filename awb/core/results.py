@@ -26,8 +26,10 @@ class ResultRecorder:
         run_dir = self.results_dir / result.run_id
         run_dir.mkdir(parents=True, exist_ok=True)
         path = run_dir / f"{result.task_id}_{result.tool}.json"
+        data = result.to_dict()
+        data["version"] = "1.0"
         with open(path, "w") as f:
-            json.dump(result.to_dict(), f, indent=2)
+            json.dump(data, f, indent=2)
         return path
 
     def load_run(self, run_dir: Path) -> list[RunResult]:
