@@ -48,3 +48,19 @@ class ToolAdapter(abc.ABC):
     def get_version(self) -> str:
         """Return tool version string."""
         return "unknown"
+
+    def supports_auth_check(self) -> bool:
+        """Return True if this adapter can verify authentication."""
+        return False
+
+    def check_auth(self) -> tuple[bool, str]:
+        """Check if the tool is authenticated. Returns (ok, message)."""
+        return True, ""
+
+    def supports_streaming(self) -> bool:
+        """Return True if this adapter supports streaming output."""
+        return False
+
+    def get_model_pricing(self) -> dict[str, float]:
+        """Return pricing per 1M tokens: {input_per_m, output_per_m}."""
+        return {"input_per_m": 15.0, "output_per_m": 75.0}

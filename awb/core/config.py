@@ -19,12 +19,6 @@ RESULTS_DIR = Path(os.environ.get("AWB_RESULTS_DIR", Path.cwd() / "results" / "r
 TASK_SCHEMA_PATH = TASKS_DIR / "schema.json"
 RESULT_SCHEMA_PATH = RESULTS_DIR / "schema.json"
 
-def _load_default_weights() -> dict[str, float]:
-    """Load default metric weights from scoring/weights.yaml."""
-    from awb.scoring.composite import load_weight_profile
-    return load_weight_profile("default")
-
-
 # Lazy-loaded on first access via report.py and leaderboard — kept as dict for backward compat
 METRIC_WEIGHTS: dict[str, float] = {
     "correctness": 0.55,

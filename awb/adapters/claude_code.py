@@ -11,9 +11,6 @@ from pathlib import Path
 
 from awb.adapters.base import ToolAdapter, ToolResult
 
-# Isolated config dir so no custom hooks/agents/skills interfere
-_VANILLA_CONFIG_DIR = Path("/tmp/awb-vanilla-claude")
-
 
 class ClaudeCodeVanillaAdapter(ToolAdapter):
     name = "claude-code-vanilla"
@@ -157,6 +154,24 @@ class ClaudeCodeVanillaAdapter(ToolAdapter):
     def get_config_hash(self) -> str:
         # Vanilla always uses an empty config dir - hash is constant
         return hashlib.sha256(b"vanilla-empty-config").hexdigest()[:16]
+
+    def supports_auth_check(self) -> bool:
+        return True
+
+    def check_auth(self) -> tuple[bool, str]:
+        """Check if claude is logged in."""
+        try:
+            cmd = self._get_cmd("echo test", 1)
+            env = self._get_env()
+            result = subprocess.run(cmd, capture_output=True, text=True, env=env, timeout=30)
+            if "Not logged in" in result.stdout:
+                return False, (
+                    "Claude Code is not logged in. "
+                    "Run 'claude' interactively first to authenticate, then re-run awb."
+                )
+            return True, ""
+        except (subprocess.TimeoutExpired, FileNotFoundError):
+            return True, ""  # Timeout = probably working
 
 
 class ClaudeCodeCustomAdapter(ClaudeCodeVanillaAdapter):

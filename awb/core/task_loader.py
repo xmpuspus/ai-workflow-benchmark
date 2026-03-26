@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import logging
 from pathlib import Path
 
 import yaml
@@ -15,6 +16,8 @@ from awb.core.config import (
     TaskRepo,
     TaskVerification,
 )
+
+logger = logging.getLogger(__name__)
 
 
 def _load_schema() -> dict:
@@ -90,7 +93,11 @@ def load_all_tasks(
     for path in paths:
         try:
             task = load_task(path)
-        except (ValidationError, Exception):
+        except ValidationError as e:
+            logger.warning("Skipping %s: schema validation failed: %s", path.name, e.message)
+            continue
+        except yaml.YAMLError as e:
+            logger.warning("Skipping %s: YAML parse error: %s", path.name, e)
             continue
         if category is None or task.category == category:
             tasks.append(task)
