@@ -68,7 +68,7 @@ class BenchmarkRunner:
         else:
             self._run_id = datetime.now(UTC).strftime("%Y-%m-%d_%H%M%S")
 
-    async def run_all(self) -> list[RunResult]:
+    async def run_all(self, on_task_complete=None) -> list[RunResult]:
         """Run all tasks for the configured number of runs."""
         results: list[RunResult] = []
         total_tasks = len(self.tasks) * self.runs
@@ -94,10 +94,13 @@ class BenchmarkRunner:
             )
 
             if self.parallel:
-                run_results = await self._run_parallel(tasks_this_run, run_id, run_num, total_tasks)
+                run_results = await self._run_parallel(
+                    tasks_this_run, run_id, run_num, total_tasks, on_task_complete
+                )
             else:
                 run_results = await self._run_sequential(
-                    tasks_this_run, run_id, run_num, total_tasks, completed, passed, run_start
+                    tasks_this_run, run_id, run_num, total_tasks, completed, passed, run_start,
+                    on_task_complete
                 )
 
             run_passed = sum(1 for r in run_results if r.outcome.success)
@@ -147,6 +150,7 @@ class BenchmarkRunner:
         completed_before: int,
         passed_before: int,
         run_start: float,
+        on_task_complete=None,
     ) -> list[RunResult]:
         results = []
         run_passed = 0
@@ -205,6 +209,8 @@ class BenchmarkRunner:
                 f"ETA: {eta_min:.0f}m)[/dim]"
             )
 
+            if on_task_complete:
+                on_task_complete(result)
             results.append(result)
 
         return results
@@ -215,6 +221,7 @@ class BenchmarkRunner:
         run_id: str,
         run_num: int,
         total_tasks: int,
+        on_task_complete=None,
     ) -> list[RunResult]:
         sem = asyncio.Semaphore(self.concurrency)
 
@@ -234,6 +241,8 @@ class BenchmarkRunner:
             async def _tracked(task: TaskDefinition) -> RunResult:
                 result = await _run_bounded(task)
                 progress.advance(bar)
+                if on_task_complete:
+                    on_task_complete(result)
                 return result
 
             results = await asyncio.gather(*[_tracked(t) for t in tasks])

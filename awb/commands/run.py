@@ -11,6 +11,15 @@ from rich.table import Table
 from awb.commands._shared import console
 
 
+def _score_style(score: float) -> str:
+    """Return Rich style for score band."""
+    if score >= 80:
+        return "green"
+    elif score >= 50:
+        return "yellow"
+    return "red"
+
+
 def _run_both(
     task_id, category, capability, difficulty, runs, parallel, dry_run, timeout,
     resume=False, concurrency=3, adaptive=False,
@@ -257,7 +266,12 @@ def run(tool: str | None, workflow: str | None, task_id: str | None,
 
     for r in results:
         success_str = "[green]PASS[/green]" if r.outcome.success else "[red]FAIL[/red]"
-        score_str = f"{r.outcome.partial_credit_score}/{r.outcome.partial_credit_max}"
+        max_pts = r.outcome.partial_credit_max or 1
+        pct = (r.outcome.partial_credit_score / max_pts) * 100
+        color = _score_style(pct)
+        score_str = (
+            f"[{color}]{r.outcome.partial_credit_score}/{r.outcome.partial_credit_max}[/{color}]"
+        )
         table.add_row(
             r.task_id, success_str, score_str,
             f"{r.metrics.wall_clock_seconds:.1f}",
