@@ -5,6 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>AI Workflow Benchmark - Leaderboard</title>
     <link rel="stylesheet" href="static/style.css">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4/dist/chart.umd.min.js"></script>
 </head>
 <body>
     <header>
@@ -31,6 +32,7 @@
         {% if tools %}
         <div class="controls">
             <input type="text" id="filter-input" placeholder="Filter by tool name..." class="filter-input">
+            <button onclick="exportCSV()" class="export-btn">Export CSV</button>
         </div>
 
         <div class="table-wrapper">

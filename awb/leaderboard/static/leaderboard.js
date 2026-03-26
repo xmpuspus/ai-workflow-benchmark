@@ -83,17 +83,11 @@ function animateScores() {
     });
 }
 
-/* Radar chart using Canvas API */
+/* Radar chart using Chart.js */
 function drawRadarChart() {
     var canvas = document.getElementById("radar-chart");
-    if (!canvas || typeof RESULTS_DATA === "undefined" || RESULTS_DATA.length === 0) return;
-
-    var ctx = canvas.getContext("2d");
-    var w = canvas.width;
-    var h = canvas.height;
-    var cx = w / 2;
-    var cy = h / 2;
-    var radius = Math.min(cx, cy) - 60;
+    if (!canvas || typeof Chart === "undefined") return;
+    if (typeof RESULTS_DATA === "undefined" || RESULTS_DATA.length === 0) return;
 
     var metrics = [
         "Success Rate",
@@ -105,14 +99,16 @@ function drawRadarChart() {
         "Security",
         "Few Iterations"
     ];
-    var numAxes = metrics.length;
-    var angleStep = (2 * Math.PI) / numAxes;
+    var colors = ["#3b82f6", "#22c55e", "#eab308", "#ef4444", "#a855f7", "#06b6d4"];
 
     // Aggregate by tool
     var toolData = {};
     RESULTS_DATA.forEach(function (r) {
         if (!toolData[r.tool]) {
-            toolData[r.tool] = { count: 0, success: 0, score: 0, maxScore: 0, time: 0, cost: 0, iterations: 0, lint: 0, security: 0, regressions: 0 };
+            toolData[r.tool] = {
+                count: 0, success: 0, score: 0, maxScore: 0,
+                time: 0, cost: 0, iterations: 0, lint: 0, security: 0, regressions: 0
+            };
         }
         var t = toolData[r.tool];
         t.count++;
@@ -127,96 +123,73 @@ function drawRadarChart() {
         t.regressions += r.quality.test_regressions;
     });
 
-    var colors = ["#3b82f6", "#22c55e", "#eab308", "#ef4444", "#a855f7", "#06b6d4"];
-    var toolNames = Object.keys(toolData);
-
-    // Normalize to 0-100
-    function normalize(toolStats) {
-        var n = toolStats.count || 1;
+    function normalize(s) {
+        var n = s.count || 1;
         return [
-            toolStats.success / n * 100,
-            toolStats.maxScore > 0 ? toolStats.score / toolStats.maxScore * 100 : 0,
-            Math.max(0, Math.min(100, (1 - toolStats.cost / n / 2) * 100)),
-            Math.max(0, 100 - toolStats.lint / n * 10),
-            Math.max(0, Math.min(100, (1 - toolStats.time / n / 600) * 100)),
-            Math.max(0, 100 - toolStats.regressions / n * 50),
-            Math.max(0, 100 - toolStats.security / n * 25),
-            Math.max(0, Math.min(100, (1 - toolStats.iterations / n / 20) * 100))
+            s.success / n * 100,
+            s.maxScore > 0 ? s.score / s.maxScore * 100 : 0,
+            Math.max(0, Math.min(100, (1 - s.cost / n / 2) * 100)),
+            Math.max(0, 100 - s.lint / n * 10),
+            Math.max(0, Math.min(100, (1 - s.time / n / 600) * 100)),
+            Math.max(0, 100 - s.regressions / n * 50),
+            Math.max(0, 100 - s.security / n * 25),
+            Math.max(0, Math.min(100, (1 - s.iterations / n / 20) * 100))
         ];
     }
 
-    // Clear
-    ctx.fillStyle = "#1e293b";
-    ctx.fillRect(0, 0, w, h);
-
-    // Draw grid
-    ctx.strokeStyle = "#334155";
-    ctx.lineWidth = 0.5;
-    for (var level = 1; level <= 5; level++) {
-        var r = radius * level / 5;
-        ctx.beginPath();
-        for (var i = 0; i <= numAxes; i++) {
-            var angle = i * angleStep - Math.PI / 2;
-            var x = cx + r * Math.cos(angle);
-            var y = cy + r * Math.sin(angle);
-            if (i === 0) ctx.moveTo(x, y);
-            else ctx.lineTo(x, y);
-        }
-        ctx.stroke();
-    }
-
-    // Draw axes and labels
-    ctx.strokeStyle = "#475569";
-    ctx.fillStyle = "#94a3b8";
-    ctx.font = "11px -apple-system, sans-serif";
-    ctx.textAlign = "center";
-    for (var i = 0; i < numAxes; i++) {
-        var angle = i * angleStep - Math.PI / 2;
-        ctx.beginPath();
-        ctx.moveTo(cx, cy);
-        ctx.lineTo(cx + radius * Math.cos(angle), cy + radius * Math.sin(angle));
-        ctx.stroke();
-
-        var labelR = radius + 20;
-        var lx = cx + labelR * Math.cos(angle);
-        var ly = cy + labelR * Math.sin(angle);
-        ctx.fillText(metrics[i], lx, ly + 4);
-    }
-
-    // Draw tool polygons
-    toolNames.forEach(function (name, idx) {
-        var values = normalize(toolData[name]);
-        var color = colors[idx % colors.length];
-
-        ctx.beginPath();
-        for (var i = 0; i <= numAxes; i++) {
-            var j = i % numAxes;
-            var angle = j * angleStep - Math.PI / 2;
-            var val = values[j] / 100 * radius;
-            var x = cx + val * Math.cos(angle);
-            var y = cy + val * Math.sin(angle);
-            if (i === 0) ctx.moveTo(x, y);
-            else ctx.lineTo(x, y);
-        }
-        ctx.closePath();
-        ctx.fillStyle = color + "33";
-        ctx.fill();
-        ctx.strokeStyle = color;
-        ctx.lineWidth = 2;
-        ctx.stroke();
+    var datasets = Object.entries(toolData).map(function (entry, i) {
+        var name = entry[0];
+        var stats = entry[1];
+        var color = colors[i % colors.length];
+        return {
+            label: name,
+            data: normalize(stats),
+            borderColor: color,
+            backgroundColor: color + "33",
+            pointRadius: 3,
+        };
     });
 
-    // Legend
-    var legendY = h - 30;
-    var legendX = 20;
-    ctx.font = "12px -apple-system, sans-serif";
-    toolNames.forEach(function (name, idx) {
-        var color = colors[idx % colors.length];
-        ctx.fillStyle = color;
-        ctx.fillRect(legendX, legendY - 8, 12, 12);
-        ctx.fillStyle = "#e2e8f0";
-        ctx.textAlign = "left";
-        ctx.fillText(name, legendX + 16, legendY + 2);
-        legendX += ctx.measureText(name).width + 40;
+    new Chart(canvas.getContext("2d"), {
+        type: "radar",
+        data: { labels: metrics, datasets: datasets },
+        options: {
+            scales: {
+                r: {
+                    beginAtZero: true,
+                    max: 100,
+                    ticks: { stepSize: 20, color: "#94a3b8" },
+                    grid: { color: "#334155" },
+                    pointLabels: { color: "#94a3b8", font: { size: 11 } },
+                }
+            },
+            plugins: {
+                legend: { position: "bottom", labels: { color: "#e2e8f0" } }
+            },
+        },
     });
+}
+
+/* CSV export */
+function exportCSV() {
+    if (typeof RESULTS_DATA === "undefined") return;
+    var rows = [["task_id", "tool", "success", "score", "time_s", "cost_usd"]];
+    RESULTS_DATA.forEach(function (r) {
+        rows.push([
+            r.task_id,
+            r.tool,
+            r.outcome && r.outcome.success ? "PASS" : "FAIL",
+            r.outcome && r.outcome.partial_credit_score || 0,
+            r.metrics && r.metrics.wall_clock_seconds || 0,
+            r.cost && r.cost.estimated_cost_usd || 0,
+        ]);
+    });
+    var csv = rows.map(function (r) { return r.join(","); }).join("\n");
+    var blob = new Blob([csv], { type: "text/csv" });
+    var url = URL.createObjectURL(blob);
+    var a = document.createElement("a");
+    a.href = url;
+    a.download = "awb-results.csv";
+    a.click();
+    URL.revokeObjectURL(url);
 }

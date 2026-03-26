@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+from datetime import UTC, datetime
 from pathlib import Path
 
 from jinja2 import Environment, FileSystemLoader
@@ -109,6 +110,21 @@ def generate_leaderboard(
 
     output_path = output_dir / "index.html"
     output_path.write_text(html)
+
+    # Append this run's scores to history for trend tracking
+    history_path = output_dir / "data" / "history.json"
+    history_path.parent.mkdir(parents=True, exist_ok=True)
+    history: list[dict] = []
+    if history_path.exists():
+        try:
+            history = json.loads(history_path.read_text())
+        except json.JSONDecodeError:
+            history = []
+    history.append({
+        "timestamp": datetime.now(UTC).isoformat(),
+        "tools": {t["tool"]: t.get("composite_score", 0) for t in ranked},
+    })
+    history_path.write_text(json.dumps(history, indent=2))
 
     static_src = leaderboard_dir / "static"
     static_dst = output_dir / "static"
