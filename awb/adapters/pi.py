@@ -1,4 +1,5 @@
 """Pi coding agent adapter - runs with user's full Pi configuration."""
+
 from __future__ import annotations
 
 import contextlib
@@ -51,12 +52,12 @@ class PiAdapter(ToolAdapter):
 
         proc = subprocess.Popen(
             cmd,
-            stdin=subprocess.DEVNULL,   # CRITICAL — prevents hang
+            stdin=subprocess.DEVNULL,  # CRITICAL — prevents hang
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             cwd=workspace,
             env=full_env,
-            start_new_session=True,     # own process group for clean kill
+            start_new_session=True,  # own process group for clean kill
         )
 
         try:
@@ -71,7 +72,9 @@ class PiAdapter(ToolAdapter):
             with contextlib.suppress(Exception):
                 proc.communicate(timeout=10)
             return ToolResult(
-                success=False, raw_output="", exit_code=1,
+                success=False,
+                raw_output="",
+                exit_code=1,
                 tool_version=self.get_version(),
             )
 
@@ -112,9 +115,7 @@ class PiAdapter(ToolAdapter):
 
     def get_version(self) -> str:
         try:
-            result = subprocess.run(
-                ["pi", "--version"], capture_output=True, text=True, timeout=10
-            )
+            result = subprocess.run(["pi", "--version"], capture_output=True, text=True, timeout=10)
             version = result.stdout.strip() or result.stderr.strip()
             return f"pi {version}"
         except Exception:

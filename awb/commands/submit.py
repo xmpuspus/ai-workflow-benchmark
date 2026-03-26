@@ -1,4 +1,5 @@
 """submit commands — export, submit, compare-submissions."""
+
 from __future__ import annotations
 
 import sys
@@ -60,30 +61,32 @@ def export(run_dir: str, output: str, submitter: str):
     for task_id, task_results in sorted(by_task.items()):
         runs = []
         for i, r in enumerate(task_results, 1):
-            runs.append({
-                "run_number": i,
-                "timestamp": r.timestamp,
-                "outcome": {
-                    "success": r.outcome.success,
-                    "partial_credit_score": r.outcome.partial_credit_score,
-                    "partial_credit_max": r.outcome.partial_credit_max,
-                },
-                "metrics": {
-                    "wall_clock_seconds": r.metrics.wall_clock_seconds,
-                    "iteration_count": r.metrics.iteration_count,
-                    "human_interventions": r.metrics.human_interventions,
-                },
-                "cost": {
-                    "input_tokens": r.cost.input_tokens,
-                    "output_tokens": r.cost.output_tokens,
-                    "estimated_cost_usd": r.cost.estimated_cost_usd,
-                },
-                "quality": {
-                    "lint_delta": r.quality.lint_delta,
-                    "security_delta": r.quality.security_delta,
-                    "test_regressions": r.quality.test_regressions,
-                },
-            })
+            runs.append(
+                {
+                    "run_number": i,
+                    "timestamp": r.timestamp,
+                    "outcome": {
+                        "success": r.outcome.success,
+                        "partial_credit_score": r.outcome.partial_credit_score,
+                        "partial_credit_max": r.outcome.partial_credit_max,
+                    },
+                    "metrics": {
+                        "wall_clock_seconds": r.metrics.wall_clock_seconds,
+                        "iteration_count": r.metrics.iteration_count,
+                        "human_interventions": r.metrics.human_interventions,
+                    },
+                    "cost": {
+                        "input_tokens": r.cost.input_tokens,
+                        "output_tokens": r.cost.output_tokens,
+                        "estimated_cost_usd": r.cost.estimated_cost_usd,
+                    },
+                    "quality": {
+                        "lint_delta": r.quality.lint_delta,
+                        "security_delta": r.quality.security_delta,
+                        "test_regressions": r.quality.test_regressions,
+                    },
+                }
+            )
         submission["results"].append({"task_id": task_id, "runs": runs})
 
     out = Path(output)

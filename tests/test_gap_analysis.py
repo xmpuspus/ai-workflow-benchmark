@@ -1,4 +1,5 @@
 """Tests for gap analysis classify_failure."""
+
 from awb.analysis.gap_analysis import classify_failure
 from awb.core.config import (
     CriterionResult,

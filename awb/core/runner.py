@@ -1,4 +1,5 @@
 """Main benchmark orchestrator."""
+
 from __future__ import annotations
 
 import asyncio
@@ -60,9 +61,7 @@ class BenchmarkRunner:
             existing = self.recorder.find_incomplete_run(tool, len(tasks))
             if existing:
                 self._run_id = existing
-                _console.print(
-                    f"[bold cyan]Resuming run:[/bold cyan] {existing}"
-                )
+                _console.print(f"[bold cyan]Resuming run:[/bold cyan] {existing}")
             else:
                 self._run_id = datetime.now(UTC).strftime("%Y-%m-%d_%H%M%S")
         else:
@@ -99,8 +98,14 @@ class BenchmarkRunner:
                 )
             else:
                 run_results = await self._run_sequential(
-                    tasks_this_run, run_id, run_num, total_tasks, completed, passed, run_start,
-                    on_task_complete
+                    tasks_this_run,
+                    run_id,
+                    run_num,
+                    total_tasks,
+                    completed,
+                    passed,
+                    run_start,
+                    on_task_complete,
                 )
 
             run_passed = sum(1 for r in run_results if r.outcome.success)
@@ -136,8 +141,7 @@ class BenchmarkRunner:
 
         total_elapsed = (time.monotonic() - run_start) / 60
         _console.print(
-            f"\n[bold]All runs complete:[/bold] "
-            f"{passed}/{completed} passed in {total_elapsed:.0f}m"
+            f"\n[bold]All runs complete:[/bold] {passed}/{completed} passed in {total_elapsed:.0f}m"
         )
         return results
 
@@ -296,18 +300,14 @@ class BenchmarkRunner:
             from awb.verification.security_scanner import count_security_issues
             from awb.verification.test_runner import run_tests
 
-            tests_passed, _ = await run_tests(
-                task.verification.test_commands, workspace
-            )
+            tests_passed, _ = await run_tests(task.verification.test_commands, workspace)
 
             earned, max_pts, breakdown = await evaluate_partial_credit(
                 task.verification.partial_credit, workspace
             )
 
             # 5. Quality deltas
-            post_lint = await count_lint_issues(
-                task.verification.lint_commands, workspace
-            )
+            post_lint = await count_lint_issues(task.verification.lint_commands, workspace)
             post_security = await count_security_issues(
                 task.verification.security_commands, workspace
             )
@@ -369,6 +369,7 @@ class BenchmarkRunner:
 def _get_adapter(name: str):
     """Import and instantiate adapter by name."""
     from awb.adapters.registry import get_adapter
+
     return get_adapter(name)
 
 
@@ -377,12 +378,12 @@ async def _count_baseline(kind: str, task: TaskDefinition, workspace: Path) -> i
     try:
         if kind == "lint":
             from awb.verification.lint_checker import count_lint_issues
+
             return await count_lint_issues(task.verification.lint_commands, workspace)
         elif kind == "security":
             from awb.verification.security_scanner import count_security_issues
-            return await count_security_issues(
-                task.verification.security_commands, workspace
-            )
+
+            return await count_security_issues(task.verification.security_commands, workspace)
     except Exception as exc:
         log.debug("Baseline %s count failed: %s", kind, exc)
     return 0

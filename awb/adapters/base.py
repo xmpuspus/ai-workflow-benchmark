@@ -1,4 +1,5 @@
 """Abstract base for tool adapters."""
+
 from __future__ import annotations
 
 import abc

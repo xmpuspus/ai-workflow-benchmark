@@ -1,4 +1,5 @@
 """Statistical framework — confidence intervals, significance testing, variance reporting."""
+
 from __future__ import annotations
 
 import math
@@ -7,15 +8,27 @@ from dataclasses import dataclass
 
 # t-distribution critical values for two-tailed 95% CI
 _T_CRIT_95 = {
-    2: 12.706, 3: 4.303, 4: 3.182, 5: 2.776, 6: 2.571,
-    7: 2.447, 8: 2.365, 9: 2.306, 10: 2.262, 15: 2.131,
-    20: 2.086, 30: 2.042, 50: 2.009, 100: 1.984,
+    2: 12.706,
+    3: 4.303,
+    4: 3.182,
+    5: 2.776,
+    6: 2.571,
+    7: 2.447,
+    8: 2.365,
+    9: 2.306,
+    10: 2.262,
+    15: 2.131,
+    20: 2.086,
+    30: 2.042,
+    50: 2.009,
+    100: 1.984,
 }
 
 
 @dataclass
 class ScoredMetric:
     """A metric with statistical context."""
+
     value: float
     ci_lower: float
     ci_upper: float
@@ -100,6 +113,7 @@ def runs_sufficient(values: list[float], margin: float = 5.0) -> bool:
 @dataclass
 class ComparisonResult:
     """Result of comparing two tools on shared tasks."""
+
     significant: bool
     p_value: float | None
     effect_size: float  # Cohen's d
@@ -143,17 +157,25 @@ def compare_tools_paired(
     """
     if len(scores_a) != len(scores_b):
         return ComparisonResult(
-            significant=False, p_value=None, effect_size=0.0,
-            effect_interpretation="n/a", mean_difference=0.0,
-            n_tasks=0, message="Score lists must have equal length",
+            significant=False,
+            p_value=None,
+            effect_size=0.0,
+            effect_interpretation="n/a",
+            mean_difference=0.0,
+            n_tasks=0,
+            message="Score lists must have equal length",
         )
 
     n = len(scores_a)
     if n < 5:
         return ComparisonResult(
-            significant=False, p_value=None, effect_size=0.0,
-            effect_interpretation="n/a", mean_difference=0.0,
-            n_tasks=n, message="Need 5+ common tasks for significance testing",
+            significant=False,
+            p_value=None,
+            effect_size=0.0,
+            effect_interpretation="n/a",
+            mean_difference=0.0,
+            n_tasks=n,
+            message="Need 5+ common tasks for significance testing",
         )
 
     diffs = [a - b for a, b in zip(scores_a, scores_b, strict=True)]
@@ -162,9 +184,13 @@ def compare_tools_paired(
 
     if n_nz == 0:
         return ComparisonResult(
-            significant=False, p_value=1.0, effect_size=0.0,
-            effect_interpretation="negligible", mean_difference=0.0,
-            n_tasks=n, message="Tools scored identically on all tasks",
+            significant=False,
+            p_value=1.0,
+            effect_size=0.0,
+            effect_interpretation="negligible",
+            mean_difference=0.0,
+            n_tasks=n,
+            message="Tools scored identically on all tasks",
         )
 
     # Sign test: count positives
@@ -196,7 +222,7 @@ class TaskStability:
     std_dev: float
     score_range: float  # max - min across runs
     n_runs: int
-    is_unstable: bool   # score_range > threshold
+    is_unstable: bool  # score_range > threshold
 
 
 def compute_task_stability(
@@ -206,13 +232,21 @@ def compute_task_stability(
     n = len(scores)
     if n == 0:
         return TaskStability(
-            task_id=task_id, mean_score=0.0, std_dev=0.0,
-            score_range=0.0, n_runs=0, is_unstable=False,
+            task_id=task_id,
+            mean_score=0.0,
+            std_dev=0.0,
+            score_range=0.0,
+            n_runs=0,
+            is_unstable=False,
         )
     if n == 1:
         return TaskStability(
-            task_id=task_id, mean_score=scores[0], std_dev=0.0,
-            score_range=0.0, n_runs=1, is_unstable=False,
+            task_id=task_id,
+            mean_score=scores[0],
+            std_dev=0.0,
+            score_range=0.0,
+            n_runs=1,
+            is_unstable=False,
         )
 
     mean = statistics.mean(scores)
@@ -272,7 +306,7 @@ def _binomial_two_tailed_p(k: int, n: int) -> float:
 
     # Exact: sum binomial probabilities
     def _binom_pmf(x: int, nn: int) -> float:
-        return math.comb(nn, x) * (0.5 ** nn)
+        return math.comb(nn, x) * (0.5**nn)
 
     tail = min(k, n - k)
     p = sum(_binom_pmf(i, n) for i in range(tail + 1))

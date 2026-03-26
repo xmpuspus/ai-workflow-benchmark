@@ -1,4 +1,5 @@
 """CLI interface for the AI Workflow Benchmark."""
+
 from __future__ import annotations
 
 import click

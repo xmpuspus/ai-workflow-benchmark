@@ -1,4 +1,5 @@
 """Integration tests for CLI commands."""
+
 import json
 import tempfile
 from pathlib import Path
@@ -49,7 +50,8 @@ def test_migrate_results_adds_version():
         old_dir.mkdir()
 
         result_data = {
-            "task_id": "BF-001", "tool": "test",
+            "task_id": "BF-001",
+            "tool": "test",
             "outcome": {"success": True, "partial_credit_score": 100, "partial_credit_max": 100},
         }
         with (old_dir / "BF-001.json").open("w") as f:

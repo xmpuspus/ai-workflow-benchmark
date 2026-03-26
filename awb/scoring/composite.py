@@ -1,4 +1,5 @@
 """Composite score computation with per-task baselines and difficulty weighting."""
+
 from __future__ import annotations
 
 from dataclasses import dataclass, field
@@ -137,6 +138,7 @@ def compute_aggregate_score(
 
 
 # --- Legacy interface for backward compatibility ---
+
 
 def compute_composite_score(tool_stats: dict) -> float:
     """Compute weighted composite score from aggregated tool stats (legacy).

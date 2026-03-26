@@ -1,4 +1,5 @@
 """Async timeout enforcement for benchmark runs."""
+
 from __future__ import annotations
 
 import asyncio
@@ -12,9 +13,7 @@ class TaskTimeoutError(Exception):
     def __init__(self, task_id: str, timeout_seconds: int) -> None:
         self.task_id = task_id
         self.timeout_seconds = timeout_seconds
-        super().__init__(
-            f"Task {task_id} timed out after {timeout_seconds}s"
-        )
+        super().__init__(f"Task {task_id} timed out after {timeout_seconds}s")
 
 
 async def run_with_timeout(

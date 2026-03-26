@@ -1,4 +1,5 @@
 """Resolve workflow descriptors to adapters."""
+
 from __future__ import annotations
 
 from awb.adapters.base import ToolAdapter

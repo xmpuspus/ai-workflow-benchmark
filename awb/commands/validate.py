@@ -1,4 +1,5 @@
 """validate commands — validate, info, quickstart, tools."""
+
 from __future__ import annotations
 
 import asyncio
@@ -92,7 +93,10 @@ def quickstart():
         sys.exit(1)
 
     runner = BenchmarkRunner(
-        tool="claude-code-vanilla", tasks=tasks, runs=1, parallel=False,
+        tool="claude-code-vanilla",
+        tasks=tasks,
+        runs=1,
+        parallel=False,
     )
 
     try:

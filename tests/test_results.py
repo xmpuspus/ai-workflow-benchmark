@@ -1,4 +1,5 @@
 """Tests for ResultRecorder."""
+
 import json
 
 from awb.core.results import ResultRecorder

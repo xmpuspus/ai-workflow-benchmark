@@ -1,4 +1,5 @@
 """Tests for verification modules."""
+
 import tempfile
 from pathlib import Path
 

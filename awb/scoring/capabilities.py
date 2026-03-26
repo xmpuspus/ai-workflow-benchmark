@@ -1,4 +1,5 @@
 """Capability profiling — radar chart data showing tool strengths and weaknesses."""
+
 from __future__ import annotations
 
 import statistics as stats_mod
@@ -30,6 +31,7 @@ class CapabilityScore:
     score: float | None  # None if not tested
     tasks_tested: int
     confidence: float  # 0.0-1.0
+
 
 @dataclass
 class CapabilityProfile:

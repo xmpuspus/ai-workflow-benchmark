@@ -1,4 +1,5 @@
 """Tests for tool adapters."""
+
 import pytest
 
 from awb.adapters.base import ToolAdapter, ToolResult

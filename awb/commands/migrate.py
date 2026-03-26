@@ -1,4 +1,5 @@
 """Migrate v0.5.x results to v1.0 format."""
+
 from __future__ import annotations
 
 import json
@@ -11,7 +12,9 @@ from awb.commands._shared import console
 
 @click.command("migrate-results")
 @click.argument("old_dir", type=click.Path(exists=True))
-@click.option("--output", "-o", "output_dir", type=click.Path(), help="Output directory (default: in-place)")  # noqa: E501
+@click.option(
+    "--output", "-o", "output_dir", type=click.Path(), help="Output directory (default: in-place)"
+)  # noqa: E501
 def migrate_results(old_dir: str, output_dir: str | None):
     """Migrate v0.5.x result JSON files to v1.0 format."""
     old_path = Path(old_dir)

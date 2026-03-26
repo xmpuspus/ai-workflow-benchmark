@@ -1,4 +1,5 @@
 """Adapter registry - discover and load tool adapters."""
+
 from __future__ import annotations
 
 from importlib.metadata import entry_points

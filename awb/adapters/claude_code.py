@@ -1,4 +1,5 @@
 """Claude Code adapters - vanilla (clean config) and custom (user's full config)."""
+
 from __future__ import annotations
 
 import asyncio
@@ -78,6 +79,7 @@ class ClaudeCodeVanillaAdapter(ToolAdapter):
             if proc.returncode != 0 and not stdout_bytes.strip():
                 stderr_text = stderr_bytes.decode(errors="replace")[:500]
                 from rich.console import Console
+
                 Console(stderr=True).print(
                     f"[red]claude failed (exit {proc.returncode}):[/red] {stderr_text}"
                 )
@@ -86,6 +88,7 @@ class ClaudeCodeVanillaAdapter(ToolAdapter):
             raw_check = stdout_bytes.decode(errors="replace")
             if "Not logged in" in raw_check:
                 from rich.console import Console
+
                 Console(stderr=True).print(
                     "[red]Claude Code is not logged in.[/red] "
                     "Run [bold]claude[/bold] interactively first to authenticate."
@@ -137,9 +140,7 @@ class ClaudeCodeVanillaAdapter(ToolAdapter):
         )
 
     def check_available(self) -> bool:
-        result = subprocess.run(
-            ["which", "claude"], capture_output=True, timeout=10
-        )
+        result = subprocess.run(["which", "claude"], capture_output=True, timeout=10)
         return result.returncode == 0
 
     def get_version(self) -> str:

@@ -1,4 +1,5 @@
 """Shared test fixtures for AWB tests."""
+
 import tempfile
 from pathlib import Path
 

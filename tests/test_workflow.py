@@ -1,4 +1,5 @@
 """Tests for workflow descriptor module."""
+
 from pathlib import Path
 
 import pytest
@@ -80,12 +81,15 @@ class TestLoadDescriptor:
         assert d.tool.name == "claude-code-vanilla"
 
     def test_full(self, tmp_path):
-        p = _make_valid_yaml(tmp_path, {
-            "model": "claude-opus-4",
-            "config": {"max_turns": 10, "timeout_seconds": 600, "config_hash": "abc123"},
-            "environment": {"hooks_count": 5, "agents_count": 3},
-            "metadata": {"author": "xavier"},
-        })
+        p = _make_valid_yaml(
+            tmp_path,
+            {
+                "model": "claude-opus-4",
+                "config": {"max_turns": 10, "timeout_seconds": 600, "config_hash": "abc123"},
+                "environment": {"hooks_count": 5, "agents_count": 3},
+                "metadata": {"author": "xavier"},
+            },
+        )
         d = load_descriptor(p)
         assert d.model.name == "claude-opus-4"
         assert d.config.max_turns == 10

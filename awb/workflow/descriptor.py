@@ -71,9 +71,7 @@ class WorkflowDescriptor:
                 "claude_md_hash": self.environment.claude_md_hash,
             },
         }
-        digest = hashlib.sha256(
-            json.dumps(canonical, sort_keys=True).encode()
-        ).hexdigest()
+        digest = hashlib.sha256(json.dumps(canonical, sort_keys=True).encode()).hexdigest()
         return digest[:16]
 
 

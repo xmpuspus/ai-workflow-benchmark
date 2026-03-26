@@ -1,4 +1,5 @@
 """Windsurf adapter — stub pending CLI availability."""
+
 from __future__ import annotations
 
 import shutil

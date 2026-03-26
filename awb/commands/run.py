@@ -1,4 +1,5 @@
 """run command — executes benchmark tasks through a tool adapter."""
+
 from __future__ import annotations
 
 import asyncio
@@ -21,8 +22,17 @@ def _score_style(score: float) -> str:
 
 
 def _run_both(
-    task_id, category, capability, difficulty, runs, parallel, dry_run, timeout,
-    resume=False, concurrency=3, adaptive=False,
+    task_id,
+    category,
+    capability,
+    difficulty,
+    runs,
+    parallel,
+    dry_run,
+    timeout,
+    resume=False,
+    concurrency=3,
+    adaptive=False,
 ):
     """Run vanilla and custom back-to-back then show a comparison."""
     from awb.core.runner import BenchmarkRunner
@@ -58,9 +68,14 @@ def _run_both(
     for variant in ("claude-code-vanilla", "claude-code-custom"):
         console.print(f"\nRunning [bold]{variant}[/bold] on {len(tasks)} task(s) x {runs} run(s)")
         runner = BenchmarkRunner(
-            tool=variant, tasks=tasks, runs=runs,
-            parallel=parallel, timeout_override=timeout,
-            resume=resume, concurrency=concurrency, adaptive=adaptive,
+            tool=variant,
+            tasks=tasks,
+            runs=runs,
+            parallel=parallel,
+            timeout_override=timeout,
+            resume=resume,
+            concurrency=concurrency,
+            adaptive=adaptive,
         )
         all_results[variant] = asyncio.run(runner.run_all())
 
@@ -85,10 +100,16 @@ def _run_both(
     for tid in all_tasks:
         rv = map_v.get(tid)
         rc = map_c.get(tid)
-        sv = "[green]PASS[/green]" if rv and rv.outcome.success else (
-            "[red]FAIL[/red]" if rv else "-")
-        sc = "[green]PASS[/green]" if rc and rc.outcome.success else (
-            "[red]FAIL[/red]" if rc else "-")
+        sv = (
+            "[green]PASS[/green]"
+            if rv and rv.outcome.success
+            else ("[red]FAIL[/red]" if rv else "-")
+        )
+        sc = (
+            "[green]PASS[/green]"
+            if rc and rc.outcome.success
+            else ("[red]FAIL[/red]" if rc else "-")
+        )
         scv = f"{rv.outcome.partial_credit_score}/{rv.outcome.partial_credit_max}" if rv else "-"
         scc = f"{rc.outcome.partial_credit_score}/{rc.outcome.partial_credit_max}" if rc else "-"
         tv = f"{rv.metrics.wall_clock_seconds:.1f}s" if rv else "-"
@@ -120,9 +141,7 @@ def _run_both(
         f" vs custom {report.custom_pass_rate:.0f}%"
     )
     console.print(
-        f"  Wins: custom {report.custom_wins}"
-        f" / vanilla {report.vanilla_wins}"
-        f" / ties {report.ties}"
+        f"  Wins: custom {report.custom_wins} / vanilla {report.vanilla_wins} / ties {report.ties}"
     )
 
     # Capability breakdown
@@ -133,19 +152,13 @@ def _run_both(
         console.print("\n  [bold]Where your workflow helps:[/bold]")
         for c in helps:
             label = c.capability.replace("_", " ")
-            console.print(
-                f"    {label:<24} [green]+{c.lift:>5.1f} pts[/green]"
-                f"  ({c.tasks} tasks)"
-            )
+            console.print(f"    {label:<24} [green]+{c.lift:>5.1f} pts[/green]  ({c.tasks} tasks)")
 
     if hurts:
         console.print("\n  [bold]Where it hurts:[/bold]")
         for c in hurts:
             label = c.capability.replace("_", " ")
-            console.print(
-                f"    {label:<24} [red]{c.lift:>5.1f} pts[/red]"
-                f"  ({c.tasks} tasks)"
-            )
+            console.print(f"    {label:<24} [red]{c.lift:>5.1f} pts[/red]  ({c.tasks} tasks)")
 
     if not helps and not hurts:
         console.print("\n  No significant capability-level differences.")
@@ -178,10 +191,21 @@ def _run_both(
 @click.option("--resume", is_flag=True, help="Skip tasks that already have results")
 @click.option("-j", "--concurrency", type=int, default=4, help="Max parallel tasks (default: 4)")
 @click.option("--adaptive", is_flag=True, help="Only re-run near-miss tasks on runs 2+")
-def run(tool: str | None, workflow: str | None, task_id: str | None,
-        category: str | None, capability: str | None, difficulty: str | None,
-        runs: int, parallel: bool, dry_run: bool, timeout: int | None,
-        resume: bool, concurrency: int, adaptive: bool):
+def run(
+    tool: str | None,
+    workflow: str | None,
+    task_id: str | None,
+    category: str | None,
+    capability: str | None,
+    difficulty: str | None,
+    runs: int,
+    parallel: bool,
+    dry_run: bool,
+    timeout: int | None,
+    resume: bool,
+    concurrency: int,
+    adaptive: bool,
+):
     """Run benchmark tasks through a tool adapter."""
     from awb.core.runner import BenchmarkRunner
     from awb.core.task_loader import load_all_tasks
@@ -191,6 +215,7 @@ def run(tool: str | None, workflow: str | None, task_id: str | None,
     if workflow:
         from awb.core.config import WorkflowInfo
         from awb.workflow.descriptor import load_descriptor
+
         descriptor = load_descriptor(Path(workflow))
         tool = descriptor.tool.name
         workflow_info = WorkflowInfo(
@@ -204,10 +229,19 @@ def run(tool: str | None, workflow: str | None, task_id: str | None,
         console.print(f"Loaded workflow: [bold]{descriptor.name}[/bold]")
     elif not tool:
         # No tool specified - run both variants and compare
-        _run_both(task_id=task_id, category=category, capability=capability,
-                  difficulty=difficulty, runs=runs, parallel=parallel,
-                  dry_run=dry_run, timeout=timeout,
-                  resume=resume, concurrency=concurrency, adaptive=adaptive)
+        _run_both(
+            task_id=task_id,
+            category=category,
+            capability=capability,
+            difficulty=difficulty,
+            runs=runs,
+            parallel=parallel,
+            dry_run=dry_run,
+            timeout=timeout,
+            resume=resume,
+            concurrency=concurrency,
+            adaptive=adaptive,
+        )
         return
 
     tasks = load_all_tasks(category=category)
@@ -229,6 +263,7 @@ def run(tool: str | None, workflow: str | None, task_id: str | None,
 
     # Pre-flight auth check
     from awb.adapters.registry import get_adapter as _get_adapter
+
     adapter = _get_adapter(tool)
     if adapter.supports_auth_check():
         ok, msg = adapter.check_auth()
@@ -248,10 +283,15 @@ def run(tool: str | None, workflow: str | None, task_id: str | None,
         return
 
     runner = BenchmarkRunner(
-        tool=tool, tasks=tasks, runs=runs,
-        parallel=parallel, timeout_override=timeout,
+        tool=tool,
+        tasks=tasks,
+        runs=runs,
+        parallel=parallel,
+        timeout_override=timeout,
         workflow=workflow_info,
-        resume=resume, concurrency=concurrency, adaptive=adaptive,
+        resume=resume,
+        concurrency=concurrency,
+        adaptive=adaptive,
     )
     results = asyncio.run(runner.run_all())
 
@@ -273,7 +313,9 @@ def run(tool: str | None, workflow: str | None, task_id: str | None,
             f"[{color}]{r.outcome.partial_credit_score}/{r.outcome.partial_credit_max}[/{color}]"
         )
         table.add_row(
-            r.task_id, success_str, score_str,
+            r.task_id,
+            success_str,
+            score_str,
             f"{r.metrics.wall_clock_seconds:.1f}",
             f"{r.cost.estimated_cost_usd:.2f}",
             str(r.metrics.iteration_count),

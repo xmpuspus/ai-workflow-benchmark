@@ -1,4 +1,5 @@
 """Workflow Lift Score — measures how much a workflow contributes vs vanilla."""
+
 from __future__ import annotations
 
 import statistics as stats_mod
@@ -48,10 +49,17 @@ def compute_workflow_lift(
 
     if not common:
         return WorkflowLiftReport(
-            lift=0, p_value=None, significant=False,
-            vanilla_pass_rate=0, custom_pass_rate=0,
-            vanilla_partial_avg=0, custom_partial_avg=0,
-            n_tasks=0, custom_wins=0, vanilla_wins=0, ties=0,
+            lift=0,
+            p_value=None,
+            significant=False,
+            vanilla_pass_rate=0,
+            custom_pass_rate=0,
+            vanilla_partial_avg=0,
+            custom_partial_avg=0,
+            n_tasks=0,
+            custom_wins=0,
+            vanilla_wins=0,
+            ties=0,
         )
 
     # Per-task scores (partial credit percentage)
@@ -80,12 +88,14 @@ def compute_workflow_lift(
         else:
             ties += 1
 
-        per_task.append({
-            "task_id": tid,
-            "vanilla": round(vs, 1),
-            "custom": round(cs, 1),
-            "lift": round(delta, 1),
-        })
+        per_task.append(
+            {
+                "task_id": tid,
+                "vanilla": round(vs, 1),
+                "custom": round(cs, 1),
+                "lift": round(delta, 1),
+            }
+        )
 
     # Overall lift
     diffs = [c - v for v, c in zip(v_scores, c_scores, strict=False)]
@@ -121,13 +131,15 @@ def compute_workflow_lift(
     for cap in sorted(cap_v_scores.keys()):
         v_avg = stats_mod.mean(cap_v_scores[cap])
         c_avg = stats_mod.mean(cap_c_scores[cap])
-        capability_lifts.append(CapabilityLift(
-            capability=cap,
-            lift=round(c_avg - v_avg, 1),
-            vanilla_avg=round(v_avg, 1),
-            custom_avg=round(c_avg, 1),
-            tasks=len(cap_v_scores[cap]),
-        ))
+        capability_lifts.append(
+            CapabilityLift(
+                capability=cap,
+                lift=round(c_avg - v_avg, 1),
+                vanilla_avg=round(v_avg, 1),
+                custom_avg=round(c_avg, 1),
+                tasks=len(cap_v_scores[cap]),
+            )
+        )
 
     # Sort by lift descending
     capability_lifts.sort(key=lambda x: -x.lift)

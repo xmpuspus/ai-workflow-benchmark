@@ -1,4 +1,5 @@
 """GitHub Copilot CLI adapter — stub pending agentic CLI mode."""
+
 from __future__ import annotations
 
 import subprocess

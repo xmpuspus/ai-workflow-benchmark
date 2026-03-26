@@ -56,7 +56,10 @@ class RepoManager:
                 delay = _CLONE_BACKOFF_BASE * (attempt + 1)
                 log.warning(
                     "git clone failed for %s (attempt %d/%d), retrying in %ds",
-                    task.id, attempt + 1, _CLONE_MAX_RETRIES, delay,
+                    task.id,
+                    attempt + 1,
+                    _CLONE_MAX_RETRIES,
+                    delay,
                 )
                 # Clean up partial clone before retry
                 if workspace.exists():

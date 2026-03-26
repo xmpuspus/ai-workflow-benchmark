@@ -1,4 +1,5 @@
 """Tests for code review scorer."""
+
 import pytest
 
 from awb.verification.code_review_scorer import ReviewScore, score_code_review

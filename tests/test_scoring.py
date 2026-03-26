@@ -1,4 +1,5 @@
 """Tests for scoring module."""
+
 from awb.core.config import (
     RunCost,
     RunEnvironment,
@@ -47,15 +48,24 @@ def _make_tool_stats(**overrides) -> dict:
     return base
 
 
-def _make_result(task_id="BF-001", success=True, score=100, max_score=100,
-                 cost=0.5, time=60.0, iterations=5, **kwargs) -> RunResult:
+def _make_result(
+    task_id="BF-001",
+    success=True,
+    score=100,
+    max_score=100,
+    cost=0.5,
+    time=60.0,
+    iterations=5,
+    **kwargs,
+) -> RunResult:
     return RunResult(
         task_id=task_id,
         tool="test-tool",
         run_id="test-run",
         timestamp="2026-01-01T00:00:00Z",
-        outcome=RunOutcome(success=success, partial_credit_score=score,
-                           partial_credit_max=max_score),
+        outcome=RunOutcome(
+            success=success, partial_credit_score=score, partial_credit_max=max_score
+        ),
         metrics=RunMetrics(wall_clock_seconds=time, iteration_count=iterations),
         cost=RunCost(estimated_cost_usd=cost),
         quality=RunQuality(),
@@ -63,8 +73,9 @@ def _make_result(task_id="BF-001", success=True, score=100, max_score=100,
     )
 
 
-def _make_task(task_id="BF-001", difficulty="easy", estimated_minutes=15,
-               capabilities=None) -> TaskDefinition:
+def _make_task(
+    task_id="BF-001", difficulty="easy", estimated_minutes=15, capabilities=None
+) -> TaskDefinition:
     return TaskDefinition(
         id=task_id,
         category="bug-fix",
@@ -198,9 +209,11 @@ class TestBaselines:
 class TestCapabilities:
     def test_profile_computes(self):
         results = [_make_result(task_id="BF-001", score=80, max_score=100)]
-        tasks = {"BF-001": _make_task(
-            task_id="BF-001", capabilities=["framework_knowledge", "test_writing"]
-        )}
+        tasks = {
+            "BF-001": _make_task(
+                task_id="BF-001", capabilities=["framework_knowledge", "test_writing"]
+            )
+        }
         profile = compute_capability_profile(results, tasks)
         assert profile.scores["framework_knowledge"].score == 80.0
         assert profile.scores["test_writing"].score == 80.0
@@ -277,6 +290,7 @@ class TestScoreReport:
 
 def test_task_stability_stable():
     from awb.scoring.statistics import compute_task_stability
+
     s = compute_task_stability("BF-001", [80, 82, 78])
     assert not s.is_unstable
     assert s.std_dev < 3
@@ -284,6 +298,7 @@ def test_task_stability_stable():
 
 def test_task_stability_unstable():
     from awb.scoring.statistics import compute_task_stability
+
     s = compute_task_stability("FA-003", [0, 90, 0])
     assert s.is_unstable
     assert s.score_range == 90
@@ -291,6 +306,7 @@ def test_task_stability_unstable():
 
 def test_stability_weight_stable():
     from awb.scoring.statistics import TaskStability, compute_stability_weights
+
     stabilities = [TaskStability("BF-001", 80, 5.0, 4.0, 3, False)]
     weights = compute_stability_weights(stabilities)
     assert weights["BF-001"] == 1.0
@@ -298,6 +314,7 @@ def test_stability_weight_stable():
 
 def test_stability_weight_unstable():
     from awb.scoring.statistics import TaskStability, compute_stability_weights
+
     stabilities = [TaskStability("FA-003", 30, 40.0, 90.0, 3, True)]
     weights = compute_stability_weights(stabilities)
     assert 0.3 < weights["FA-003"] < 1.0
@@ -306,6 +323,7 @@ def test_stability_weight_unstable():
 def test_weight_profile_sums_to_one():
     """All weight profiles must sum to 1.0."""
     from awb.scoring.composite import _weight_cache, load_weight_profile
+
     _weight_cache.clear()  # Clear cache to force reload
     for profile in ("default", "correctness_focused", "production"):
         weights = load_weight_profile(profile)
@@ -316,6 +334,7 @@ def test_weight_profile_sums_to_one():
 def test_integrity_constant_defined():
     """Integrity module uses named constant for plausibility threshold."""
     from awb.scoring.integrity import MIN_PLAUSIBLE_SECONDS
+
     assert MIN_PLAUSIBLE_SECONDS == 10
 
 
@@ -326,10 +345,17 @@ def test_report_metric_keys_match_weights():
 
     weights = load_weight_profile("default")
     tool_stats = {
-        "tool": "test-tool", "total_tasks": 10, "successes": 5,
-        "success_rate": 50.0, "avg_score_pct": 60.0,
-        "avg_cost": 0.50, "avg_time": 120.0, "avg_iterations": 10,
-        "total_lint_delta": 2, "total_security_delta": 1, "total_regressions": 0,
+        "tool": "test-tool",
+        "total_tasks": 10,
+        "successes": 5,
+        "success_rate": 50.0,
+        "avg_score_pct": 60.0,
+        "avg_cost": 0.50,
+        "avg_time": 120.0,
+        "avg_iterations": 10,
+        "total_lint_delta": 2,
+        "total_security_delta": 1,
+        "total_regressions": 0,
     }
     report = generate_report(tool_stats)
     assert set(report.per_metric_normalized.keys()) == set(weights.keys())
@@ -338,11 +364,19 @@ def test_report_metric_keys_match_weights():
 def test_all_schema_capabilities_in_enum():
     """Every capability in schema.json must exist in Capability enum."""
     from awb.scoring.capabilities import Capability
+
     expected = {
-        "code_comprehension", "bug_diagnosis", "multi_file_reasoning",
-        "framework_knowledge", "test_writing", "refactoring_discipline",
-        "security_awareness", "cost_discipline", "completeness_tracking",
-        "convention_adherence", "context_discovery",
+        "code_comprehension",
+        "bug_diagnosis",
+        "multi_file_reasoning",
+        "framework_knowledge",
+        "test_writing",
+        "refactoring_discipline",
+        "security_awareness",
+        "cost_discipline",
+        "completeness_tracking",
+        "convention_adherence",
+        "context_discovery",
     }
     actual = {c.value for c in Capability}
     assert actual == expected

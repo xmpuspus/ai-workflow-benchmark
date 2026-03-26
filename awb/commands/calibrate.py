@@ -1,4 +1,5 @@
 """calibrate commands — difficulty and timeout recalibration."""
+
 from __future__ import annotations
 
 import sys
@@ -37,8 +38,12 @@ def calibrate_difficulty_cmd(run_dirs: tuple[str, ...], apply: bool):
     for r in recs:
         changed = "[yellow]YES[/yellow]" if r.changed else ""
         table.add_row(
-            r.task_id, r.current, r.recommended,
-            f"{r.pass_rate:.0f}%", str(r.n_runs), changed,
+            r.task_id,
+            r.current,
+            r.recommended,
+            f"{r.pass_rate:.0f}%",
+            str(r.n_runs),
+            changed,
         )
     console.print(table)
 
@@ -77,8 +82,11 @@ def calibrate_timeouts_cmd(run_dirs: tuple[str, ...], apply: bool):
     for r in recs:
         changed = "[yellow]YES[/yellow]" if r.changed else ""
         table.add_row(
-            r.task_id, f"{r.current_timeout}s",
-            f"{r.p95_time:.0f}s", f"{r.recommended_timeout}s", changed,
+            r.task_id,
+            f"{r.current_timeout}s",
+            f"{r.p95_time:.0f}s",
+            f"{r.recommended_timeout}s",
+            changed,
         )
     console.print(table)
 

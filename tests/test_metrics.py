@@ -1,4 +1,5 @@
 """Tests for MetricCollector and cost calculation."""
+
 import time
 
 from awb.core.metrics import MODEL_PRICING, MetricCollector
@@ -56,13 +57,15 @@ def test_iteration_counting():
 
 def test_parse_stream_event_assistant():
     mc = MetricCollector()
-    mc.parse_stream_event({
-        "type": "assistant",
-        "message": {
-            "usage": {"input_tokens": 500, "output_tokens": 100},
-            "content": [{"type": "tool_use", "name": "Read"}],
-        },
-    })
+    mc.parse_stream_event(
+        {
+            "type": "assistant",
+            "message": {
+                "usage": {"input_tokens": 500, "output_tokens": 100},
+                "content": [{"type": "tool_use", "name": "Read"}],
+            },
+        }
+    )
     assert mc._input_tokens == 500
     assert mc._output_tokens == 100
     assert mc._iterations == 1
@@ -71,12 +74,14 @@ def test_parse_stream_event_assistant():
 def test_parse_stream_event_result_overrides():
     mc = MetricCollector()
     mc.record_tokens(100, 50)
-    mc.parse_stream_event({
-        "type": "result",
-        "total_cost_usd": 1.23,
-        "usage": {"input_tokens": 10000, "output_tokens": 5000},
-        "num_turns": 7,
-    })
+    mc.parse_stream_event(
+        {
+            "type": "result",
+            "total_cost_usd": 1.23,
+            "usage": {"input_tokens": 10000, "output_tokens": 5000},
+            "num_turns": 7,
+        }
+    )
     cost = mc.to_cost()
     assert cost.estimated_cost_usd == 1.23
     assert cost.input_tokens == 10000

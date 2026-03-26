@@ -1,4 +1,5 @@
 """Codex CLI adapter for AI Workflow Benchmark."""
+
 from __future__ import annotations
 
 import asyncio

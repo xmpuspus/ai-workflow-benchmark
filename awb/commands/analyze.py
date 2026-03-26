@@ -1,4 +1,5 @@
 """analyze commands — compare, gap, stability."""
+
 from __future__ import annotations
 
 import sys
@@ -47,10 +48,16 @@ def compare(run_dir_1: str, run_dir_2: str):
         r1 = map_1.get(tid)
         r2 = map_2.get(tid)
 
-        s1 = "[green]PASS[/green]" if r1 and r1.outcome.success else (
-            "[red]FAIL[/red]" if r1 else "-")
-        s2 = "[green]PASS[/green]" if r2 and r2.outcome.success else (
-            "[red]FAIL[/red]" if r2 else "-")
+        s1 = (
+            "[green]PASS[/green]"
+            if r1 and r1.outcome.success
+            else ("[red]FAIL[/red]" if r1 else "-")
+        )
+        s2 = (
+            "[green]PASS[/green]"
+            if r2 and r2.outcome.success
+            else ("[red]FAIL[/red]" if r2 else "-")
+        )
         sc1 = f"{r1.outcome.partial_credit_score}/{r1.outcome.partial_credit_max}" if r1 else "-"
         sc2 = f"{r2.outcome.partial_credit_score}/{r2.outcome.partial_credit_max}" if r2 else "-"
         t1 = f"{r1.metrics.wall_clock_seconds:.1f}s" if r1 else "-"

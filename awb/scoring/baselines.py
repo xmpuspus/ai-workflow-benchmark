@@ -1,4 +1,5 @@
 """Per-task scoring baselines derived from task difficulty and constraints."""
+
 from __future__ import annotations
 
 from dataclasses import dataclass

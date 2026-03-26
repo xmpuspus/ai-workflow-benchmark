@@ -1,4 +1,5 @@
 """Shared CLI utilities — console instance, result loading, formatters."""
+
 from __future__ import annotations
 
 import logging

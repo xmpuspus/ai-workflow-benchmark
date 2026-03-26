@@ -1,4 +1,5 @@
 """Write and read structured JSON results."""
+
 from __future__ import annotations
 
 import json
@@ -67,7 +68,9 @@ class ResultRecorder:
         return runs
 
     def find_incomplete_run(
-        self, tool: str, expected_tasks: int,
+        self,
+        tool: str,
+        expected_tasks: int,
     ) -> str | None:
         """Find the most recent run_id for this tool that has fewer results than expected.
 

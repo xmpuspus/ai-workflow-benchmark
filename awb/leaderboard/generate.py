@@ -1,4 +1,5 @@
 """Generate static HTML leaderboard from benchmark results."""
+
 from __future__ import annotations
 
 import json
@@ -120,10 +121,12 @@ def generate_leaderboard(
             history = json.loads(history_path.read_text())
         except json.JSONDecodeError:
             history = []
-    history.append({
-        "timestamp": datetime.now(UTC).isoformat(),
-        "tools": {t["tool"]: t.get("composite_score", 0) for t in ranked},
-    })
+    history.append(
+        {
+            "timestamp": datetime.now(UTC).isoformat(),
+            "tools": {t["tool"]: t.get("composite_score", 0) for t in ranked},
+        }
+    )
     history_path.write_text(json.dumps(history, indent=2))
 
     static_src = leaderboard_dir / "static"

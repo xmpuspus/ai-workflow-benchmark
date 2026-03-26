@@ -1,4 +1,5 @@
 """Cursor IDE CLI adapter (placeholder)."""
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -17,9 +18,7 @@ class CursorAdapter(ToolAdapter):
         max_turns: int = 20,
         timeout_seconds: int = 1800,
     ) -> ToolResult:
-        raise NotImplementedError(
-            "Cursor adapter not yet implemented - contributions welcome"
-        )
+        raise NotImplementedError("Cursor adapter not yet implemented - contributions welcome")
 
     def check_available(self) -> bool:
         raise NotImplementedError("Cursor adapter not yet implemented")

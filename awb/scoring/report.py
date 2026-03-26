@@ -1,4 +1,5 @@
 """Score report dataclass and formatted output."""
+
 from __future__ import annotations
 
 from dataclasses import dataclass, field
@@ -64,6 +65,7 @@ def generate_report(tool_stats: dict) -> ScoreReport:
 
 def print_report(report: ScoreReport) -> None:
     from awb.scoring.composite import load_weight_profile
+
     console = Console()
     score = report.composite_score
     console.print(f"\n[bold]{report.tool}[/bold] - Composite: [bold cyan]{score}[/bold cyan]\n")

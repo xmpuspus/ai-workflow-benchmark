@@ -1,4 +1,5 @@
 """Tests for task YAML loading and validation."""
+
 import tempfile
 from pathlib import Path
 

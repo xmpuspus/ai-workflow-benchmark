@@ -5,6 +5,7 @@ Uses sigmoid-based normalization that:
 - Never produces negative scores
 - Provides smooth gradient at all values (no cliffs)
 """
+
 from __future__ import annotations
 
 import math
@@ -47,6 +48,7 @@ def sigmoid_normalize(
 # --- Convenience wrappers for backward compatibility ---
 # These use global defaults when per-task baselines are not provided.
 
+
 def normalize_success_rate(rate: float) -> float:
     """Passthrough clamped to [0, 100]."""
     return round(max(0.0, min(100.0, rate)), 1)
@@ -81,6 +83,8 @@ def normalize_security(total_security_delta: int, total_tasks: int) -> float:
 
 
 def normalize_iterations(
-    avg_iterations: float, optimal: float = 3.0, baseline: float = 20.0,
+    avg_iterations: float,
+    optimal: float = 3.0,
+    baseline: float = 20.0,
 ) -> float:
     return sigmoid_normalize(avg_iterations, optimal, baseline, lower_is_better=True)

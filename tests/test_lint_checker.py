@@ -1,4 +1,5 @@
 """Tests for lint checker."""
+
 import pytest
 
 from awb.verification.lint_checker import _count_lines, count_lint_issues

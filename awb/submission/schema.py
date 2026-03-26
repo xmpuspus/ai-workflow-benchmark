@@ -1,4 +1,5 @@
 """Submission data structures and hardware classification."""
+
 from __future__ import annotations
 
 from dataclasses import dataclass, field
@@ -25,7 +26,11 @@ HARDWARE_CLASSES = {
 
 # Metrics that are comparable across hardware classes
 HARDWARE_INDEPENDENT_METRICS = {
-    "correctness", "cost_efficiency", "code_quality", "reliability", "security"
+    "correctness",
+    "cost_efficiency",
+    "code_quality",
+    "reliability",
+    "security",
 }
 
 # Metrics that require same hardware class for fair comparison
