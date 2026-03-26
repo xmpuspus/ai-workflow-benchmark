@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "awb"
-version = "0.5.5"
+version = "1.0.0"
 description = "Benchmark harness measuring AI coding tool+workflow performance, not just model capability"
 readme = "README.md"
 license = "MIT"
@@ -58,6 +58,10 @@ claude-code-custom = "awb.adapters.claude_code:ClaudeCodeCustomAdapter"
 cursor = "awb.adapters.cursor:CursorAdapter"
 aider = "awb.adapters.aider:AiderAdapter"
 pi = "awb.adapters.pi:PiAdapter"
+gemini-cli = "awb.adapters.gemini_cli:GeminiCliAdapter"
+codex-cli = "awb.adapters.codex_cli:CodexCliAdapter"
+windsurf = "awb.adapters.windsurf:WindsurfAdapter"
+copilot = "awb.adapters.copilot_cli:CopilotCliAdapter"
 
 [tool.hatch.build.targets.wheel]
 packages = ["awb"]
