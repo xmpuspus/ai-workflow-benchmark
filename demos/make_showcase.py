@@ -1,32 +1,37 @@
 #!/usr/bin/env python3
-"""Generate a LinkedIn-worthy showcase GIF demonstrating AWB v0.5.5."""
+"""Generate a LinkedIn-worthy showcase GIF demonstrating AWB v1.0.0."""
 import sys
+
 sys.path.insert(0, "/Users/xavier/.claude/skills/terminal-gif")
-from terminal_gif import TerminalGIF, G, D, F, C, Y, R
+from terminal_gif import C, D, F, G, R, TerminalGIF, Y
 
 OUT = "/Users/xavier/Desktop/ai-workflow-benchmark/demos/awb-showcase.gif"
 
-gif = TerminalGIF(preset="full", title="AI Workflow Benchmark v0.5.5")
+gif = TerminalGIF(preset="full", title="AI Workflow Benchmark v1.0.0")
 
 # --- Scene 1: Install + Version ---
 gif.pause(500)
 
 s1 = [
     [D("$"), F(" pip install awb")],
-    [G("Successfully installed"), F(" awb-"), Y("0.5.5")],
+    [G("Successfully installed"), F(" awb-"), Y("1.0.0")],
     "",
     [D("$"), F(" awb --version")],
-    [C("awb"), F(", version "), Y("0.5.5")],
+    [C("awb"), F(", version "), Y("1.0.0")],
     "",
     [D("$"), F(" awb tools")],
     [F("  claude-code-vanilla   "), G("Available")],
     [F("  claude-code-custom    "), G("Available")],
+    [F("  gemini-cli            "), Y("Stub")],
+    [F("  codex-cli             "), Y("Stub")],
     [F("  cursor                "), Y("Stub")],
     [F("  aider                 "), Y("Stub")],
+    [F("  windsurf              "), Y("Stub")],
+    [F("  copilot               "), Y("Stub")],
 ]
 gif.add_frame(s1, ms=2500)
 
-# --- Scene 2: Validate 80 tasks ---
+# --- Scene 2: Validate 100 tasks ---
 s2 = [
     [D("$"), F(" awb validate")],
     "",
@@ -37,10 +42,10 @@ s2 = [
     [G("PASS"), F(" legacy-code/LC-012  "), D("20-file navigation")],
     [G("PASS"), F(" multi-file/MF-009   "), D("merge conflict")],
     [G("PASS"), F(" refactoring/RF-011  "), D("O(n^2) optimization")],
-    [G("PASS"), F(" refactoring/RF-012  "), D("fix broken CI/CD")],
-    [D("  ... 72 more ...")],
+    [G("PASS"), F(" workflow/WF-030     "), D("TODO completeness")],
+    [D("  ... 92 more ...")],
     "",
-    [G("All 80 tasks valid"), F("  "), D("7 categories, 8 capabilities")],
+    [G("All 100 tasks valid"), F("  "), D("8 categories, 11 capabilities")],
 ]
 gif.add_frame(s2, ms=3000)
 
@@ -48,12 +53,12 @@ gif.add_frame(s2, ms=3000)
 s3 = [
     [D("$"), F(" awb run --runs 3 --parallel -j 3 --adaptive")],
     "",
-    [C("--- Run 1/3 ---"), F("  (80 tasks, saving to results/runs/...)")],
-    [F("  [1/240] BF-001 (easy) ..."), G(" PASS"), F("  100/100  67s  $0.42")],
-    [F("  [2/240] BF-003 (hard) ..."), R(" FAIL"), F("   75/100 143s  $0.81")],
-    [F("  [3/240] BF-004 (easy) ..."), G(" PASS"), F("  100/100  52s  $0.35")],
-    [D("  ... 77 more tasks ...")],
-    [F("  "), G("Run 1 complete:"), F(" 44/80 passed (55%)")],
+    [C("--- Run 1/3 ---"), F("  (100 tasks, saving to results/runs/...)")],
+    [F("  [1/300] BF-001 (easy) ..."), G(" PASS"), F("  100/100  67s  $0.42")],
+    [F("  [2/300] BF-003 (hard) ..."), R(" FAIL"), F("   75/100 143s  $0.81")],
+    [F("  [3/300] BF-004 (easy) ..."), G(" PASS"), F("  100/100  52s  $0.35")],
+    [D("  ... 97 more tasks ...")],
+    [F("  "), G("Run 1 complete:"), F(" 56/100 passed (56%)")],
     "",
     [Y("Adaptive: 44 decisive (skip), 36 near-miss (re-run)")],
     "",
@@ -93,13 +98,13 @@ s5 = [
     [F("  RF-003    77%    25.2     60    "), R("UNSTABLE")],
     [F("  BF-014    56%    18.9     40    "), R("UNSTABLE")],
     [F("  BF-001    90%     5.1     25    "), G("stable")],
-    [D("  ... 76 more tasks ...")],
+    [D("  ... 96 more tasks ...")],
     "",
     [D("$"), F(" awb calibrate-difficulty results/runs/* --apply")],
-    [Y("59/80 tasks recalibrated"), F(" (empirical pass rates)")],
+    [Y("72/100 tasks recalibrated"), F(" (empirical pass rates)")],
     "",
     [D("$"), F(" awb calibrate-timeouts results/runs/* --apply")],
-    [Y("74/80 tasks tightened"), F(" (p95 x 2.5)")],
+    [Y("91/100 tasks tightened"), F(" (p95 x 2.5)")],
 ]
 gif.add_frame(s5, ms=4000)
 
@@ -118,6 +123,9 @@ s6 = [
     [F("  refactoring         "), G("================"), D("===="), F(" "), Y("86")],
     [F("  test writing        "), G("==============="), D("====="), F(" "), Y("85")],
     [F("  cost discipline     "), G("==========="), D("========="), F(" "), Y("66")],
+    [F("  completeness        "), G("================="), D("==="), F(" "), Y("88")],
+    [F("  convention adherence"), G("================"), D("===="), F(" "), Y("84")],
+    [F("  context discovery   "), G("================"), D("===="), F(" "), Y("85")],
 ]
 gif.add_frame(s6, ms=3500)
 
@@ -129,8 +137,8 @@ s7 = [
     [F("  │  "), C("AI Workflow Benchmark"), F("               │")],
     [F("  │  "), D("Measure workflow, not just model"), F("    │")],
     [F("  │                                        │")],
-    [F("  │  "), Y("80"), F(" tasks  "), D("|"), F("  "), Y("8"), F(" capabilities      │")],
-    [F("  │  "), Y("7"), F(" categories "), D("|"), F(" Workflow Lift Score │")],
+    [F("  │  "), Y("100"), F(" tasks  "), D("|"), F("  "), Y("11"), F(" capabilities     │")],
+    [F("  │  "), Y("8"), F(" categories "), D("|"), F(" Workflow Lift Score │")],
     [F("  │                                        │")],
     [F("  │  "), G("pip install awb"), F("                     │")],
     [F("  │  "), G("awb run --parallel --adaptive"), F("       │")],
