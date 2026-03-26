@@ -191,22 +191,22 @@ verification:
   partial_credit:
     - criterion: "load_config uses FileNotFoundError (or OSError)"
       points: 15
-      check: "grep -qE 'except (FileNotFoundError|OSError)' handlers.py"
+      check: "grep -qE 'except (FileNotFoundError|OSError)' handlers.py && ! grep -qE '^\\s*except\\s*:' handlers.py"
     - criterion: "parse_page_number uses ValueError"
       points: 15
-      check: "grep -q 'except ValueError' handlers.py"
+      check: "grep -q 'except ValueError' handlers.py && ! grep -qE '^\\s*except\\s*:' handlers.py"
     - criterion: "fetch_env_var uses KeyError"
       points: 15
-      check: "grep -q 'except KeyError' handlers.py"
+      check: "grep -q 'except KeyError' handlers.py && ! grep -qE '^\\s*except\\s*:' handlers.py"
     - criterion: "divide uses ZeroDivisionError"
       points: 15
-      check: "grep -q 'except ZeroDivisionError' handlers.py"
+      check: "grep -q 'except ZeroDivisionError' handlers.py && ! grep -qE '^\\s*except\\s*:' handlers.py"
     - criterion: "read_first_line uses OSError or FileNotFoundError"
       points: 15
-      check: "grep -qE 'except (OSError|FileNotFoundError)' handlers.py"
+      check: "grep -qE 'except (OSError|FileNotFoundError)' handlers.py && ! grep -qE '^\\s*except\\s*:' handlers.py"
     - criterion: "safe_cast_float uses ValueError (second occurrence)"
       points: 15
-      check: "grep -c 'except ValueError' handlers.py | awk '{exit ($1 < 2)}'"
+      check: "grep -c 'except ValueError' handlers.py | awk '{exit ($1 < 2)}' && ! grep -qE '^\\s*except\\s*:' handlers.py"
     - criterion: "No bare except or except Exception remains"
       points: 10
       check: "! grep -qE '^\\s*except\\s*:' handlers.py && ! grep -qE '^\\s*except\\s+Exception\\s*:' handlers.py"

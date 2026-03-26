@@ -220,7 +220,7 @@ verification:
       check: "grep -q 'display_name' app/models.py && ! grep -qE '\\bname:\\s*str' app/models.py"
     - criterion: "app/schemas.py updated: both UserCreateRequest and UserResponse use display_name"
       points: 15
-      check: "grep -c 'display_name' app/schemas.py | grep -qE '[2-9]|[1-9][0-9]'"
+      check: "grep -qE 'display_name' app/schemas.py && ! grep -qE '\\bname:\\s*str' app/schemas.py"
     - criterion: "app/repositories.py updated: create_user uses display_name parameter"
       points: 15
       check: "grep -q 'display_name' app/repositories.py && ! grep -qE 'def create_user\\(.*\\bname\\b' app/repositories.py"

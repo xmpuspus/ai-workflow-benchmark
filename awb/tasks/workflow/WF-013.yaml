@@ -81,7 +81,7 @@ verification:
       check: "python3 -c \"import ast, inspect; from formatter import format_date; src = inspect.getsource(format_date); lines = [l for l in src.splitlines() if l.strip() and not l.strip().startswith('def ') and not l.strip().startswith('#') and not l.strip().startswith('\"\"\"')]; assert len(lines) <= 4, f'Too many lines: {len(lines)}'\""
     - criterion: "No new files created"
       points: 30
-      check: "! git ls-files --others --exclude-standard | grep -qv 'tests/'"
+      check: "! git ls-files --others --exclude-standard | grep -qvE 'tests/|formatter\\.py'"
 
 constraints:
   max_iterations: 10

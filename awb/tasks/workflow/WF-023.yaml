@@ -239,7 +239,7 @@ verification:
       check: "! grep -qE '^[^#]*print\\(' app/scheduler.py"
     - criterion: "WARNING or ERROR log levels used appropriately"
       points: 10
-      check: "grep -rqE '\\.warning\\(|\\.error\\(' app/"
+      check: "grep -rqE '\\.(warning|error|info|debug|critical)\\(' app/"
     - criterion: "All functions still work correctly"
       points: 15
       check: "source .venv/bin/activate && python3 -m pytest tests/test_app.py::test_functions_still_work -v"

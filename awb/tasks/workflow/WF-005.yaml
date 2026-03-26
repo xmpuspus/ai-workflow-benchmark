@@ -141,7 +141,7 @@ verification:
   partial_credit:
     - criterion: "Root cause identified: fix is in app/services.py"
       points: 30
-      check: "git diff app/services.py | grep -q '^+'"
+      check: "grep -qE 'is None|is not None|or \\[\\]|or \\{\\}|\\.get\\(' app/services.py"
     - criterion: "None guard uses 'or' pattern or explicit None check on config.get result"
       points: 25
       check: "grep -qE '_CONFIG\\.get.*or |if.*timeout_raw.*is None|timeout_raw or ' app/services.py"

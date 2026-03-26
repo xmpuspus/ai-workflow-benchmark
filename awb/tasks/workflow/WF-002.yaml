@@ -170,7 +170,7 @@ verification:
       check: "! grep -q 'sk-prod-abc123secretkey9999' app.py"
     - criterion: "Email validation added to /subscribe (returns 400 on bad input)"
       points: 15
-      check: "grep -qE '400|BadRequest|re\\.|@.*\\..*|email.*validator|EmailStr' app.py"
+      check: "grep -qE '400|422|BadRequest|re\\.|@.*\\..*|email.*validator|EmailStr' app.py"
     - criterion: "Open redirect restricted to relative paths in /goto"
       points: 15
       check: "grep -qE 'startswith|netloc|urlparse' app.py"

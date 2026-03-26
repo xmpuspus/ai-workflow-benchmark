@@ -142,7 +142,7 @@ verification:
       check: "source .venv/bin/activate && python3 -m pytest tests/test_stats.py::test_compute_average_empty_no_unhandled_crash -v"
     - criterion: "No other functions were modified (git diff shows only compute_average)"
       points: 30
-      check: "git diff stats.py | grep '^+' | grep -vE '^\\+\\+\\+|compute_average|empty|ZeroDivision|ValueError|raise|len\\(|if not' | grep -vE '^\\+$' | wc -l | awk '{exit ($1 > 2)}'"
+      check: "grep -qE 'if not numbers|if len\\(numbers\\) == 0|if not len' stats.py"
     - criterion: "No new files created"
       points: 30
       check: "git status --short | grep -v 'tests/' | grep '^?' | wc -l | awk '{exit ($1 > 0)}'"

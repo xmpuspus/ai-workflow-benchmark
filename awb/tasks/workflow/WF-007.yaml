@@ -253,7 +253,7 @@ verification:
       check: "! grep -q 'Optional\\[' models_v1.py"
     - criterion: "No @validator remains in models_v1.py"
       points: 10
-      check: "! grep -qE '^\\s*@validator' models_v1.py"
+      check: "! grep -v '^\\s*#' models_v1.py | grep -qE '^\\s*@validator'"
     - criterion: "No v1 class Config: remains in models_v1.py"
       points: 10
       check: "! grep -qE '^\\s+class Config:' models_v1.py"
