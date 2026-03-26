@@ -12,6 +12,10 @@ _FALLBACK: dict[str, str] = {
     "cursor": "awb.adapters.cursor:CursorAdapter",
     "aider": "awb.adapters.aider:AiderAdapter",
     "pi": "awb.adapters.pi:PiAdapter",
+    "gemini-cli": "awb.adapters.gemini_cli:GeminiCliAdapter",
+    "codex-cli": "awb.adapters.codex_cli:CodexCliAdapter",
+    "windsurf": "awb.adapters.windsurf:WindsurfAdapter",
+    "copilot": "awb.adapters.copilot_cli:CopilotCliAdapter",
 }
 
 _cache: dict[str, type[ToolAdapter]] = {}

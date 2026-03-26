@@ -55,3 +55,41 @@ class TestClaudeCodeCustom:
         adapter = get_adapter("claude-code-custom")
         assert adapter.name == "claude-code-custom"
         assert "Custom" in adapter.display_name
+
+
+def test_gemini_adapter_registered():
+    from awb.adapters.registry import _FALLBACK
+
+    assert "gemini-cli" in _FALLBACK
+
+
+def test_codex_adapter_registered():
+    from awb.adapters.registry import _FALLBACK
+
+    assert "codex-cli" in _FALLBACK
+
+
+def test_windsurf_adapter_registered():
+    from awb.adapters.registry import _FALLBACK
+
+    assert "windsurf" in _FALLBACK
+
+
+def test_copilot_adapter_registered():
+    from awb.adapters.registry import _FALLBACK
+
+    assert "copilot" in _FALLBACK
+
+
+def test_gemini_config_hash_deterministic():
+    from awb.adapters.gemini_cli import GeminiCliAdapter
+
+    adapter = GeminiCliAdapter()
+    assert adapter.get_config_hash() == adapter.get_config_hash()
+
+
+def test_codex_config_hash_deterministic():
+    from awb.adapters.codex_cli import CodexCliAdapter
+
+    adapter = CodexCliAdapter()
+    assert adapter.get_config_hash() == adapter.get_config_hash()
