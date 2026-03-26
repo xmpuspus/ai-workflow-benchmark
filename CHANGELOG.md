@@ -1,5 +1,27 @@
 # Changelog
 
+## 1.0.0 (2026-03-26)
+
+### Added
+- CLI modularized: `awb/cli.py` (948 lines) split into 9 focused modules in `awb/commands/` (`run.py`, `analyze.py`, `calibrate.py`, `leaderboard_cmd.py`, `migrate.py`, `submit.py`, `validate.py`, `workflow_cmd.py`, `_shared.py`)
+- 4 new adapters: Gemini CLI (`gemini-cli`), Codex CLI (`codex-cli`), Windsurf (stub), Copilot (stub) — joining claude-code-vanilla, claude-code-custom, pi, cursor (stub), aider (stub)
+- `awb migrate-results` command to convert v0.5.x result JSON files to v1.0 format
+- Result format v1.0: all result JSON now includes a `version: "1.0"` field and `config_hash` persisted in workflow metadata
+- 11 capabilities (was 8): added `completeness_tracking`, `convention_adherence`, `context_discovery` alongside the existing 8; `security_methodology` was added in v0.5.0
+- Weight sum validation: `awb run` raises a clear error if a custom weight profile does not sum to 1.0
+- Color-coded terminal score output: green (≥80), yellow (50–79), red (<50) for partial credit scores
+- Configurable model pricing: `MODEL_PRICING` dict in `awb/core/metrics.py` covers Opus, Sonnet, and Haiku tiers
+- Chart.js radar chart on the leaderboard HTML page, CSV export button, and history tracking in `data/history.json`
+- Metric names aligned across `composite.py` and `weights.yaml` (was mismatched in v0.5.x, causing silent weight misapplication)
+
+### Changed
+- Task loader logs skipped files rather than silently ignoring them
+- Auth check uses the adapter's `supports_auth_check()` / `check_auth()` ABC methods instead of `hasattr` duck-typing
+- Test suite: 75 → 135 tests
+
+### Adapter ABC extensions
+New optional methods on `ToolAdapter`: `supports_auth_check()`, `check_auth()`, `supports_streaming()`, `get_model_pricing()`
+
 ## 0.5.5 (2026-03-26)
 
 ### Added

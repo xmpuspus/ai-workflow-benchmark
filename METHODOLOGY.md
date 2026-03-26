@@ -118,6 +118,7 @@ Tasks are drawn from real open-source repositories at pinned commits. Synthetic 
 | debugging | 11 | Hypothesis generation, regression bisection, profiling, stack traces |
 | multi-file | 10 | Cross-module reasoning, merge conflicts, dependency migration |
 | legacy-code | 12 | Modernization, large codebase navigation, deprecation patterns |
+| workflow | 30 | TODO completeness, hook/skill integration, configuration tasks |
 
 ### Difficulty levels
 
@@ -140,6 +141,10 @@ Each task maps to 1-3 capabilities from a fixed taxonomy. This enables capabilit
 | multi_file_reasoning | 23 | Coordinating changes across multiple files |
 | test_writing | 10 | Writing correct, meaningful tests |
 | security_awareness | 10 | Identifying and fixing security vulnerabilities |
+| completeness_tracking | 10 | Following all requirements, not stopping at 80% |
+| convention_adherence | 10 | Discovering and following project conventions |
+| context_discovery | 10 | Reading project docs and config before editing |
+| security_methodology | 10 | Applying security checklists systematically |
 | cost_discipline | derived | Token efficiency across all tasks |
 
 ### Language distribution
@@ -226,6 +231,12 @@ The `results/submission-schema.json` defines a JSON format for external results:
 - Per-task results with multiple runs
 
 External submissions can be compared with `awb compare-submissions`, which finds the common task subset, runs significance testing, and reports effect sizes.
+
+## Result Format Versioning (v1.0)
+
+As of v1.0.0, all result JSON files include a `"version": "1.0"` field. Metric keys are aligned with `weights.yaml` dimension names (correctness, cost_efficiency, speed, code_quality, reliability, security, efficiency). Weight profiles are validated to sum to 1.0 on load. Partial credit criteria are validated to sum to exactly 100 points by `awb validate`.
+
+Results from v0.5.x can be converted with `awb migrate-results <old_dir> --output <new_dir>`. The migration adds version fields, renames metrics, and preserves the original data in a `_v05x_original` key for auditability.
 
 ## Known Limitations
 

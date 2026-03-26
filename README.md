@@ -2,7 +2,7 @@
   <h1>AI Workflow Benchmark (AWB)</h1>
   <p><strong>Measure AI coding tool+workflow performance, not just model capability.</strong></p>
   <p>
-    <a href="https://pypi.org/project/awb/"><img src="https://img.shields.io/pypi/v/awb" alt="PyPI"></a>
+    <a href="https://pypi.org/project/awb/"><img src="https://img.shields.io/badge/pypi-v1.0.0-blue" alt="PyPI"></a>
     <a href="https://github.com/xmpuspus/ai-workflow-benchmark/actions"><img src="https://img.shields.io/github/actions/workflow/status/xmpuspus/ai-workflow-benchmark/test.yml" alt="Tests"></a>
     <img src="https://img.shields.io/badge/tasks-100-blue" alt="Tasks">
     <img src="https://img.shields.io/badge/python-3.11%2B-blue" alt="Python">
@@ -110,10 +110,10 @@ Each task maps to 1–3 capabilities, producing a radar chart of tool strengths:
 | multi_file_reasoning | 23 | Coordinating changes across multiple files |
 | completeness_tracking | 10 | Following all requirements, not stopping at 80% |
 | convention_adherence | 10 | Discovering and following project conventions |
-| security_methodology | 10 | Applying security checklists systematically |
 | context_discovery | 10 | Reading project docs and config before editing |
 | test_writing | 10 | Writing correct, meaningful tests |
 | security_awareness | 10 | Identifying and fixing vulnerabilities |
+| security_methodology | 10 | Applying security checklists systematically |
 | cost_discipline | derived | Token efficiency across all tasks |
 
 Example `awb gap` output:
@@ -193,7 +193,8 @@ The lift is computed per-task (configured score minus vanilla score), averaged a
 | `awb info <task_id>` | Show task details |
 | `awb tools` | List registered adapters and availability |
 | `awb validate` | Validate all task YAMLs against schema |
-| `awb leaderboard` | Generate HTML leaderboard from run results |
+| `awb leaderboard` | Generate HTML leaderboard from run results (Chart.js radar, CSV export, history tracking) |
+| `awb migrate-results <old_dir>` | Convert v0.5.x result JSON files to v1.0 format |
 | `awb workflow <subcommand>` | Export, validate, diff, or init workflow descriptors |
 | `awb stability <run_dirs>...` | Per-task score stability report |
 | `awb calibrate-difficulty <run_dirs>... [--apply]` | Recalibrate difficulty labels from empirical pass rates |
@@ -257,9 +258,25 @@ constraints:
 
 Run `awb validate` to check your task before opening a PR. Full guide: [CONTRIBUTING.md](CONTRIBUTING.md)
 
+## Supported Tools
+
+| Adapter | Name | Status |
+|---------|------|--------|
+| Claude Code (vanilla) | `claude-code-vanilla` | Full |
+| Claude Code (custom) | `claude-code-custom` | Full |
+| Pi | `pi` | Full |
+| Gemini CLI | `gemini-cli` | Full |
+| Codex CLI | `codex-cli` | Full |
+| Cursor | `cursor` | Stub |
+| Aider | `aider` | Stub |
+| Windsurf | `windsurf` | Stub |
+| Copilot | `copilot` | Stub |
+
+Run `awb tools` to see which are available in your environment.
+
 ## Adding Tools
 
-Implement the `ToolAdapter` ABC in `awb/adapters/`:
+Implement the `ToolAdapter` ABC in `awb/adapters/`. v1.0 adds four optional methods to the ABC:
 
 ```python
 from awb.adapters.base import ToolAdapter, ToolResult
@@ -278,6 +295,14 @@ class MyToolAdapter(ToolAdapter):
 
     def get_config_hash(self) -> str:
         ...
+
+    # Optional — implement to enable pre-flight auth checks
+    def supports_auth_check(self) -> bool: ...
+    def check_auth(self) -> tuple[bool, str]: ...
+
+    # Optional — implement to enable streaming metrics
+    def supports_streaming(self) -> bool: ...
+    def get_model_pricing(self) -> dict[str, float]: ...
 ```
 
 Register in `awb/adapters/registry.py` and add an entry point in `pyproject.toml`.

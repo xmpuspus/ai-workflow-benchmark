@@ -15,6 +15,7 @@ graph TB
     CLI --> Submit["awb submit"]:::secondary
     CLI --> Validate["awb validate"]:::tertiary
     CLI --> Leaderboard["awb leaderboard"]:::tertiary
+    CLI --> Migrate["awb migrate-results"]:::tertiary
     CLI --> Stability["awb stability"]:::secondary
     CLI --> CalDiff["awb calibrate-difficulty"]:::secondary
     CLI --> CalTime["awb calibrate-timeouts"]:::secondary
@@ -43,7 +44,7 @@ This is the core of what AWB does. Every benchmark run follows this exact five-s
 
 **Stage 4 (Verify)** runs the test suite, evaluates partial credit criteria, and re-counts lint/security issues. This is completely tool-agnostic — every tool is measured by the same test commands and rubric, ensuring fair comparison.
 
-**Stage 5 (Score)** normalizes all raw metrics through sigmoid curves with per-task baselines, then produces both a weighted composite score and a capability profile mapping results to the 8 capability dimensions.
+**Stage 5 (Score)** normalizes all raw metrics through sigmoid curves with per-task baselines, then produces both a weighted composite score and a capability profile mapping results to the 11 capability dimensions.
 
 ```mermaid
 %%{init: {'theme': 'base', 'themeVariables': {'primaryColor': '#2563eb', 'primaryTextColor': '#fff', 'lineColor': '#6b7280', 'fontSize': '13px'}}}%%

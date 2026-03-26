@@ -3,11 +3,12 @@
 ## Project Structure
 
 - `awb/` — Main package
+- `awb/commands/` — CLI command modules (run, analyze, calibrate, leaderboard, migrate, submit, validate, workflow)
 - `awb/tasks/` — Task YAML definitions (100 tasks across 8 categories)
 - `awb/scoring/` — Sigmoid normalization, composite scoring, capability profiles, stability metrics, statistics
 - `awb/analysis/` — Gap analysis engine, workflow improvement suggestions, difficulty/timeout calibrators
 - `awb/submission/` — External submission format and cross-submission comparison
-- `tests/` — pytest suite (75 tests)
+- `tests/` — pytest suite (135 tests)
 
 ## Development
 
@@ -15,7 +16,7 @@
 pip install -e ".[dev]"
 pytest tests/ -v
 ruff check awb/
-awb validate        # check all 80 task YAMLs against schema
+awb validate        # check all 100 task YAMLs against schema
 ```
 
 Optional stats extras (for scipy-backed CI):
@@ -55,10 +56,11 @@ Valid capabilities: `code_comprehension`, `bug_diagnosis`, `multi_file_reasoning
 3. Pin the repo to a commit SHA, not a branch name
 4. Run `awb validate` before opening a PR
 
-New CLI commands in v0.4.0:
+CLI commands:
 - `awb stability <run_dirs>...` — per-task score stability report
 - `awb calibrate-difficulty <run_dirs>... [--apply]` — recalibrate difficulty from empirical pass rates
 - `awb calibrate-timeouts <run_dirs>... [--apply]` — tighten timeouts from empirical p95 data
+- `awb migrate-results <old_dir>` — convert v0.5.x result JSON to v1.0 format
 
 ## Adding an Adapter
 

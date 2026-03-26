@@ -12,11 +12,11 @@
 
 ### Valid Categories
 
-`bug-fix`, `feature-addition`, `refactoring`, `code-review`, `debugging`, `multi-file`, `legacy-code`
+`bug-fix`, `feature-addition`, `refactoring`, `code-review`, `debugging`, `multi-file`, `legacy-code`, `workflow`
 
 ### Valid Capabilities
 
-`code_comprehension`, `bug_diagnosis`, `multi_file_reasoning`, `framework_knowledge`, `test_writing`, `refactoring_discipline`, `security_awareness`
+`code_comprehension`, `bug_diagnosis`, `multi_file_reasoning`, `framework_knowledge`, `test_writing`, `refactoring_discipline`, `security_awareness`, `completeness_tracking`, `convention_adherence`, `context_discovery`, `security_methodology`
 
 ### Task ID Format
 
@@ -24,13 +24,14 @@
 
 | Category | Prefix | Current range |
 |----------|--------|---------------|
-| bug-fix | BF | 001–011 |
-| feature-addition | FA | 001–008 |
-| refactoring | RF | 001–010 |
-| code-review | CR | 001–007 |
-| debugging | DB | 001–007 |
-| multi-file | MF | 001–008 |
-| legacy-code | LC | 001–010 |
+| bug-fix | BF | 001–014 |
+| feature-addition | FA | 001–010 |
+| refactoring | RF | 001–011 |
+| code-review | CR | 001–009 |
+| debugging | DB | 001–010 |
+| multi-file | MF | 001–009 |
+| legacy-code | LC | 001–012 |
+| workflow | WF | 001–030 |
 
 Use the next available number in the range.
 
@@ -50,7 +51,9 @@ Use the next available number in the range.
 2. Register in `awb/adapters/registry.py`
 3. Add an entry point in `pyproject.toml` under `[project.entry-points."awb.adapters"]`
 
-Stubs for Cursor and Aider already exist — see `awb/adapters/cursor.py` for the minimal structure.
+Stubs exist for Cursor, Aider, Windsurf, and Copilot — see `awb/adapters/cursor.py` for the minimal structure. Full implementations exist for Gemini CLI and Codex CLI.
+
+v1.0 adds optional ABC methods: `supports_auth_check()`, `check_auth()`, `supports_streaming()`, `get_model_pricing()`. These have default implementations so existing adapters are not affected.
 
 ## Running Tests
 
@@ -60,7 +63,7 @@ pytest tests/ -v
 ruff check awb/
 ```
 
-All 71 tests must pass. New features need at least one happy-path test. Bug fixes need a regression test.
+All 135 tests must pass. New features need at least one happy-path test. Bug fixes need a regression test.
 
 ## Submitting Results
 
