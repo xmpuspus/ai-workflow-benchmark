@@ -181,29 +181,12 @@ The lift is computed per-task (configured score minus vanilla score), averaged a
 
 ## CLI Reference
 
-| Command | Description |
-|---------|-------------|
-| `awb run [tool] [options]` | Run benchmark tasks |
-| `awb gap <run_dir>` | Analyze capability gaps and generate improvement suggestions |
-| `awb compare <run1> <run2>` | Compare two runs with significance testing |
-| `awb export <run_dir> -o file.json` | Export results in external submission format |
-| `awb submit <file.json>` | Validate and display an external submission |
-| `awb compare-submissions <a.json> <b.json>` | Cross-tool comparison with statistics |
-| `awb quickstart` | Verify setup: tools available, tasks load, validation passes |
-| `awb info <task_id>` | Show task details |
-| `awb tools` | List registered adapters and availability |
-| `awb validate` | Validate all task YAMLs against schema |
-| `awb leaderboard` | Generate HTML leaderboard from run results (Chart.js radar, CSV export, history tracking) |
-| `awb migrate-results <old_dir>` | Convert v0.5.x result JSON files to v1.0 format |
-| `awb workflow <subcommand>` | Export, validate, diff, or init workflow descriptors |
-| `awb stability <run_dirs>...` | Per-task score stability report |
-| `awb calibrate-difficulty <run_dirs>... [--apply]` | Recalibrate difficulty labels from empirical pass rates |
-| `awb calibrate-timeouts <run_dirs>... [--apply]` | Tighten timeouts from empirical p95 data |
+### `awb run` — Run benchmark tasks
 
-**Common options for `awb run`:**
+<img src="demos/cli-run.gif" alt="awb run" width="600"/>
 
 ```bash
-awb run                            # all tools, all tasks, 3 runs
+awb run                            # all tools, all tasks, 3 runs (vanilla vs custom comparison)
 awb run claude-code-custom         # single tool
 awb run -t BF-001                  # single task
 awb run --category legacy-code     # filter by category
@@ -214,6 +197,73 @@ awb run --resume                   # skip tasks with existing results
 awb run --parallel -j 4            # run 4 tasks concurrently
 awb run --adaptive                 # re-run near-miss tasks (60-99%) after initial pass
 ```
+
+### `awb gap` — Capability gap analysis
+
+<img src="demos/cli-gap.gif" alt="awb gap" width="600"/>
+
+Analyzes results to produce a capability radar, failure classification, systematic patterns, and ranked improvement suggestions.
+
+### `awb compare` — Compare two runs
+
+<img src="demos/cli-compare.gif" alt="awb compare" width="600"/>
+
+Side-by-side comparison of two benchmark runs with significance testing.
+
+### `awb tools` — List adapters
+
+<img src="demos/cli-tools.gif" alt="awb tools" width="600"/>
+
+Shows all registered tool adapters and their availability status.
+
+### `awb validate` — Validate task YAMLs
+
+<img src="demos/cli-validate.gif" alt="awb validate" width="600"/>
+
+Checks all 100 task YAML files against the schema, including partial credit sum-to-100 validation.
+
+### `awb info` — Task details
+
+<img src="demos/cli-info.gif" alt="awb info" width="600"/>
+
+Displays full details for a specific task including repo, capabilities, and partial credit rubric.
+
+### `awb stability` — Score stability report
+
+<img src="demos/cli-stability.gif" alt="awb stability" width="600"/>
+
+Per-task score variance across multiple runs. Flags unstable tasks for prompt clarification or tighter verification.
+
+### `awb leaderboard` — Generate HTML leaderboard
+
+<img src="demos/cli-leaderboard.gif" alt="awb leaderboard" width="600"/>
+
+Generates a static HTML site with Chart.js radar chart, CSV export, and historical run tracking.
+
+### `awb calibrate-difficulty` — Recalibrate difficulty labels
+
+<img src="demos/cli-calibrate-difficulty.gif" alt="awb calibrate-difficulty" width="600"/>
+
+Recalibrates task difficulty labels from empirical pass rates. Use `--apply` to write changes back to task YAMLs.
+
+### `awb calibrate-timeouts` — Tighten timeouts
+
+<img src="demos/cli-calibrate-timeouts.gif" alt="awb calibrate-timeouts" width="600"/>
+
+Recomputes task timeouts from empirical p95 wall-clock data. Use `--apply` to write changes.
+
+### Other commands
+
+| Command | Description | Demo |
+|---------|-------------|------|
+| `awb quickstart` | Verify setup: tools available, tasks load | <a href="demos/cli-quickstart.gif">demo</a> |
+| `awb export <run_dir> -o file.json` | Export results in submission format | <a href="demos/cli-export.gif">demo</a> |
+| `awb submit <file.json>` | Validate an external submission | <a href="demos/cli-submit.gif">demo</a> |
+| `awb compare-submissions <a> <b>` | Cross-tool comparison with statistics | <a href="demos/cli-compare-submissions.gif">demo</a> |
+| `awb migrate-results <old_dir>` | Convert v0.5.x results to v1.0 format | <a href="demos/cli-migrate.gif">demo</a> |
+| `awb workflow <subcommand>` | Export, validate, diff, or init descriptors | <a href="demos/cli-workflow.gif">demo</a> |
+| `awb --version` | Show version | <a href="demos/cli-version.gif">demo</a> |
+| `awb run --dry-run` | Preview tasks without executing | <a href="demos/cli-run-dryrun.gif">demo</a> |
 
 ## Adding Tasks
 
