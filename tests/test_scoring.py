@@ -303,6 +303,22 @@ def test_stability_weight_unstable():
     assert 0.3 < weights["FA-003"] < 1.0
 
 
+def test_report_metric_keys_match_weights():
+    """report.py normalized keys must match weights.yaml keys."""
+    from awb.scoring.composite import load_weight_profile
+    from awb.scoring.report import generate_report
+
+    weights = load_weight_profile("default")
+    tool_stats = {
+        "tool": "test-tool", "total_tasks": 10, "successes": 5,
+        "success_rate": 50.0, "avg_score_pct": 60.0,
+        "avg_cost": 0.50, "avg_time": 120.0, "avg_iterations": 10,
+        "total_lint_delta": 2, "total_security_delta": 1, "total_regressions": 0,
+    }
+    report = generate_report(tool_stats)
+    assert set(report.per_metric_normalized.keys()) == set(weights.keys())
+
+
 def test_all_schema_capabilities_in_enum():
     """Every capability in schema.json must exist in Capability enum."""
     from awb.scoring.capabilities import Capability

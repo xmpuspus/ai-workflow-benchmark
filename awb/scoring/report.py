@@ -6,7 +6,6 @@ from dataclasses import dataclass, field
 from rich.console import Console
 from rich.table import Table
 
-from awb.core.config import METRIC_WEIGHTS
 from awb.scoring.capabilities import CapabilityProfile
 from awb.scoring.composite import compute_composite_score
 from awb.scoring.normalize import (
@@ -32,25 +31,27 @@ class ScoreReport:
 
 def generate_report(tool_stats: dict) -> ScoreReport:
     n = tool_stats["total_tasks"] or 1
+    success = normalize_success_rate(tool_stats["success_rate"])
+    partial = normalize_partial_credit(tool_stats["avg_score_pct"])
+    correctness = 0.6 * success + 0.4 * partial
+
     raw = {
-        "success_rate": tool_stats["success_rate"],
-        "partial_credit": tool_stats["avg_score_pct"],
+        "correctness": tool_stats["success_rate"],
         "cost_efficiency": tool_stats["avg_cost"],
-        "code_quality": tool_stats["total_lint_delta"],
         "speed": tool_stats["avg_time"],
-        "test_regressions": tool_stats["total_regressions"],
+        "code_quality": tool_stats["total_lint_delta"],
+        "reliability": tool_stats["total_regressions"],
         "security": tool_stats["total_security_delta"],
-        "iteration_count": tool_stats["avg_iterations"],
+        "efficiency": tool_stats["avg_iterations"],
     }
     normalized = {
-        "success_rate": normalize_success_rate(tool_stats["success_rate"]),
-        "partial_credit": normalize_partial_credit(tool_stats["avg_score_pct"]),
+        "correctness": round(correctness, 1),
         "cost_efficiency": normalize_cost(tool_stats["avg_cost"]),
-        "code_quality": normalize_quality(tool_stats["total_lint_delta"], n),
         "speed": normalize_speed(tool_stats["avg_time"]),
-        "test_regressions": normalize_regressions(tool_stats["total_regressions"], n),
+        "code_quality": normalize_quality(tool_stats["total_lint_delta"], n),
+        "reliability": normalize_regressions(tool_stats["total_regressions"], n),
         "security": normalize_security(tool_stats["total_security_delta"], n),
-        "iteration_count": normalize_iterations(tool_stats["avg_iterations"]),
+        "efficiency": normalize_iterations(tool_stats["avg_iterations"]),
     }
     composite = compute_composite_score(tool_stats)
     return ScoreReport(
@@ -62,6 +63,7 @@ def generate_report(tool_stats: dict) -> ScoreReport:
 
 
 def print_report(report: ScoreReport) -> None:
+    from awb.scoring.composite import load_weight_profile
     console = Console()
     score = report.composite_score
     console.print(f"\n[bold]{report.tool}[/bold] - Composite: [bold cyan]{score}[/bold cyan]\n")
@@ -72,7 +74,8 @@ def print_report(report: ScoreReport) -> None:
     table.add_column("Normalized", justify="right")
     table.add_column("Weight", justify="right")
 
-    for metric, weight in METRIC_WEIGHTS.items():
+    weights = load_weight_profile()
+    for metric, weight in weights.items():
         raw = report.per_metric_scores.get(metric, 0)
         norm = report.per_metric_normalized.get(metric, 0)
         table.add_row(
