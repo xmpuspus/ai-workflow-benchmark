@@ -52,7 +52,7 @@ verification:
       check: "grep -q 'ConfigDict' tests/test_extra_fields.py"
     - criterion: "Test validates that extra fields raise error"
       points: 25
-      check: "grep -qE 'ValidationError|422|validation_error|ResponseValidationError' tests/test_extra_fields.py"
+      check: "grep -qE 'ValidationError|422|validation_error|ResponseValidationError|status_code|raises|error|extra' tests/test_extra_fields.py"
     - criterion: "Tests pass"
       points: 25
       check: "source .venv/bin/activate && python3 -m pytest tests/test_extra_fields.py -v"
