@@ -301,3 +301,16 @@ def test_stability_weight_unstable():
     stabilities = [TaskStability("FA-003", 30, 40.0, 90.0, 3, True)]
     weights = compute_stability_weights(stabilities)
     assert 0.3 < weights["FA-003"] < 1.0
+
+
+def test_all_schema_capabilities_in_enum():
+    """Every capability in schema.json must exist in Capability enum."""
+    from awb.scoring.capabilities import Capability
+    expected = {
+        "code_comprehension", "bug_diagnosis", "multi_file_reasoning",
+        "framework_knowledge", "test_writing", "refactoring_discipline",
+        "security_awareness", "cost_discipline", "completeness_tracking",
+        "convention_adherence", "context_discovery",
+    }
+    actual = {c.value for c in Capability}
+    assert actual == expected

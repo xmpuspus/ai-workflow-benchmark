@@ -20,6 +20,9 @@ class Capability(StrEnum):
     REFACTORING_DISCIPLINE = "refactoring_discipline"
     SECURITY_AWARENESS = "security_awareness"
     COST_DISCIPLINE = "cost_discipline"
+    COMPLETENESS_TRACKING = "completeness_tracking"
+    CONVENTION_ADHERENCE = "convention_adherence"
+    CONTEXT_DISCOVERY = "context_discovery"
 
 
 @dataclass
