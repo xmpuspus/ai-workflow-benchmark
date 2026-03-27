@@ -217,6 +217,13 @@ issue:
     - Replace `@validator` with `@field_validator`
     - Import ConfigDict, field_validator from pydantic
 
+    Key migration patterns:
+    - `@validator("field", always=True, pre=True)` → `@field_validator("field", mode="before")`
+    - `@root_validator(pre=True)` → `@model_validator(mode="before")`
+    - The Config model has a naming conflict (class Config inside a model named Config).
+      Rename the inner class to model_config = ConfigDict(...).
+    - The Tag model's slug validator needs special attention for mode="before".
+
     Update tests/test_models_v1.py to use v2 method names where tests call
     model methods directly.
 

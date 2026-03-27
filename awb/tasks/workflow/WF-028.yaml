@@ -164,6 +164,10 @@ issue:
       line-total calculation)
     - Reduce nesting depth
 
+    Consider extracting validation into validate_order(), calculation into
+    calculate_totals(), and formatting into format_response(). This will
+    naturally reduce process_order() to ~20 lines.
+
     All 10 tests in tests/test_order_processor.py must continue to pass
     after the refactor. Do not modify the tests.
 
@@ -180,7 +184,7 @@ verification:
     - "source .venv/bin/activate && ruff check order_processor.py"
   security_commands: []
   partial_credit:
-    - criterion: "process_order() function body is 30 lines or fewer"
+    - criterion: "process_order() function body is 40 lines or fewer"
       points: 20
       check: "python3 -c \"\nimport ast, pathlib\ntree = ast.parse(pathlib.Path('order_processor.py').read_text())\nfor node in ast.walk(tree):\n    if isinstance(node, ast.FunctionDef) and node.name == 'process_order':\n        lines = node.end_lineno - node.lineno\n        assert lines <= 40, f'process_order is {lines} lines'\nprint('ok')\n\""
     - criterion: "At least one helper function extracted from process_order()"

@@ -120,6 +120,11 @@ issue:
     Fix the ZeroDivisionError that occurs when the user provides an empty
     list. The fix belongs only in compute_average().
 
+    IMPORTANT: Only add a guard clause at the top of compute_average().
+    Do NOT modify any other function. Do NOT add type hints, docstrings,
+    comments, or rename variables. The fix should be exactly one `if`
+    statement that raises ValueError or ZeroDivisionError for empty input.
+
     Constraints:
     - Only modify compute_average() — do not touch any other function
     - Do not add type hints, docstrings, or other improvements

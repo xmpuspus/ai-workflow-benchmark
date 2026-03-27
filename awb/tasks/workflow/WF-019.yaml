@@ -176,6 +176,15 @@ issue:
     5. read_first_line — catches OSError (file open failures)
     6. safe_cast_float — catches ValueError (float() on non-convertible value)
 
+    Each function currently uses a bare `except:` clause. Replace each with
+    the specific exception type that the function's logic actually handles:
+    - load_config: FileNotFoundError (file may not exist)
+    - parse_page_number: ValueError (int() conversion fails)
+    - fetch_env_var: KeyError (os.environ lookup fails)
+    - divide: ZeroDivisionError (division by zero)
+    - read_first_line: OSError (file I/O errors)
+    - safe_cast_float: ValueError (float() conversion fails)
+
     All 14 tests must pass and the two structural tests (no bare except,
     no except Exception) must also pass.
   files_to_examine:

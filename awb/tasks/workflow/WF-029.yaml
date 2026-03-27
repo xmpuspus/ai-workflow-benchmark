@@ -153,6 +153,10 @@ issue:
 
     yaml.FullLoader and yaml.Loader are NOT safe — replace those too.
 
+    Each file contains exactly 2 unsafe yaml.load() calls. You must replace
+    ALL of them with yaml.safe_load(), not just the first one found. There
+    are 8 total calls across 4 files.
+
     Do not modify tests/test_yaml_safety.py.
   files_to_examine:
     - "app/config_loader.py"

@@ -140,6 +140,8 @@ issue:
     5. Missing email validation — /subscribe accepts any value for email,
        including empty strings; add a basic format check and return 400 on
        invalid input.
+       Email validation: Return HTTP 400 (or 422) for invalid email addresses
+       in the /subscribe endpoint. Use a regex or Pydantic EmailStr.
     6. Open redirect — /goto redirects to any URL the caller provides;
        restrict redirects to relative paths only.
 

@@ -223,7 +223,7 @@ verification:
     - criterion: "app/config.py has port constant"
       points: 10
       check: "test -f app/config.py && grep -qiE '8080|PORT' app/config.py"
-    - criterion: "At least 3 app files import from config"
+    - criterion: "All 5 app files import from config"
       points: 10
       check: "grep -rl 'config' app/database.py app/api_client.py app/pagination.py app/cache.py app/server.py | wc -l | awk '{exit ($1 < 5)}'"
     - criterion: "All functions return correct values after refactor"
