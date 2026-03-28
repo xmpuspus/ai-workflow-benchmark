@@ -89,7 +89,13 @@ verification:
       check: "echo 'requests' | python3 -c \"import sys; content=sys.stdin.read(); exec(open('audit/check_deps.py').read())\" 2>/dev/null | grep -q 'FAIL' || python3 audit/check_deps.py <(echo 'requests') 2>/dev/null | grep -q 'FAIL' || grep -q 'FAIL\\|not pinned\\|no version' audit/check_deps.py"
     - criterion: "All 8 dependencies in requirements.txt are pinned with =="
       points: 25
-      check: "! grep -vE '^#|^$' requirements.txt | grep -vE '==[0-9]'"
+      check: "python3 -c \"
+lines = [l.strip() for l in open('requirements.txt') if l.strip() and not l.strip().startswith('#')]
+assert len(lines) >= 8, f'expected 8 deps, found {len(lines)}'
+unpinned = [l for l in lines if '==' not in l]
+assert not unpinned, f'unpinned: {unpinned}'
+print(f'all {len(lines)} deps pinned')
+\""
     - criterion: "No >= or ~= or ^ remaining in requirements.txt"
       points: 15
       check: "! grep -E '>=|~=|\\^|[^=]=[^=]' requirements.txt | grep -v '^#'"

@@ -75,9 +75,12 @@ verification:
       points: 10
       check: "python3 -c \"
 lines = open('Dockerfile').read().splitlines()
-copy_req = next((i for i, l in enumerate(lines) if 'requirements.txt' in l and l.strip().startswith('COPY')), None)
-copy_src = next((i for i, l in enumerate(lines) if l.strip().startswith('COPY') and 'requirements.txt' not in l), None)
-assert copy_req is not None and copy_src is not None and copy_req < copy_src, 'requirements.txt must be copied before source'
+copy_lines = [(i, l) for i, l in enumerate(lines) if l.strip().startswith('COPY')]
+req_copies = [i for i, l in copy_lines if 'requirements' in l]
+other_copies = [i for i, l in copy_lines if 'requirements' not in l]
+assert req_copies, 'no COPY for requirements found'
+assert other_copies, 'no COPY for source found'
+assert min(req_copies) < min(other_copies), 'requirements.txt must be copied before source'
 print('layer caching order ok')
 \""
     - criterion: "Installs dependencies with pip install"

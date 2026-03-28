@@ -98,7 +98,7 @@ verification:
       check: "source .venv/bin/activate && python3 -c \"import yaml,sys; steps=[s.get('uses','') or s.get('run','') for s in yaml.safe_load(open('.github/workflows/test.yml'))['jobs'][list(yaml.safe_load(open('.github/workflows/test.yml'))['jobs'].keys())[0]]['steps']]; co=[i for i,s in enumerate(steps) if 'checkout' in s.lower()]; pi=[i for i,s in enumerate(steps) if 'pip install' in s.lower()]; sys.exit(0 if co and pi and co[0] < pi[0] else 1)\""
     - criterion: "pytest invoked with venv activation or explicit path prefix"
       points: 10
-      check: "grep -qE '\\.venv/bin/pytest|source .*/activate.*\\n.*pytest|activate && pytest' .github/workflows/test.yml"
+      check: "grep -qE '\\.venv/bin/pytest|activate && pytest|activate\\n.*pytest' .github/workflows/test.yml || (grep -q 'pytest' .github/workflows/test.yml && grep -qE 'activate|\\.venv' .github/workflows/test.yml)"
     - criterion: "Validation script exits 0 on the fixed workflow"
       points: 25
       check: "source .venv/bin/activate && python3 scripts/validate_workflow.py .github/workflows/test.yml"

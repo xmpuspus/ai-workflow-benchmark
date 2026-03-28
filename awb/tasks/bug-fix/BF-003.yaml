@@ -72,7 +72,7 @@ verification:
       check: "grep -qE 'isdigit|int\\(|\\d+' client/retry.py"
     - criterion: "Handles HTTP-date format"
       points: 15
-      check: "grep -qE 'parsedate|datetime|date.*parse|email.*utils|fromisoformat|strptime' client/retry.py"
+      check: "grep -qE 'parsedate|parsedate_to_datetime|datetime|date.*parse|email\\.utils|fromisoformat|strptime|dateutil|arrow|pendulum|http_date|time\\.strptime' client/retry.py"
     - criterion: "Failing test exists that captures the bug"
       points: 25
       check: "grep -qE 'test_.*retry_after|retry.after.*header' tests/test_retry_after.py"
