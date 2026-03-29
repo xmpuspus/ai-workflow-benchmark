@@ -11,7 +11,7 @@ repo:
   url: "https://github.com/encode/httpx"
   commit: "26d48e0634e6ee9cdc0533996db289ce4b430177"
   setup_commands:
-    - "python3 -m venv .venv && source .venv/bin/activate && pip install -e '.[cli,http2]' && pip install pytest trio pytest-asyncio"
+    - "python3 -m venv .venv && source .venv/bin/activate && pip install -e '.[cli,http2]' && pip install pytest trio trustme pytest-asyncio"
 
 issue:
   description: |
