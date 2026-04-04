@@ -380,6 +380,10 @@ The format captures tool version, model, hardware class, and per-task run result
 
 ## Changelog
 
+### 1.0.9 (2026-04-04)
+
+- Add Python 3.13 and 3.14 to CI test matrix and PyPI classifiers
+
 ### 1.0.8 (2026-04-04)
 
 - Sync README changelog with PyPI long description; update GitHub repo description (80 → 100 tasks)

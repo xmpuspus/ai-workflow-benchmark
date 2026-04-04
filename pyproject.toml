@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "awb"
-version = "1.0.8"
+version = "1.0.9"
 description = "Benchmark harness measuring AI coding tool+workflow performance, not just model capability. 100 tasks, sigmoid scoring, 12 capability dimensions, gap analysis."
 readme = "README.md"
 license = "MIT"
@@ -17,6 +17,8 @@ classifiers = [
     "License :: OSI Approved :: MIT License",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
     "Topic :: Software Development :: Testing",
 ]
 dependencies = [
