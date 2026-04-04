@@ -378,6 +378,41 @@ The format captures tool version, model, hardware class, and per-task run result
 - Weight profiles: `default`, `correctness_focused`, `production` (see `awb/scoring/weights.yaml`)
 - Stability metric: per-task `TaskStability` (std_dev, score_range, is_unstable); high-variance tasks can be down-weighted in composite scoring
 
+## Changelog
+
+### 1.0.8 (2026-04-04)
+
+- Sync README changelog with PyPI long description; update GitHub repo description (80 → 100 tasks)
+
+### 1.0.7 (2026-04-04)
+
+Product audit fixes: 27 findings across observability, scoring, reliability, performance, and CLI safety.
+
+- **Observability:** `--verbose` flag, test output logging, captured partial credit output, specific exception handlers, integrity checks in `awb run`
+- **Scoring:** `SECURITY_METHODOLOGY` capability, signed lint delta, removed hardcoded `METRIC_WEIGHTS`, timeout calibrator can increase, leaderboard uses per-task aggregate scoring
+- **Reliability:** `KeyboardInterrupt` handling, `load_single` None guard, `find_incomplete_run` scans all `_runN` dirs, 600s setup timeout, `return_exceptions` in gather, finally cleanup
+- **Performance:** bare-clone cache (`~/.cache/awb/clones/`), cached `RunEnvironment`/adapter, schema cache
+- **CLI safety:** confirmation prompt (`--yes`), `quickstart` is env-only check, resolved paths, `check_available` guard for stubs
+
+### 1.0.6 (2026-04-03)
+
+- Add trustme to 4 real httpx repo tasks (BF-003, BF-011, BF-013, FA-005)
+
+### 1.0.5 (2026-04-02)
+
+- Add trio to 16 httpx-based tasks (fixes silent pytest crash on Python 3.13+)
+
+### 1.0.4 (2026-04-01)
+
+- Fix 4 verification bugs (FA-010, RF-012, CR-007, BF-003)
+
+<details>
+<summary>Older releases</summary>
+
+See [CHANGELOG.md](CHANGELOG.md) for the full history (v1.0.0, v0.5.x, v0.4.x, v0.3.x, v0.2.x, v0.1.0).
+
+</details>
+
 ## Links
 
 - [Methodology](METHODOLOGY.md) — Fair comparison principles, metric definitions, known limitations

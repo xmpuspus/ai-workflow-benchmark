@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.0.8 (2026-04-04)
+
+- Sync README changelog with PyPI long description
+- Update GitHub repo description (80 → 100 tasks, 12 capability dimensions)
+- Set GitHub homepage URL to PyPI
+
 ## 1.0.7 (2026-04-04)
 
 Product audit fixes: 27 findings across observability, scoring, reliability, performance, and CLI safety.

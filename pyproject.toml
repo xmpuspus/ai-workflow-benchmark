@@ -4,8 +4,8 @@ build-backend = "hatchling.build"
 
 [project]
 name = "awb"
-version = "1.0.7"
-description = "Benchmark harness measuring AI coding tool+workflow performance, not just model capability"
+version = "1.0.8"
+description = "Benchmark harness measuring AI coding tool+workflow performance, not just model capability. 100 tasks, sigmoid scoring, 12 capability dimensions, gap analysis."
 readme = "README.md"
 license = "MIT"
 requires-python = ">=3.11"
