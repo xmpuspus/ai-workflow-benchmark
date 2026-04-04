@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import logging
+
 import click
 
 from awb import __version__
@@ -17,9 +19,11 @@ from awb.commands.workflow_cmd import workflow
 
 @click.group()
 @click.version_option(version=__version__, prog_name="awb")
-def cli():
+@click.option("--verbose", "-v", is_flag=True, help="Enable debug logging")
+def cli(verbose: bool):
     """AI Workflow Benchmark - measure tool+workflow performance."""
-    pass
+    level = logging.DEBUG if verbose else logging.WARNING
+    logging.basicConfig(level=level, format="%(levelname)s %(name)s: %(message)s")
 
 
 cli.add_command(run)

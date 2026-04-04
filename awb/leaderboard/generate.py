@@ -9,7 +9,9 @@ from pathlib import Path
 from jinja2 import Environment, FileSystemLoader
 
 from awb.core.config import RESULTS_DIR
-from awb.scoring.composite import compute_composite_score
+from awb.core.results import _dict_to_result
+from awb.core.task_loader import load_all_tasks
+from awb.scoring.composite import compute_aggregate_score
 
 
 def load_results(results_dir: Path | None = None) -> list[dict]:
@@ -85,8 +87,14 @@ def generate_leaderboard(
     results = load_results(results_dir)
     tools = aggregate_by_tool(results)
 
+    # Load task definitions for per-task scoring
+    all_tasks = load_all_tasks()
+    task_defs = {t.id: t for t in all_tasks}
+
     for tool_stats in tools.values():
-        tool_stats["composite_score"] = compute_composite_score(tool_stats)
+        run_results = [_dict_to_result(r) for r in tool_stats["runs"]]
+        agg_score, _ = compute_aggregate_score(run_results, task_defs)
+        tool_stats["composite_score"] = agg_score
 
     ranked = sorted(tools.values(), key=lambda t: t["composite_score"], reverse=True)
 

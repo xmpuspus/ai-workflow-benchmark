@@ -40,7 +40,7 @@ def calibrate_timeouts(
         p95 = times_sorted[max(0, idx)]
 
         current = task_map[tid].constraints.timeout_seconds if tid in task_map else 1800
-        recommended = max(min_timeout, min(current, math.ceil(p95 * multiplier)))
+        recommended = max(min_timeout, math.ceil(p95 * multiplier))
         recs.append(
             TimeoutRecommendation(
                 task_id=tid,

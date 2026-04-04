@@ -1,5 +1,54 @@
 # Changelog
 
+## 1.0.7 (2026-04-04)
+
+Product audit fixes: 27 findings across observability, scoring, reliability, performance, and CLI safety.
+
+### Observability
+- Add `--verbose` flag to enable debug logging across all commands
+- Save test output to `{run_dir}/{task_id}_{tool}.log` for post-mortem analysis
+- Capture partial credit check output instead of discarding to /dev/null
+- Replace bare `except Exception` in runner with specific handlers (TaskTimeoutError, RuntimeError for setup, NotImplementedError for stubs)
+- Wire integrity checks (contamination + variance anomaly detection) into `awb run` output
+
+### Scoring
+- Add `SECURITY_METHODOLOGY` to Capability enum (was in schema but missing from code)
+- Fix `normalize_quality` to use signed lint delta — negative deltas (lint improvements) now score correctly
+- Remove hardcoded `METRIC_WEIGHTS` from config.py; all callers use `load_weight_profile()` from weights.yaml
+- Fix timeout calibrator to allow increasing timeouts when p95 data shows tasks need more time
+- Leaderboard uses per-task `compute_aggregate_score` instead of legacy `compute_composite_score`
+
+### Reliability
+- Handle `KeyboardInterrupt` gracefully in `awb run` — partial results preserved
+- Guard against `load_single()` returning None during resume
+- Fix `find_incomplete_run` to scan all `_runN` directories, not just `_run1`
+- Add 600s timeout to repo setup commands
+- Use `return_exceptions=True` in parallel gather to isolate task failures
+- Move workspace cleanup into `finally` block
+
+### Performance
+- Add bare-clone cache (`~/.cache/awb/clones/`) — `git clone --mirror` then `git clone --local`
+- Cache `RunEnvironment()` and adapter instance in `BenchmarkRunner.__init__`
+- Add module-level schema cache to `task_loader._load_schema()`
+
+### CLI Safety
+- Add confirmation prompt before full-suite runs; skip with `--yes`
+- Change `awb quickstart` to environment-only check (tools, auth, tasks, results writable)
+- Print actual resolved results path instead of glob pattern
+- Add `check_available()` guard; raise `UsageError` for stub adapters
+
+## 1.0.6 (2026-04-03)
+
+- Add trustme to 4 real httpx repo tasks (BF-003, BF-011, BF-013, FA-005)
+
+## 1.0.5 (2026-04-02)
+
+- Add trio to 16 httpx-based tasks (fixes silent pytest crash on Python 3.13+)
+
+## 1.0.4 (2026-04-01)
+
+- Fix 4 verification bugs (FA-010, RF-012, CR-007, BF-003)
+
 ## 1.0.0 (2026-03-26)
 
 ### Added

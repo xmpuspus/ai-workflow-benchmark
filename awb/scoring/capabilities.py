@@ -20,6 +20,7 @@ class Capability(StrEnum):
     TEST_WRITING = "test_writing"
     REFACTORING_DISCIPLINE = "refactoring_discipline"
     SECURITY_AWARENESS = "security_awareness"
+    SECURITY_METHODOLOGY = "security_methodology"
     COST_DISCIPLINE = "cost_discipline"
     COMPLETENESS_TRACKING = "completeness_tracking"
     CONVENTION_ADHERENCE = "convention_adherence"

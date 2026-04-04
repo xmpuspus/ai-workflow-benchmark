@@ -64,7 +64,7 @@ def normalize_cost(avg_cost: float, optimal: float = 0.05, baseline: float = 1.0
 
 
 def normalize_quality(total_lint_delta: int, total_tasks: int) -> float:
-    avg_delta = abs(total_lint_delta) / max(total_tasks, 1)
+    avg_delta = total_lint_delta / max(total_tasks, 1)
     return sigmoid_normalize(avg_delta, 0.0, 5.0, lower_is_better=True)
 
 

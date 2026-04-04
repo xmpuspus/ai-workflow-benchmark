@@ -191,6 +191,7 @@ def _run_both(
 @click.option("--resume", is_flag=True, help="Skip tasks that already have results")
 @click.option("-j", "--concurrency", type=int, default=4, help="Max parallel tasks (default: 4)")
 @click.option("--adaptive", is_flag=True, help="Only re-run near-miss tasks on runs 2+")
+@click.option("--yes", "-y", is_flag=True, help="Skip confirmation prompt")
 def run(
     tool: str | None,
     workflow: str | None,
@@ -205,6 +206,7 @@ def run(
     resume: bool,
     concurrency: int,
     adaptive: bool,
+    yes: bool,
 ):
     """Run benchmark tasks through a tool adapter."""
     from awb.core.runner import BenchmarkRunner
@@ -259,12 +261,34 @@ def run(
         console.print("[yellow]No tasks matched filters[/yellow]")
         return
 
+    # Confirmation prompt for large runs
+    total_runs = len(tasks) * runs
+    est_cost = total_runs * 0.50  # rough estimate: ~$0.50/task
+    if not yes and not task_id and total_runs > 10:
+        console.print(
+            f"About to run [bold]{len(tasks)}[/bold] task(s) x "
+            f"[bold]{runs}[/bold] run(s) = [bold]{total_runs}[/bold] executions "
+            f"(estimated ~${est_cost:.0f})"
+        )
+        if not click.confirm("Proceed?", default=True):
+            return
+
     console.print(f"Running {len(tasks)} task(s) x {runs} run(s) with [bold]{tool}[/bold]")
 
-    # Pre-flight auth check
+    # Pre-flight availability + auth check
     from awb.adapters.registry import get_adapter as _get_adapter
 
     adapter = _get_adapter(tool)
+    try:
+        if not adapter.check_available():
+            console.print(f"[red]Adapter '{tool}' is not available in this environment[/red]")
+            sys.exit(1)
+    except NotImplementedError as exc:
+        raise click.UsageError(
+            f"Adapter '{tool}' is a stub — not yet implemented. "
+            f"Run 'awb tools' to see available adapters."
+        ) from exc
+
     if adapter.supports_auth_check():
         ok, msg = adapter.check_auth()
         if not ok:
@@ -293,7 +317,11 @@ def run(
         concurrency=concurrency,
         adaptive=adaptive,
     )
-    results = asyncio.run(runner.run_all())
+    try:
+        results = asyncio.run(runner.run_all())
+    except KeyboardInterrupt:
+        console.print("\n[yellow]Interrupted — partial results saved[/yellow]")
+        return
 
     # Summary table
     table = Table(title="Results")
@@ -322,4 +350,23 @@ def run(
         )
 
     console.print(table)
-    console.print(f"\nResults saved to results/runs/{runner._run_id}*/")
+
+    # Integrity checks
+    from awb.scoring.integrity import run_integrity_checks
+
+    warnings = run_integrity_checks(results)
+    if warnings:
+        console.print(f"\n[bold yellow]Integrity warnings ({len(warnings)}):[/bold yellow]")
+        for w in warnings:
+            severity_style = "red" if w.severity == "critical" else "yellow"
+            console.print(
+                f"  [{severity_style}][{w.severity.upper()}][/{severity_style}]"
+                f" {w.task_id}: {w.message}"
+            )
+
+    results_path = runner.recorder.results_dir
+    run_dirs = sorted(results_path.glob(f"{runner._run_id}_run*"))
+    if run_dirs:
+        console.print(f"\nResults saved to {run_dirs[0].parent}/{runner._run_id}_run*/")
+    else:
+        console.print(f"\nResults saved to {results_path}/{runner._run_id}/")

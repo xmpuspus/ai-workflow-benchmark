@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import asyncio
 import sys
 from pathlib import Path
 
@@ -80,43 +79,76 @@ def info(task_id: str):
 
 @click.command()
 def quickstart():
-    """Run a quick benchmark to verify setup works."""
-    from awb.core.runner import BenchmarkRunner
+    """Verify environment setup: tool availability, auth, tasks load, results writable."""
+    from awb.adapters.registry import list_adapters
+    from awb.core.config import RESULTS_DIR
     from awb.core.task_loader import load_all_tasks
 
-    console.print("[bold]AWB Quickstart[/bold] - running BF-001 with vanilla Claude Code\n")
+    console.print("[bold]AWB Quickstart[/bold] — environment check\n")
+    all_ok = True
 
-    tasks = load_all_tasks()
-    tasks = [t for t in tasks if t.id == "BF-001"]
-    if not tasks:
-        console.print("[red]Task BF-001 not found[/red]")
-        sys.exit(1)
+    # 1. Check tool adapters
+    console.print("[bold]1. Tool adapters[/bold]")
+    adapters = list_adapters()
+    available_count = 0
+    for _name, display_name, available in adapters:
+        if available is True:
+            console.print(f"  [green]OK[/green]  {display_name}")
+            available_count += 1
+        elif available is None:
+            console.print(f"  [yellow]STUB[/yellow] {display_name}")
+        else:
+            console.print(f"  [red]MISS[/red] {display_name}")
+    if available_count == 0:
+        console.print("  [red]No adapters available — install at least one tool[/red]")
+        all_ok = False
 
-    runner = BenchmarkRunner(
-        tool="claude-code-vanilla",
-        tasks=tasks,
-        runs=1,
-        parallel=False,
-    )
+    # 2. Auth check for available adapters
+    console.print("\n[bold]2. Authentication[/bold]")
+    from awb.adapters.registry import get_adapter
 
+    for name, _, available in adapters:
+        if available is not True:
+            continue
+        adapter = get_adapter(name)
+        if adapter.supports_auth_check():
+            ok, msg = adapter.check_auth()
+            status = "[green]OK[/green]" if ok else f"[red]FAIL: {msg}[/red]"
+            console.print(f"  {status}  {name}")
+            if not ok:
+                all_ok = False
+        else:
+            console.print(f"  [dim]skip[/dim]  {name} (no auth check)")
+
+    # 3. Load tasks
+    console.print("\n[bold]3. Task loading[/bold]")
     try:
-        results = asyncio.run(runner.run_all())
-    except (OSError, RuntimeError, ValueError) as e:
-        console.print(f"[red]Error: {e}[/red]")
-        sys.exit(1)
+        tasks = load_all_tasks()
+        console.print(f"  [green]OK[/green]  {len(tasks)} tasks loaded")
+    except Exception as e:
+        console.print(f"  [red]FAIL[/red]  {e}")
+        all_ok = False
 
-    if not results:
-        console.print("[red]No results produced[/red]")
-        sys.exit(1)
+    # 4. Results directory writable
+    console.print("\n[bold]4. Results directory[/bold]")
+    try:
+        RESULTS_DIR.mkdir(parents=True, exist_ok=True)
+        test_file = RESULTS_DIR / ".quickstart_test"
+        test_file.write_text("ok")
+        test_file.unlink()
+        console.print(f"  [green]OK[/green]  {RESULTS_DIR} (writable)")
+    except OSError as e:
+        console.print(f"  [red]FAIL[/red]  {RESULTS_DIR}: {e}")
+        all_ok = False
 
-    r = results[0]
-    status = "[green]PASS[/green]" if r.outcome.success else "[red]FAIL[/red]"
-    score = f"{r.outcome.partial_credit_score}/{r.outcome.partial_credit_max}"
-    console.print(f"\nResult: {status}")
-    console.print(f"Score: {score}")
-    console.print(f"Time: {r.metrics.wall_clock_seconds:.1f}s")
-    console.print(f"Cost: ${r.cost.estimated_cost_usd:.2f}")
-    console.print("\nSetup verified. Run [bold]awb run --runs 1[/bold] for the full 60-task suite.")
+    if all_ok:
+        console.print(
+            "\n[green]Setup verified.[/green] Run [bold]awb run --runs 1[/bold]"
+            " for the full 100-task suite."
+        )
+    else:
+        console.print("\n[red]Some checks failed — fix the issues above before running.[/red]")
+        sys.exit(1)
 
 
 @click.command()

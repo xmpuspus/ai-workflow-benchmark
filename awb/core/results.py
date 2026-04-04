@@ -74,27 +74,37 @@ class ResultRecorder:
     ) -> str | None:
         """Find the most recent run_id for this tool that has fewer results than expected.
 
-        Looks for directories matching *_run1 that contain {tool} results.
+        Scans all _runN directories for the given tool.
         Returns the base run_id (without _runN suffix) if incomplete, else None.
         """
         if not self.results_dir.exists():
             return None
 
-        candidates: list[tuple[str, str]] = []  # (dir_name, base_id)
+        # Group run directories by base_id
+        import re
+
+        base_ids: dict[str, list[Path]] = {}
         for run_dir in sorted(self.results_dir.iterdir(), reverse=True):
             if not run_dir.is_dir():
                 continue
             name = run_dir.name
-            if "_run1" not in name:
+            match = re.match(r"^(.+)_run(\d+)$", name)
+            if not match:
                 continue
-            # Check if this run has results for the requested tool
-            tool_files = list(run_dir.glob(f"*_{tool}.json"))
-            if not tool_files:
-                continue
-            base_id = name.rsplit("_run1", 1)[0]
-            if len(tool_files) < expected_tasks:
+            base_id = match.group(1)
+            base_ids.setdefault(base_id, []).append(run_dir)
+
+        for base_id, run_dirs in base_ids.items():
+            # Count tool results across all run directories for this base
+            total_files = 0
+            has_any = False
+            for run_dir in run_dirs:
+                tool_files = list(run_dir.glob(f"*_{tool}.json"))
+                total_files += len(tool_files)
+                if tool_files:
+                    has_any = True
+            if has_any and total_files < expected_tasks:
                 return base_id
-            candidates.append((name, base_id))
 
         return None
 

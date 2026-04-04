@@ -2,7 +2,7 @@
   <h1>AI Workflow Benchmark (AWB)</h1>
   <p><strong>Measure AI coding tool+workflow performance, not just model capability.</strong></p>
   <p>
-    <a href="https://pypi.org/project/awb/"><img src="https://img.shields.io/badge/pypi-v1.0.0-blue" alt="PyPI"></a>
+    <a href="https://pypi.org/project/awb/"><img src="https://img.shields.io/pypi/v/awb" alt="PyPI"></a>
     <a href="https://github.com/xmpuspus/ai-workflow-benchmark/actions"><img src="https://img.shields.io/github/actions/workflow/status/xmpuspus/ai-workflow-benchmark/test.yml" alt="Tests"></a>
     <img src="https://img.shields.io/badge/tasks-100-blue" alt="Tasks">
     <img src="https://img.shields.io/badge/python-3.11%2B-blue" alt="Python">
@@ -317,10 +317,10 @@ Run `awb validate` to check your task before opening a PR. Full guide: [CONTRIBU
 | Pi | `pi` | Full |
 | Gemini CLI | `gemini-cli` | Full |
 | Codex CLI | `codex-cli` | Full |
-| Cursor | `cursor` | Stub |
-| Aider | `aider` | Stub |
-| Windsurf | `windsurf` | Stub |
-| Copilot | `copilot` | Stub |
+| Cursor | `cursor` | Planned |
+| Aider | `aider` | Planned |
+| Windsurf | `windsurf` | Planned |
+| Copilot | `copilot` | Planned |
 
 Run `awb tools` to see which are available in your environment.
 

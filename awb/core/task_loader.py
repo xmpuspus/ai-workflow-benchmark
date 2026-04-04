@@ -20,9 +20,16 @@ from awb.core.config import (
 logger = logging.getLogger(__name__)
 
 
+_SCHEMA_CACHE: dict | None = None
+
+
 def _load_schema() -> dict:
+    global _SCHEMA_CACHE
+    if _SCHEMA_CACHE is not None:
+        return _SCHEMA_CACHE
     with TASK_SCHEMA_PATH.open() as f:
-        return json.load(f)
+        _SCHEMA_CACHE = json.load(f)
+    return _SCHEMA_CACHE
 
 
 def _parse_task(raw: dict) -> TaskDefinition:

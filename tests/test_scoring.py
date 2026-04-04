@@ -373,6 +373,7 @@ def test_all_schema_capabilities_in_enum():
         "test_writing",
         "refactoring_discipline",
         "security_awareness",
+        "security_methodology",
         "cost_discipline",
         "completeness_tracking",
         "convention_adherence",

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import sys
 import time
 from datetime import UTC, datetime
 from pathlib import Path
@@ -23,6 +24,10 @@ from awb.core.metrics import MetricCollector
 from awb.core.repo_manager import RepoManager
 from awb.core.results import ResultRecorder
 from awb.core.timeout import TaskTimeoutError, run_with_timeout
+from awb.verification.lint_checker import count_lint_issues
+from awb.verification.partial_credit import evaluate_partial_credit
+from awb.verification.security_scanner import count_security_issues
+from awb.verification.test_runner import run_tests
 
 log = logging.getLogger(__name__)
 _console = Console()
@@ -55,6 +60,8 @@ class BenchmarkRunner:
         self.adaptive = adaptive
         self.repo_manager = RepoManager()
         self.recorder = ResultRecorder()
+        self._environment = RunEnvironment()
+        self._adapter = _get_adapter(tool)
 
         # Resume: try to find an incomplete run for this tool
         if self.resume:
@@ -168,6 +175,8 @@ class BenchmarkRunner:
             # Resume: skip if already recorded
             if self.resume and self.recorder.has_result(run_id, task.id, self.tool):
                 cached = self.recorder.load_single(run_id, task.id, self.tool)
+                if cached is None:
+                    continue
                 _console.print(
                     f"  [{completed + 1}/{total_tasks}] {task.id} ({task.difficulty})"
                     f" [dim][SKIP][/dim]"
@@ -249,7 +258,15 @@ class BenchmarkRunner:
                     on_task_complete(result)
                 return result
 
-            results = await asyncio.gather(*[_tracked(t) for t in tasks])
+            results = await asyncio.gather(*[_tracked(t) for t in tasks], return_exceptions=True)
+            # Filter out exceptions from failed tasks
+            valid_results = []
+            for r in results:
+                if isinstance(r, BaseException):
+                    log.error("Parallel task failed: %s", r)
+                else:
+                    valid_results.append(r)
+            results = valid_results
 
         return list(results)
 
@@ -277,9 +294,8 @@ class BenchmarkRunner:
 
             # 3. Run the tool
             collector.start()
-            adapter = _get_adapter(self.tool)
             tool_result = await run_with_timeout(
-                adapter.execute(
+                self._adapter.execute(
                     prompt=task.issue_description,
                     workspace=workspace,
                     max_turns=task.constraints.max_iterations,
@@ -294,16 +310,19 @@ class BenchmarkRunner:
             for event in tool_result.stream_events:
                 collector.parse_stream_event(event)
 
-            # 4. Verification
-            from awb.verification.lint_checker import count_lint_issues
-            from awb.verification.partial_credit import evaluate_partial_credit
-            from awb.verification.security_scanner import count_security_issues
-            from awb.verification.test_runner import run_tests
+            # 4. Verification — save outputs to run log directory
+            run_dir = self.recorder.results_dir / run_id
+            run_dir.mkdir(parents=True, exist_ok=True)
 
-            tests_passed, _ = await run_tests(task.verification.test_commands, workspace)
+            tests_passed, test_output = await run_tests(
+                task.verification.test_commands, workspace
+            )
+            if test_output:
+                log_path = run_dir / f"{task.id}_{self.tool}.log"
+                log_path.write_text(test_output)
 
             earned, max_pts, breakdown = await evaluate_partial_credit(
-                task.verification.partial_credit, workspace
+                task.verification.partial_credit, workspace, log_dir=run_dir
             )
 
             # 5. Quality deltas
@@ -333,36 +352,44 @@ class BenchmarkRunner:
             collector.stop()
             log.warning("Task %s timed out after %ds", task.id, timeout)
 
+        except RuntimeError as exc:
+            collector.stop()
+            log.error("Task %s setup failed: %s", task.id, exc)
+            _console.print(f"  [red]setup_error:[/red] {exc}")
+
+        except NotImplementedError as exc:
+            collector.stop()
+            import click
+
+            raise click.UsageError(f"Adapter not implemented: {exc}") from exc
+
         except Exception:
             collector.stop()
-            log.exception("Task %s failed with error", task.id)
+            log.exception("Task %s failed with unexpected error", task.id)
+            _console.print(f"  [red]error:[/red] {task.id} — see log for details")
+            print(f"Task {task.id} failed unexpectedly — check logs", file=sys.stderr)
 
         finally:
             metrics = collector.to_metrics()
+            if workspace:
+                await self.repo_manager.cleanup(workspace)
 
-        # Build result (reuse adapter from try block if available)
-        adapter_info = _get_adapter(self.tool)
         result = RunResult(
             task_id=task.id,
             tool=self.tool,
-            tool_version=adapter_info.get_version(),
-            model=getattr(adapter_info, "model", "unknown"),
+            tool_version=self._adapter.get_version(),
+            model=getattr(self._adapter, "model", "unknown"),
             run_id=run_id,
             timestamp=datetime.now(UTC).isoformat(),
             outcome=outcome,
             metrics=metrics,
             cost=collector.to_cost(),
             quality=quality,
-            environment=RunEnvironment(),
+            environment=self._environment,
             workflow=self.workflow,
         )
 
         self.recorder.save(result)
-
-        # Cleanup
-        if workspace:
-            await self.repo_manager.cleanup(workspace)
-
         return result
 
 
@@ -377,12 +404,8 @@ async def _count_baseline(kind: str, task: TaskDefinition, workspace: Path) -> i
     """Count baseline lint or security issues before tool runs."""
     try:
         if kind == "lint":
-            from awb.verification.lint_checker import count_lint_issues
-
             return await count_lint_issues(task.verification.lint_commands, workspace)
         elif kind == "security":
-            from awb.verification.security_scanner import count_security_issues
-
             return await count_security_issues(task.verification.security_commands, workspace)
     except Exception as exc:
         log.debug("Baseline %s count failed: %s", kind, exc)
