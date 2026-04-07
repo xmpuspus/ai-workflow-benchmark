@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.1.1 (2026-04-07)
+
+- Fix `awb/__init__.py` `__version__` string (was stuck at 1.0.9, now reports 1.1.1)
+
 ## 1.1.0 (2026-04-07)
 
 Performance and token optimization release. Cuts full-run wall clock by 33-50% and enables sub-$5 quick evaluations.
