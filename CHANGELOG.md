@@ -1,5 +1,17 @@
 # Changelog
 
+## 1.1.4 (2026-04-07)
+
+Demo GIFs regenerated to reflect v1.1 features. Docs-only release.
+
+- Fixed outdated `awb --version` output in `cli-version.gif` (was stuck at 1.0.0)
+- Updated main `awb-showcase.gif` to show v1.1.3 and new speed features (warmup + fast-check scene)
+- Added four new demo GIFs: `cli-warmup.gif`, `cli-fast-check.gif`, `cli-progressive.gif`, `cli-use-uv.gif`
+- README embeds the new GIFs inline in the Execution Modes and `awb warmup` sections
+- Regenerated all 18 existing `cli-*.gif` files via `demos/make_cli_demos.py` for consistent timestamps
+
+No code changes.
+
 ## 1.1.3 (2026-04-07)
 
 Release-hygiene follow-ups to the v1.1.x release train:

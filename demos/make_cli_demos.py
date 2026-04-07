@@ -11,7 +11,7 @@ gif = TerminalGIF(preset="compact", title="zsh -- awb")
 gif.pause(400)
 gif.command_scene("awb --version", [
     "",
-    [F("awb, version 1.0.0")],
+    [F("awb, version 1.1.3")],
     "",
 ])
 gif.pause(3000)
@@ -448,4 +448,107 @@ gif.save(f"{DEMOS}/cli-quickstart.gif")
 print("Created cli-quickstart.gif")
 
 
-print("\nAll 18 CLI demo GIFs created successfully")
+# ---- cli-warmup.gif (NEW in v1.1) ----
+gif = TerminalGIF(preset="full", title="zsh -- awb")
+gif.pause(400)
+gif.command_scene("awb warmup --dry-run", [
+    "",
+    [F("                    Workspace Templates ("), Y("63"), F(" unique)")],
+    [D(" ------------------------------------------------------------")],
+    [D("  Key       Repo       Tasks  Setup")],
+    [D(" ------------------------------------------------------------")],
+    [F("  614592fc  fastapi    "), Y("23"), F("     pip install -e '.[all]'...")],
+    [F("  7519e140  fastapi    "), Y("10"), F("     pip install -e '.[all]' pytest")],
+    [F("  8233804a  httpx      "), Y(" 2"), F("     pip install pytest trio")],
+    [F("  3db963d6  fastapi    "), Y(" 3"), F("     pip install -e '.[all]' ruff")],
+    [F("  ab1a78c4  flask      "), Y(" 2"), F("     pip install flask pytest")],
+    [D("  ... 58 more ...")],
+    [D(" ------------------------------------------------------------")],
+    "",
+    [D("  63 templates to build, 100 tasks total")],
+    "",
+    [G("  Tip:"), F(" run "), C("awb warmup"), F(" once to cache setups, then subsequent")],
+    [F("       benchmark runs copy templates in ~2s instead of ~45s.")],
+    "",
+])
+gif.pause(3500)
+gif.save(f"{DEMOS}/cli-warmup.gif")
+print("Created cli-warmup.gif")
+
+
+# ---- cli-fast-check.gif (NEW in v1.1) ----
+gif = TerminalGIF(preset="full", title="zsh -- awb")
+gif.pause(400)
+gif.command_scene("awb run --fast-check claude-code-custom", [
+    "",
+    [C("  Fast-check mode:"), F(" 8 representative tasks, 1 run")],
+    "",
+    [D("  --- Run 1/1 ---  (8 tasks)")],
+    [F("  [1/8] BF-001 (medium) ... "), G("PASS"), F("  100/100  65s  $0.46")],
+    [F("  [2/8] CR-001 (hard)   ... "), G("PASS"), F("  100/100  152s $0.78")],
+    [F("  [3/8] DB-001 (easy)   ... "), G("PASS"), F("  100/100  41s  $0.21")],
+    [F("  [4/8] FA-001 (easy)   ... "), G("PASS"), F("   85/100  38s  $0.19")],
+    [F("  [5/8] LC-001 (easy)   ... "), G("PASS"), F("  100/100  29s  $0.12")],
+    [F("  [6/8] MF-001 (hard)   ... "), R("FAIL"), F("   60/100  287s $1.24")],
+    [F("  [7/8] RF-001 (medium) ... "), G("PASS"), F("   80/100  94s  $0.51")],
+    [F("  [8/8] WF-001 (easy)   ... "), G("PASS"), F("  100/100  52s  $0.24")],
+    "",
+    [D("  Run 1 complete: 7/8 passed (88%)")],
+    "",
+    [G("  Estimated full-suite score: 89 +/- 11")],
+    [D("  (based on 8 representative tasks; run the full suite for CI)")],
+    "",
+])
+gif.pause(3500)
+gif.save(f"{DEMOS}/cli-fast-check.gif")
+print("Created cli-fast-check.gif")
+
+
+# ---- cli-progressive.gif (NEW in v1.1) ----
+gif = TerminalGIF(preset="full", title="zsh -- awb")
+gif.pause(400)
+gif.command_scene("awb run --progressive claude-code-vanilla", [
+    "",
+    [D("  --- Run 1/3 ---  (100 tasks, sorted easy -> hard)")],
+    [F("  [1/100] BF-004 "), Y("(easy)"), F("   ... "), G("PASS"), F("  100/100")],
+    [F("  [2/100] DB-001 "), Y("(easy)"), F("   ... "), G("PASS"), F("  100/100")],
+    [F("  [3/100] FA-001 "), Y("(easy)"), F("   ... "), G("PASS"), F("   85/100")],
+    [F("  [4/100] LC-001 "), Y("(easy)"), F("   ... "), R("FAIL"), F("   25/100")],
+    [F("  [5/100] WF-001 "), Y("(easy)"), F("   ... "), R("FAIL"), F("    0/100")],
+    [D("  ... 43 more easy tasks ...")],
+    [F("  [48/100] WF-023 "), Y("(easy)"), F("  ... "), R("FAIL"), F("   10/100")],
+    "",
+    [Y("  Progressive stop:"), F(" Easy pass rate "), R("32%"), F(" < 40% threshold.")],
+    [F("                    Tool not ready for medium/hard.")],
+    "",
+    [G("  Saved:"), F(" 52 medium+hard tasks skipped (~$78, ~95 min)")],
+    "",
+])
+gif.pause(3500)
+gif.save(f"{DEMOS}/cli-progressive.gif")
+print("Created cli-progressive.gif")
+
+
+# ---- cli-use-uv.gif (NEW in v1.1) ----
+gif = TerminalGIF(preset="full", title="zsh -- awb")
+gif.pause(400)
+gif.command_scene("awb run --use-uv -t BF-001 claude-code-custom", [
+    "",
+    [D("  Using uv pip install (10-30x faster than pip)")],
+    "",
+    [D("  --- Run 1/3 ---  (1 task)")],
+    [F("  [1/1] BF-001 (medium) ... "), G("PASS"), F("  100/100  58s  $0.42")],
+    [D("                              (setup: "), G("2s"), F(" template copy + "), G("3s"), F(" uv install)")],
+    "",
+    [G("  Run 1 complete:"), F(" 1/1 passed (100%)")],
+    "",
+    [D("  Tip: combine with --fast-check or --progressive to save tokens,")],
+    [D("  or run "), C("awb warmup"), D(" once to cache setups across all runs.")],
+    "",
+])
+gif.pause(3500)
+gif.save(f"{DEMOS}/cli-use-uv.gif")
+print("Created cli-use-uv.gif")
+
+
+print("\nAll 22 CLI demo GIFs created successfully")

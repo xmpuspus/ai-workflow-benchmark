@@ -225,7 +225,21 @@ AWB v1.1 ships four execution modes tuned for different evaluation scenarios:
 | Progressive | ~150 on weak tools | ~1 hr | ~$40-75 | Unknown/mediocre tools |
 | Fast-check | 8 | ~15 min | ~$4 | PR gates, iterating on config |
 
+**Fast-check** (8 representative tasks, 1 per category, reports estimated full-suite score ± margin):
+
+<img src="demos/cli-fast-check.gif" alt="awb run --fast-check" width="600"/>
+
+**Progressive** (easy → medium → hard, stops if easy pass rate < 40% or medium < 20%):
+
+<img src="demos/cli-progressive.gif" alt="awb run --progressive" width="600"/>
+
+**`--use-uv`** (rewrites `pip install` → `uv pip install` for 10-30x faster installs):
+
+<img src="demos/cli-use-uv.gif" alt="awb run --use-uv" width="600"/>
+
 ### `awb warmup` — Pre-build workspace templates
+
+<img src="demos/cli-warmup.gif" alt="awb warmup" width="600"/>
 
 ```bash
 awb warmup              # build templates for all 63 unique (repo, commit, setup) combos

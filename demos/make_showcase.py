@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Generate a LinkedIn-worthy showcase GIF demonstrating AWB v1.0.0."""
+"""Generate a LinkedIn-worthy showcase GIF demonstrating AWB v1.1."""
 import sys
 
 sys.path.insert(0, "/Users/xavier/.claude/skills/terminal-gif")
@@ -7,17 +7,17 @@ from terminal_gif import C, D, F, G, R, TerminalGIF, Y
 
 OUT = "/Users/xavier/Desktop/ai-workflow-benchmark/demos/awb-showcase.gif"
 
-gif = TerminalGIF(preset="full", title="AI Workflow Benchmark v1.0.0")
+gif = TerminalGIF(preset="full", title="AI Workflow Benchmark v1.1")
 
 # --- Scene 1: Install + Version ---
 gif.pause(500)
 
 s1 = [
     [D("$"), F(" pip install awb")],
-    [G("Successfully installed"), F(" awb-"), Y("1.0.0")],
+    [G("Successfully installed"), F(" awb-"), Y("1.1.3")],
     "",
     [D("$"), F(" awb --version")],
-    [C("awb"), F(", version "), Y("1.0.0")],
+    [C("awb"), F(", version "), Y("1.1.3")],
     "",
     [D("$"), F(" awb tools")],
     [F("  claude-code-vanilla   "), G("Available")],
@@ -49,9 +49,29 @@ s2 = [
 ]
 gif.add_frame(s2, ms=3000)
 
+# --- Scene 2.5: v1.1 speed features — warmup + fast-check ---
+s25 = [
+    [D("$"), F(" awb warmup")],
+    [F("  "), C("Pre-building"), F(" "), Y("63"), F(" unique workspace templates...")],
+    [F("  "), G("[DONE]"), F(" 614592fc  fastapi    (23 tasks)")],
+    [F("  "), G("[DONE]"), F(" 7519e140  fastapi    (10 tasks)")],
+    [F("  "), G("[DONE]"), F(" 8233804a  httpx      (17 tasks)")],
+    [D("  ... 60 more templates ...")],
+    [F("  "), G("Warmup complete."), F(" Cached at ~/.cache/awb/templates/")],
+    "",
+    [D("$"), F(" awb run "), C("--fast-check"), F(" claude-code-custom")],
+    [C("  Fast-check mode:"), F(" 8 representative tasks, 1 run (~15 min, ~$4)")],
+    [F("  [1/8] BF-001 "), G("PASS"), F("  [2/8] CR-001 "), G("PASS"), F("  [3/8] DB-001 "), G("PASS")],
+    [F("  [4/8] FA-001 "), G("PASS"), F("  [5/8] LC-001 "), G("PASS"), F("  [6/8] MF-001 "), R("FAIL")],
+    [F("  [7/8] RF-001 "), G("PASS"), F("  [8/8] WF-001 "), G("PASS")],
+    "",
+    [G("  Estimated full-suite score: 89 +/- 11"), F("  (7/8 passed)")],
+]
+gif.add_frame(s25, ms=3500)
+
 # --- Scene 3: Run with live progress ---
 s3 = [
-    [D("$"), F(" awb run --runs 3 --parallel -j 3 --adaptive")],
+    [D("$"), F(" awb run --runs 3 --parallel -j 3 --adaptive --progressive")],
     "",
     [C("--- Run 1/3 ---"), F("  (100 tasks, saving to results/runs/...)")],
     [F("  [1/300] BF-001 (easy) ..."), G(" PASS"), F("  100/100  67s  $0.42")],
@@ -134,14 +154,14 @@ s7 = [
     "",
     [F("  ┌────────────────────────────────────────┐")],
     [F("  │                                        │")],
-    [F("  │  "), C("AI Workflow Benchmark"), F("               │")],
+    [F("  │  "), C("AI Workflow Benchmark"), F("  "), Y("v1.1"), F("         │")],
     [F("  │  "), D("Measure workflow, not just model"), F("    │")],
     [F("  │                                        │")],
     [F("  │  "), Y("100"), F(" tasks  "), D("|"), F("  "), Y("11"), F(" capabilities     │")],
-    [F("  │  "), Y("8"), F(" categories "), D("|"), F(" Workflow Lift Score │")],
+    [F("  │  "), Y("5"), F(" weight profiles "), D("|"), F(" token-efficient │")],
     [F("  │                                        │")],
     [F("  │  "), G("pip install awb"), F("                     │")],
-    [F("  │  "), G("awb run --parallel --adaptive"), F("       │")],
+    [F("  │  "), G("awb warmup && awb run --fast-check"), F("  │")],
     [F("  │                                        │")],
     [F("  │  "), D("github.com/xmpuspus/"), F("                │")],
     [F("  │  "), D("  ai-workflow-benchmark"), F("              │")],
