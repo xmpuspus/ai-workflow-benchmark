@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.1.2 (2026-04-07)
+
+Packaging fixes found via exhaustive CLI smoke tests of the fresh PyPI install:
+
+- Include `awb/workflow/schema.json` in the wheel (fixes `awb workflow validate`, `awb workflow diff`, `awb workflow init`)
+- Include `awb/submission/schema.json` in the wheel — copied from `results/submission-schema.json`, loader now prefers the packaged copy and falls back to the repo layout (fixes `awb submit` and `awb compare-submissions` on installed versions)
+- Both bugs were pre-existing in v1.0.x; v1.1.x inherited them. The fix is a hatch include list change plus a loader update.
+
 ## 1.1.1 (2026-04-07)
 
 - Fix `awb/__init__.py` `__version__` string (was stuck at 1.0.9, now reports 1.1.1)

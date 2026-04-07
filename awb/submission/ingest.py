@@ -30,7 +30,10 @@ from awb.submission.schema import (
 
 
 def _load_submission_schema() -> dict:
-    schema_path = Path(__file__).parent.parent.parent / "results" / "submission-schema.json"
+    # Packaged copy (works in installed wheels) with fallback to repo layout
+    packaged = Path(__file__).parent / "schema.json"
+    repo = Path(__file__).parent.parent.parent / "results" / "submission-schema.json"
+    schema_path = packaged if packaged.exists() else repo
     with schema_path.open() as f:
         return json.load(f)
 

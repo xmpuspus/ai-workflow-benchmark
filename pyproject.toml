@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "awb"
-version = "1.1.1"
+version = "1.1.2"
 description = "Benchmark harness measuring AI coding tool+workflow performance, not just model capability. 100 tasks, sigmoid scoring, 12 capability dimensions, gap analysis."
 readme = "README.md"
 license = "MIT"
@@ -74,6 +74,8 @@ include = [
     "awb/tasks/**/*.yaml",
     "awb/tasks/**/*.json",
     "awb/scoring/*.yaml",
+    "awb/workflow/*.json",
+    "awb/submission/*.json",
     "awb/leaderboard/templates/**",
     "awb/leaderboard/static/**",
 ]
