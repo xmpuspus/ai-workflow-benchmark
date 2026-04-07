@@ -120,6 +120,18 @@
           "minimum": 60,
           "maximum": 7200,
           "default": 1800
+        },
+        "max_input_tokens": {
+          "type": "integer",
+          "minimum": 0,
+          "default": 0,
+          "description": "Maximum input tokens allowed (0 = unlimited)"
+        },
+        "max_output_tokens": {
+          "type": "integer",
+          "minimum": 0,
+          "default": 0,
+          "description": "Maximum output tokens allowed (0 = unlimited)"
         }
       }
     }

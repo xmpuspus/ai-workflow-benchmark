@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import time
+from dataclasses import dataclass
 
 from awb.core.config import RunCost, RunMetrics
 
@@ -19,6 +20,16 @@ INPUT_PRICE_PER_M = MODEL_PRICING["default"]["input_per_m"]
 OUTPUT_PRICE_PER_M = MODEL_PRICING["default"]["output_per_m"]
 
 
+@dataclass
+class IterationTokens:
+    """Token usage for a single iteration/turn."""
+
+    input_tokens: int = 0
+    output_tokens: int = 0
+    cache_read: int = 0
+    cache_create: int = 0
+
+
 class MetricCollector:
     def __init__(self) -> None:
         self._start: float = 0.0
@@ -26,8 +37,13 @@ class MetricCollector:
         self._tool_calls: dict[str, int] = {}
         self._input_tokens: int = 0
         self._output_tokens: int = 0
+        self._cache_read: int = 0
+        self._cache_create: int = 0
+        self._thinking_tokens: int = 0
         self._iterations: int = 0
         self._final_cost: float | None = None
+        self._per_iteration: list[IterationTokens] = []
+        self._current_iter: IterationTokens | None = None
 
     def start(self) -> None:
         self._start = time.monotonic()
@@ -44,6 +60,9 @@ class MetricCollector:
 
     def record_iteration(self) -> None:
         self._iterations += 1
+        if self._current_iter:
+            self._per_iteration.append(self._current_iter)
+        self._current_iter = IterationTokens()
 
     def parse_stream_event(self, event: dict) -> None:
         """Parse a Claude Code stream-json event and update counters."""
@@ -58,8 +77,24 @@ class MetricCollector:
                 if isinstance(usage, dict):
                     inp = usage.get("input_tokens", 0)
                     out = usage.get("output_tokens", 0)
+                    cache_read = usage.get("cache_read_input_tokens", 0)
+                    cache_create = usage.get("cache_creation_input_tokens", 0)
+
                     if inp or out:
                         self.record_tokens(inp, out)
+                    if cache_read:
+                        self._cache_read += cache_read
+                    if cache_create:
+                        self._cache_create += cache_create
+
+                    # Track per-iteration tokens
+                    if self._current_iter is None:
+                        self._current_iter = IterationTokens()
+                    self._current_iter.input_tokens += inp
+                    self._current_iter.output_tokens += out
+                    self._current_iter.cache_read += cache_read
+                    self._current_iter.cache_create += cache_create
+
                 # Count tool_use items in assistant message content
                 content = message.get("content", [])
                 if isinstance(content, list):
@@ -89,6 +124,8 @@ class MetricCollector:
                     # Replace accumulated values with authoritative totals
                     self._input_tokens = total_input
                     self._output_tokens = out
+                    self._cache_read = cache_read
+                    self._cache_create = cache_create
             # Extract iteration count from result
             num_turns = event.get("num_turns")
             if num_turns is not None:
@@ -101,6 +138,30 @@ class MetricCollector:
         if self._start > 0:
             return time.monotonic() - self._start
         return 0.0
+
+    @property
+    def total_tokens(self) -> int:
+        return self._input_tokens + self._output_tokens
+
+    @property
+    def tokens_per_iteration(self) -> float:
+        if self._iterations == 0:
+            return 0.0
+        return self.total_tokens / self._iterations
+
+    @property
+    def cache_hit_ratio(self) -> float:
+        total = self._cache_read + self._cache_create + self._input_tokens
+        if total == 0:
+            return 0.0
+        return self._cache_read / total
+
+    @property
+    def per_iteration_tokens(self) -> list[IterationTokens]:
+        result = list(self._per_iteration)
+        if self._current_iter:
+            result.append(self._current_iter)
+        return result
 
     def to_metrics(self) -> RunMetrics:
         return RunMetrics(
@@ -123,5 +184,8 @@ class MetricCollector:
         return RunCost(
             input_tokens=self._input_tokens,
             output_tokens=self._output_tokens,
+            cache_read_tokens=self._cache_read,
+            cache_creation_tokens=self._cache_create,
+            thinking_tokens=self._thinking_tokens,
             estimated_cost_usd=round(estimated, 4),
         )

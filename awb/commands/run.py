@@ -191,6 +191,9 @@ def _run_both(
 @click.option("--resume", is_flag=True, help="Skip tasks that already have results")
 @click.option("-j", "--concurrency", type=int, default=4, help="Max parallel tasks (default: 4)")
 @click.option("--adaptive", is_flag=True, help="Only re-run near-miss tasks on runs 2+")
+@click.option("--progressive", is_flag=True, help="Run easy first, stop early if failing")
+@click.option("--fast-check", is_flag=True, help="Run 8 representative tasks for quick signal")
+@click.option("--use-uv", is_flag=True, help="Use uv instead of pip for faster installs")
 @click.option("--yes", "-y", is_flag=True, help="Skip confirmation prompt")
 def run(
     tool: str | None,
@@ -206,6 +209,9 @@ def run(
     resume: bool,
     concurrency: int,
     adaptive: bool,
+    progressive: bool,
+    fast_check: bool,
+    use_uv: bool,
     yes: bool,
 ):
     """Run benchmark tasks through a tool adapter."""
@@ -256,6 +262,16 @@ def run(
         tasks = [t for t in tasks if capability in t.capabilities]
     if difficulty:
         tasks = [t for t in tasks if t.difficulty == difficulty]
+
+    # Fast-check mode: select representative tasks
+    if fast_check:
+        from awb.core.fast_check import select_fast_check_tasks
+
+        tasks = select_fast_check_tasks(tasks)
+        runs = 1  # Single run for fast-check
+        console.print(
+            f"[bold cyan]Fast-check mode:[/bold cyan] {len(tasks)} representative tasks, 1 run"
+        )
 
     if not tasks:
         console.print("[yellow]No tasks matched filters[/yellow]")
@@ -316,6 +332,8 @@ def run(
         resume=resume,
         concurrency=concurrency,
         adaptive=adaptive,
+        progressive=progressive,
+        use_uv=use_uv,
     )
     try:
         results = asyncio.run(runner.run_all())
@@ -350,6 +368,22 @@ def run(
         )
 
     console.print(table)
+
+    # Fast-check estimate
+    if fast_check:
+        from awb.core.fast_check import estimate_full_score
+
+        fast_data = [
+            {
+                "partial_credit_score": r.outcome.partial_credit_score,
+                "partial_credit_max": r.outcome.partial_credit_max,
+            }
+            for r in results
+        ]
+        est, margin = estimate_full_score(fast_data)
+        console.print(
+            f"\n[bold]Estimated full-suite score: {est:.0f} +/- {margin:.0f}[/bold]"
+        )
 
     # Integrity checks
     from awb.scoring.integrity import run_integrity_checks

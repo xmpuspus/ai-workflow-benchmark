@@ -35,6 +35,10 @@ _console = Console()
 # Tasks scoring below this % are decisive failures; no need to re-run
 _ADAPTIVE_RERUN_MIN = 60
 
+# Progressive mode thresholds
+_PROGRESSIVE_EASY_MIN_PASS_RATE = 0.40
+_PROGRESSIVE_MEDIUM_MIN_PASS_RATE = 0.20
+
 
 class BenchmarkRunner:
     def __init__(
@@ -48,6 +52,8 @@ class BenchmarkRunner:
         resume: bool = False,
         concurrency: int = 4,
         adaptive: bool = False,
+        progressive: bool = False,
+        use_uv: bool = False,
     ) -> None:
         self.tool = tool
         self.tasks = tasks
@@ -58,10 +64,12 @@ class BenchmarkRunner:
         self.resume = resume
         self.concurrency = concurrency
         self.adaptive = adaptive
-        self.repo_manager = RepoManager()
+        self.progressive = progressive
+        self.repo_manager = RepoManager(use_uv=use_uv)
         self.recorder = ResultRecorder()
         self._environment = RunEnvironment()
         self._adapter = _get_adapter(tool)
+        self._run1_times: dict[str, float] = {}  # task_id -> wall clock from run 1
 
         # Resume: try to find an incomplete run for this tool
         if self.resume:
@@ -74,6 +82,51 @@ class BenchmarkRunner:
         else:
             self._run_id = datetime.now(UTC).strftime("%Y-%m-%d_%H%M%S")
 
+    def _sort_progressive(self, tasks: list[TaskDefinition]) -> list[TaskDefinition]:
+        """Sort tasks by difficulty for progressive mode: easy -> medium -> hard."""
+        order = {"easy": 0, "medium": 1, "hard": 2}
+        return sorted(tasks, key=lambda t: order.get(t.difficulty, 1))
+
+    def _check_progressive_gate(
+        self, results: list[RunResult], difficulty: str
+    ) -> tuple[bool, str]:
+        """Check if progressive mode should continue after a difficulty tier."""
+        tier_results = [r for r in results if self._task_difficulty(r.task_id) == difficulty]
+        if not tier_results:
+            return True, ""
+
+        pass_rate = sum(1 for r in tier_results if r.outcome.success) / len(tier_results)
+
+        if difficulty == "easy" and pass_rate < _PROGRESSIVE_EASY_MIN_PASS_RATE:
+            return False, (
+                f"Easy pass rate {pass_rate:.0%} "
+                f"< {_PROGRESSIVE_EASY_MIN_PASS_RATE:.0%} threshold. "
+                f"Tool not ready for medium/hard."
+            )
+        if difficulty == "medium" and pass_rate < _PROGRESSIVE_MEDIUM_MIN_PASS_RATE:
+            return False, (
+                f"Medium pass rate {pass_rate:.0%} "
+                f"< {_PROGRESSIVE_MEDIUM_MIN_PASS_RATE:.0%} threshold. "
+                f"Skipping hard tasks."
+            )
+        return True, ""
+
+    def _task_difficulty(self, task_id: str) -> str:
+        """Look up difficulty for a task ID."""
+        for t in self.tasks:
+            if t.id == task_id:
+                return t.difficulty
+        return "medium"
+
+    def _adaptive_timeout(self, task: TaskDefinition) -> int:
+        """Compute timeout, tightening for runs 2+ based on run 1 actuals."""
+        base = self.timeout_override or task.constraints.timeout_seconds
+        actual = self._run1_times.get(task.id)
+        if actual is not None:
+            # Tighten to 2x actual time, but never below 60s
+            return max(60, min(base, int(actual * 2)))
+        return base
+
     async def run_all(self, on_task_complete=None) -> list[RunResult]:
         """Run all tasks for the configured number of runs."""
         results: list[RunResult] = []
@@ -84,8 +137,12 @@ class BenchmarkRunner:
 
         # Tasks eligible for re-running in adaptive mode (populated after run 1)
         near_miss_ids: set[str] | None = None
+        progressive_stopped = False
 
         for run_num in range(1, self.runs + 1):
+            if progressive_stopped:
+                break
+
             run_id = f"{self._run_id}_run{run_num}"
 
             # In adaptive mode, only re-run near-miss tasks after run 1
@@ -93,6 +150,10 @@ class BenchmarkRunner:
                 tasks_this_run = [t for t in self.tasks if t.id in near_miss_ids]
             else:
                 tasks_this_run = self.tasks
+
+            # Progressive mode: sort by difficulty
+            if self.progressive:
+                tasks_this_run = self._sort_progressive(tasks_this_run)
 
             _console.print(
                 f"\n[bold cyan]--- Run {run_num}/{self.runs} ---[/bold cyan]  "
@@ -128,6 +189,11 @@ class BenchmarkRunner:
 
             results.extend(run_results)
 
+            # Record run 1 times for adaptive timeout tightening
+            if run_num == 1:
+                for r in run_results:
+                    self._run1_times[r.task_id] = r.metrics.wall_clock_seconds
+
             # After run 1, classify decisive vs near-miss for adaptive mode
             if self.adaptive and run_num == 1:
                 decisive = []
@@ -145,6 +211,15 @@ class BenchmarkRunner:
                     f"  [dim]Adaptive: {len(decisive)} decisive (skipped), "
                     f"{len(near_miss)} near-miss (re-running)[/dim]"
                 )
+
+            # Progressive mode gates
+            if self.progressive and run_num == 1:
+                for diff in ("easy", "medium"):
+                    should_continue, msg = self._check_progressive_gate(run_results, diff)
+                    if not should_continue:
+                        _console.print(f"\n  [yellow]Progressive stop:[/yellow] {msg}")
+                        progressive_stopped = True
+                        break
 
         total_elapsed = (time.monotonic() - run_start) / 60
         _console.print(
@@ -195,7 +270,7 @@ class BenchmarkRunner:
             )
 
             task_start = time.monotonic()
-            result = await self.run_single(task, run_id=run_id)
+            result = await self.run_single(task, run_id=run_id, run_num=run_num)
             elapsed = time.monotonic() - task_start
 
             completed += 1
@@ -240,7 +315,7 @@ class BenchmarkRunner:
 
         async def _run_bounded(task: TaskDefinition) -> RunResult:
             async with sem:
-                return await self.run_single(task, run_id=run_id)
+                return await self.run_single(task, run_id=run_id, run_num=run_num)
 
         with Progress(
             TextColumn("[progress.description]{task.description}"),
@@ -274,15 +349,39 @@ class BenchmarkRunner:
         self,
         task: TaskDefinition,
         run_id: str | None = None,
+        run_num: int = 1,
     ) -> RunResult:
         """Execute a single task through the full benchmark lifecycle."""
         run_id = run_id or self._run_id
-        timeout = self.timeout_override or task.constraints.timeout_seconds
+        timeout = self._adaptive_timeout(task) if run_num > 1 else (
+            self.timeout_override or task.constraints.timeout_seconds
+        )
         workspace: Path | None = None
 
         collector = MetricCollector()
         outcome = RunOutcome(success=False, partial_credit_score=0, partial_credit_max=0)
         quality = RunQuality()
+
+        # Token budget callback for streaming enforcement
+        budget_exceeded = False
+
+        def _on_event(event: dict) -> bool | None:
+            nonlocal budget_exceeded
+            collector.parse_stream_event(event)
+            # Check token budget if set
+            max_in = task.constraints.max_input_tokens
+            max_out = task.constraints.max_output_tokens
+            if max_in > 0 and collector._input_tokens > max_in:
+                budget_exceeded = True
+                log.warning("Task %s exceeded input token budget (%d > %d)",
+                            task.id, collector._input_tokens, max_in)
+                return False
+            if max_out > 0 and collector._output_tokens > max_out:
+                budget_exceeded = True
+                log.warning("Task %s exceeded output token budget (%d > %d)",
+                            task.id, collector._output_tokens, max_out)
+                return False
+            return None
 
         try:
             # 1. Prepare workspace (run_id scopes the path for concurrent safety)
@@ -292,7 +391,7 @@ class BenchmarkRunner:
             baseline_lint = await _count_baseline("lint", task, workspace)
             baseline_security = await _count_baseline("security", task, workspace)
 
-            # 3. Run the tool
+            # 3. Run the tool with streaming event callback
             collector.start()
             tool_result = await run_with_timeout(
                 self._adapter.execute(
@@ -300,15 +399,18 @@ class BenchmarkRunner:
                     workspace=workspace,
                     max_turns=task.constraints.max_iterations,
                     timeout_seconds=timeout,
+                    on_event=_on_event,
                 ),
                 timeout_seconds=timeout,
                 task_id=task.id,
             )
             collector.stop()
 
-            # Parse stream events for metrics
-            for event in tool_result.stream_events:
-                collector.parse_stream_event(event)
+            # Parse any remaining stream events not yet processed
+            # (for adapters that don't support streaming callbacks)
+            if not hasattr(self._adapter, '_streams_events_inline'):
+                for event in tool_result.stream_events:
+                    collector.parse_stream_event(event)
 
             # 4. Verification — save outputs to run log directory
             run_dir = self.recorder.results_dir / run_id

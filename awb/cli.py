@@ -14,6 +14,7 @@ from awb.commands.migrate import migrate_results
 from awb.commands.run import run
 from awb.commands.submit import compare_submissions_cmd, export, submit
 from awb.commands.validate import info, quickstart, tools, validate
+from awb.commands.warmup import warmup
 from awb.commands.workflow_cmd import workflow
 
 
@@ -42,3 +43,4 @@ cli.add_command(tools)
 cli.add_command(leaderboard)
 cli.add_command(workflow)
 cli.add_command(migrate_results)
+cli.add_command(warmup)

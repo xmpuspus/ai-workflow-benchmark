@@ -45,6 +45,8 @@ class TaskVerification:
 class TaskConstraints:
     max_iterations: int = 20
     timeout_seconds: int = 1800
+    max_input_tokens: int = 0  # 0 = unlimited
+    max_output_tokens: int = 0  # 0 = unlimited
 
 
 @dataclass
@@ -95,6 +97,9 @@ class RunMetrics:
 class RunCost:
     input_tokens: int = 0
     output_tokens: int = 0
+    cache_read_tokens: int = 0
+    cache_creation_tokens: int = 0
+    thinking_tokens: int = 0
     estimated_cost_usd: float = 0.0
 
 
@@ -195,6 +200,9 @@ class RunResult:
             "cost": {
                 "input_tokens": self.cost.input_tokens,
                 "output_tokens": self.cost.output_tokens,
+                "cache_read_tokens": self.cost.cache_read_tokens,
+                "cache_creation_tokens": self.cost.cache_creation_tokens,
+                "thinking_tokens": self.cost.thinking_tokens,
                 "estimated_cost_usd": self.cost.estimated_cost_usd,
             },
             "quality": {

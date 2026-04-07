@@ -23,7 +23,7 @@ class ResultRecorder:
         self.results_dir = results_dir or RESULTS_DIR
 
     def save(self, result: RunResult) -> Path:
-        """Write result as JSON. Returns the file path."""
+        """Write result as JSON and append to JSONL. Returns the JSON file path."""
         run_dir = self.results_dir / result.run_id
         run_dir.mkdir(parents=True, exist_ok=True)
         path = run_dir / f"{result.task_id}_{result.tool}.json"
@@ -31,7 +31,34 @@ class ResultRecorder:
         data["version"] = "1.0"
         with open(path, "w") as f:
             json.dump(data, f, indent=2)
+        # Also append to JSONL for fast batch loading
+        self._append_jsonl(result.run_id, data)
         return path
+
+    def _append_jsonl(self, run_id: str, data: dict) -> None:
+        """Append a result to the run's JSONL file."""
+        # Extract base run ID (strip _runN suffix)
+        import re
+
+        match = re.match(r"^(.+)_run\d+$", run_id)
+        base_id = match.group(1) if match else run_id
+        jsonl_path = self.results_dir / f"{base_id}.jsonl"
+        with open(jsonl_path, "a") as f:
+            f.write(json.dumps(data) + "\n")
+
+    def load_jsonl(self, base_run_id: str) -> list[RunResult]:
+        """Load all results from a JSONL file for fast batch access."""
+        jsonl_path = self.results_dir / f"{base_run_id}.jsonl"
+        if not jsonl_path.exists():
+            return []
+        results = []
+        with open(jsonl_path) as f:
+            for line in f:
+                line = line.strip()
+                if line:
+                    data = json.loads(line)
+                    results.append(_dict_to_result(data))
+        return results
 
     def load_run(self, run_dir: Path) -> list[RunResult]:
         """Load all result JSONs from a single run directory."""
@@ -163,6 +190,9 @@ def _dict_to_result(data: dict) -> RunResult:
         cost=RunCost(
             input_tokens=cost_data.get("input_tokens", 0),
             output_tokens=cost_data.get("output_tokens", 0),
+            cache_read_tokens=cost_data.get("cache_read_tokens", 0),
+            cache_creation_tokens=cost_data.get("cache_creation_tokens", 0),
+            thinking_tokens=cost_data.get("thinking_tokens", 0),
             estimated_cost_usd=cost_data.get("estimated_cost_usd", 0),
         ),
         quality=RunQuality(

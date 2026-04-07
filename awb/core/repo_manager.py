@@ -14,13 +14,16 @@ log = logging.getLogger(__name__)
 _CLONE_MAX_RETRIES = 3
 _CLONE_BACKOFF_BASE = 5  # seconds
 _CACHE_DIR = Path.home() / ".cache" / "awb" / "clones"
+_TEMPLATE_DIR = Path.home() / ".cache" / "awb" / "templates"
 
 
 class RepoManager:
-    def __init__(self, workspace_root: Path | None = None):
+    def __init__(self, workspace_root: Path | None = None, use_uv: bool = False):
         self.workspace_root = workspace_root or Path("/tmp/awb-workspaces")
+        self.use_uv = use_uv
         self.workspace_root.mkdir(parents=True, exist_ok=True)
         _CACHE_DIR.mkdir(parents=True, exist_ok=True)
+        _TEMPLATE_DIR.mkdir(parents=True, exist_ok=True)
 
     async def _run(self, *args: str, cwd: Path | None = None) -> tuple[int, str, str]:
         proc = await asyncio.create_subprocess_exec(
@@ -79,36 +82,60 @@ class RepoManager:
                     f"git clone --mirror failed after {_CLONE_MAX_RETRIES} attempts: {last_err}"
                 )
 
-        # Clone from local cache (fast, no network)
-        rc, _, err = await self._run(
-            "git", "clone", "--local", str(mirror_dir), str(workspace)
-        )
-        if rc != 0:
-            raise RuntimeError(f"git clone --local failed: {err}")
+        # Workspace template cache: hash (url, commit, setup_commands) → skip pip install on hits
+        setup_key = tuple(sorted(task.repo.setup_commands))
+        template_key = hashlib.sha256(
+            repr((task.repo.url, task.repo.commit, setup_key)).encode()
+        ).hexdigest()
+        template_path = _TEMPLATE_DIR / template_key
 
-        rc, _, err = await self._run("git", "checkout", task.repo.commit, cwd=workspace)
-        if rc != 0:
-            raise RuntimeError(f"git checkout failed: {err}")
+        if (template_path / ".ready").exists():
+            # Fast path: copy pre-built template instead of running setup_commands (~2s vs ~45s)
+            shutil.rmtree(workspace)
+            shutil.copytree(template_path, workspace, symlinks=True)
+            # Template was built at the right commit — just ensure git state is clean
+            rc, _, err = await self._run("git", "checkout", task.repo.commit, cwd=workspace)
+            if rc != 0:
+                raise RuntimeError(f"git checkout failed: {err}")
+        else:
+            # Slow path: clone, checkout, run setup, then cache the result
+            rc, _, err = await self._run(
+                "git", "clone", "--local", str(mirror_dir), str(workspace)
+            )
+            if rc != 0:
+                raise RuntimeError(f"git clone --local failed: {err}")
 
-        for cmd in task.repo.setup_commands:
-            try:
-                proc = await asyncio.create_subprocess_shell(
-                    cmd,
-                    cwd=workspace,
-                    stdout=asyncio.subprocess.PIPE,
-                    stderr=asyncio.subprocess.PIPE,
-                )
-                _, stderr = await asyncio.wait_for(proc.communicate(), timeout=600)
-                if proc.returncode != 0:
-                    raise RuntimeError(
-                        f"setup command failed ({cmd}): {stderr.decode(errors='replace')}"
+            rc, _, err = await self._run("git", "checkout", task.repo.commit, cwd=workspace)
+            if rc != 0:
+                raise RuntimeError(f"git checkout failed: {err}")
+
+            for cmd in task.repo.setup_commands:
+                if self.use_uv:
+                    cmd = cmd.replace("pip install", "uv pip install")
+                try:
+                    proc = await asyncio.create_subprocess_shell(
+                        cmd,
+                        cwd=workspace,
+                        stdout=asyncio.subprocess.PIPE,
+                        stderr=asyncio.subprocess.PIPE,
                     )
-            except TimeoutError:
-                proc.kill()
-                await proc.communicate()
-                raise RuntimeError(f"setup command timed out after 600s: {cmd}") from None
+                    _, stderr = await asyncio.wait_for(proc.communicate(), timeout=600)
+                    if proc.returncode != 0:
+                        raise RuntimeError(
+                            f"setup command failed ({cmd}): {stderr.decode(errors='replace')}"
+                        )
+                except TimeoutError:
+                    proc.kill()
+                    await proc.communicate()
+                    raise RuntimeError(f"setup command timed out after 600s: {cmd}") from None
 
-        # Write workspace CLAUDE.md if task defines one
+            # Cache the prepared workspace so future runs skip setup
+            if template_path.exists():
+                shutil.rmtree(template_path)
+            shutil.copytree(workspace, template_path, symlinks=True)
+            (template_path / ".ready").touch()
+
+        # Write workspace CLAUDE.md if task defines one (always task-specific, never cached)
         if task.workspace_claude_md:
             claude_dir = workspace / ".claude"
             claude_dir.mkdir(exist_ok=True)
@@ -119,6 +146,11 @@ class RepoManager:
     async def cleanup(self, workspace: Path) -> None:
         if workspace.exists():
             shutil.rmtree(workspace)
+
+    def clear_templates(self) -> None:
+        if _TEMPLATE_DIR.exists():
+            shutil.rmtree(_TEMPLATE_DIR)
+        _TEMPLATE_DIR.mkdir(parents=True, exist_ok=True)
 
     def get_diff(self, workspace: Path) -> str:
         import subprocess

@@ -1,5 +1,37 @@
 # Changelog
 
+## 1.1.0 (2026-04-07)
+
+Performance and token optimization release. Cuts full-run wall clock by 33-50% and enables sub-$5 quick evaluations.
+
+### Speed
+- **Workspace template cache** (`~/.cache/awb/templates/`) — pip install runs once per unique (repo, commit, setup) combo; subsequent tasks copy the template (~2s vs ~45s). Saves ~55 min on a full run with 74 FastAPI tasks.
+- **`awb warmup`** — pre-build all unique workspace templates before benchmarking
+- **`--use-uv`** flag — rewrite `pip install` to `uv pip install` for 10-30x faster dependency installs
+- **Parallel partial credit evaluation** — independent grep/file checks run concurrently via asyncio.gather; pytest-based criteria still run sequentially (shared venv state)
+- **Adaptive timeout tightening** — runs 2+ use `min(original, 2x run1_actual)` to prevent 900s hangs on tasks that took 45s
+
+### Token efficiency
+- **Progressive execution** (`--progressive`) — runs easy tasks first, stops if easy pass rate < 40% or medium pass rate < 20%. Saves 50-80% of tokens on weak tools.
+- **Fast-check mode** (`--fast-check`) — runs 8 representative tasks (1 per category) with 1 run. ~15 min and ~$4 vs ~3 hrs and ~$150 for a full suite. Reports estimated full-suite score with confidence margin.
+- **Token budget enforcement** — new `max_input_tokens` and `max_output_tokens` fields in task constraints. Adapter streams events in real-time and kills the process if budget exceeded.
+- **Streaming token monitor** — Claude Code adapter now parses stream events as they arrive (not post-hoc), enabling live budget checks and future per-iteration analysis.
+
+### Scoring
+- **Richer RunCost** — new fields: `cache_read_tokens`, `cache_creation_tokens`, `thinking_tokens`. Backward compatible (additive).
+- **Token efficiency in composite score** — the `efficiency` dimension now blends 50% iteration count + 50% tokens-per-iteration via a new sigmoid normalizer (optimal=2k tokens/iter, baseline=15k).
+- **Two new weight profiles**:
+  - `token_efficient` — 25% cost weight, 15% efficiency (up from 2%)
+  - `rate_limited` — 30% cost weight, for evaluating tools under tight API limits
+- **Token-aware gap analysis** — detects cost-per-point outliers (3x median), low cache hit rates (<30%), and cost-inefficient failures.
+
+### Results
+- **JSONL output** — alongside per-file JSON, each run also appends to `{base_run_id}.jsonl` for fast batch loading. Backward compatible.
+- **`load_jsonl()`** on ResultRecorder for faster analysis across many tasks.
+
+### Tests
+- 184 tests (up from 135) covering template cache, parallel verification, fast-check, streaming, token budget, new scoring profiles, and JSONL roundtrip.
+
 ## 1.0.9 (2026-04-04)
 
 - Add Python 3.13 and 3.14 to CI test matrix and PyPI classifiers

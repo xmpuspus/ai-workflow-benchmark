@@ -138,6 +138,45 @@ def detect_patterns(
                 f"Consider adding early-exit or problem decomposition to workflow."
             )
 
+    # Pattern: low partial credit relative to token spend (cost per point)
+    cost_per_point = []
+    for r in results:
+        max_pts = r.outcome.partial_credit_max or 1
+        score_pct = (r.outcome.partial_credit_score / max_pts) * 100
+        if score_pct > 0 and r.cost.estimated_cost_usd > 0:
+            cpp = r.cost.estimated_cost_usd / score_pct
+            cost_per_point.append((r.task_id, cpp, score_pct, r.cost.estimated_cost_usd))
+
+    if cost_per_point:
+        # Flag tasks where cost-per-point is > 3x the median
+        cpps = sorted(c[1] for c in cost_per_point)
+        median_cpp = cpps[len(cpps) // 2]
+        for task_id, cpp, score_pct, cost in cost_per_point:
+            if cpp > median_cpp * 3 and cost > 0.5:
+                patterns.append(
+                    f"Task {task_id}: ${cost:.2f} for {score_pct:.0f}% "
+                    f"(${cpp:.3f}/point, {cpp / median_cpp:.1f}x median). "
+                    f"Token-inefficient — investigate tool's exploration strategy."
+                )
+
+    # Pattern: poor cache efficiency (if data available)
+    cache_data = [
+        (r.task_id, r.cost.cache_read_tokens, r.cost.cache_creation_tokens)
+        for r in results
+        if r.cost.cache_read_tokens > 0 or r.cost.cache_creation_tokens > 0
+    ]
+    if cache_data:
+        total_read = sum(c[1] for c in cache_data)
+        total_create = sum(c[2] for c in cache_data)
+        total = total_read + total_create
+        if total > 0:
+            hit_rate = total_read / total
+            if hit_rate < 0.3:
+                patterns.append(
+                    f"Low cache hit rate: {hit_rate:.0%} across {len(cache_data)} tasks. "
+                    f"Tool is re-reading context instead of reusing cached prompts."
+                )
+
     return patterns
 
 

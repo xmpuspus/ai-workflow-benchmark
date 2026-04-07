@@ -59,9 +59,11 @@ class ClaudeCodeVanillaAdapter(ToolAdapter):
         workspace: Path,
         max_turns: int = 20,
         timeout_seconds: int = 1800,
+        on_event: object | None = None,
     ) -> ToolResult:
         full_env = self._get_env()
         cmd = self._get_cmd(prompt, max_turns)
+        terminate = asyncio.Event()
 
         try:
             proc = await asyncio.create_subprocess_exec(
@@ -72,47 +74,106 @@ class ClaudeCodeVanillaAdapter(ToolAdapter):
                 env=full_env,
             )
 
-            stdout_bytes, stderr_bytes = await asyncio.wait_for(
-                proc.communicate(), timeout=timeout_seconds
-            )
+            stream_events: list[dict] = []
+            raw_lines: list[str] = []
 
-            if proc.returncode != 0 and not stdout_bytes.strip():
-                stderr_text = stderr_bytes.decode(errors="replace")[:500]
-                from rich.console import Console
+            async def _read_stream():
+                assert proc.stdout is not None
+                while True:
+                    line_bytes = await proc.stdout.readline()
+                    if not line_bytes:
+                        break
+                    line = line_bytes.decode(errors="replace").strip()
+                    if not line:
+                        continue
+                    raw_lines.append(line)
+                    with contextlib.suppress(json.JSONDecodeError):
+                        event = json.loads(line)
+                        stream_events.append(event)
+                        if on_event is not None:
+                            result = on_event(event)
+                            if result is False:
+                                terminate.set()
 
-                Console(stderr=True).print(
-                    f"[red]claude failed (exit {proc.returncode}):[/red] {stderr_text}"
+            async def _read_stderr():
+                assert proc.stderr is not None
+                stderr_chunks = []
+                while True:
+                    chunk = await proc.stderr.read(4096)
+                    if not chunk:
+                        break
+                    stderr_chunks.append(chunk)
+                return b"".join(stderr_chunks)
+
+            try:
+                stderr_task = asyncio.create_task(_read_stderr())
+
+                # Read stream with timeout, checking for termination signal
+                read_task = asyncio.create_task(_read_stream())
+                done, _ = await asyncio.wait(
+                    {read_task, asyncio.create_task(terminate.wait())},
+                    timeout=timeout_seconds,
+                    return_when=asyncio.FIRST_COMPLETED,
                 )
 
-            # Check for "Not logged in" in stream output
-            raw_check = stdout_bytes.decode(errors="replace")
-            if "Not logged in" in raw_check:
-                from rich.console import Console
+                if terminate.is_set():
+                    # Token budget exceeded — kill gracefully
+                    proc.terminate()
+                    try:
+                        await asyncio.wait_for(proc.wait(), timeout=5)
+                    except TimeoutError:
+                        proc.kill()
+                elif not done or read_task not in done:
+                    # Timeout
+                    proc.kill()
+                    await proc.wait()
+                    return ToolResult(
+                        success=False,
+                        raw_output="",
+                        exit_code=124,
+                        tool_version=self.get_version(),
+                    )
 
-                Console(stderr=True).print(
-                    "[red]Claude Code is not logged in.[/red] "
-                    "Run [bold]claude[/bold] interactively first to authenticate."
+                await proc.wait()
+                stderr_bytes = await stderr_task
+
+                if proc.returncode != 0 and not raw_lines:
+                    stderr_text = stderr_bytes.decode(errors="replace")[:500]
+                    from rich.console import Console
+
+                    Console(stderr=True).print(
+                        f"[red]claude failed (exit {proc.returncode}):[/red] {stderr_text}"
+                    )
+
+                # Check for "Not logged in" in stream output
+                raw = "\n".join(raw_lines)
+                if "Not logged in" in raw:
+                    from rich.console import Console
+
+                    Console(stderr=True).print(
+                        "[red]Claude Code is not logged in.[/red] "
+                        "Run [bold]claude[/bold] interactively first to authenticate."
+                    )
+
+            except TimeoutError:
+                proc.kill()
+                await proc.wait()
+                return ToolResult(
+                    success=False,
+                    raw_output="",
+                    exit_code=124,
+                    tool_version=self.get_version(),
                 )
-        except TimeoutError:
-            proc.kill()
-            await proc.communicate()
+
+        except FileNotFoundError:
             return ToolResult(
                 success=False,
-                raw_output="",
-                exit_code=124,
-                tool_version=self.get_version(),
+                raw_output="claude command not found",
+                exit_code=127,
+                tool_version="unknown",
             )
 
-        raw = stdout_bytes.decode(errors="replace")
-        stream_events: list[dict] = []
-
-        for line in raw.splitlines():
-            line = line.strip()
-            if not line:
-                continue
-            with contextlib.suppress(json.JSONDecodeError):
-                stream_events.append(json.loads(line))
-
+        raw = "\n".join(raw_lines)
         exit_code = proc.returncode or 0
         success = exit_code == 0
 

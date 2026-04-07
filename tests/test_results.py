@@ -98,3 +98,43 @@ class TestResultRecorder:
         runs = recorder.load_all_runs()
         assert sample_result.run_id in runs
         assert len(runs[sample_result.run_id]) == 1
+
+
+class TestJSONLResults:
+    def test_save_creates_jsonl(self, tmp_workspace, sample_result):
+        recorder = ResultRecorder(tmp_workspace)
+        recorder.save(sample_result)
+        jsonl_files = list(tmp_workspace.glob("*.jsonl"))
+        assert len(jsonl_files) >= 1
+
+    def test_load_jsonl_roundtrips(self, tmp_workspace, sample_result):
+        recorder = ResultRecorder(tmp_workspace)
+        recorder.save(sample_result)
+        # Extract base ID from run_id
+        import re
+
+        match = re.match(r"^(.+)_run\d+$", sample_result.run_id)
+        base_id = match.group(1) if match else sample_result.run_id
+        loaded = recorder.load_jsonl(base_id)
+        assert len(loaded) == 1
+        assert loaded[0].task_id == sample_result.task_id
+
+    def test_load_jsonl_missing_file(self, tmp_workspace):
+        recorder = ResultRecorder(tmp_workspace)
+        loaded = recorder.load_jsonl("nonexistent")
+        assert loaded == []
+
+    def test_jsonl_includes_new_cost_fields(self, tmp_workspace, sample_result):
+        sample_result.cost.cache_read_tokens = 5000
+        sample_result.cost.cache_creation_tokens = 1000
+        sample_result.cost.thinking_tokens = 200
+        recorder = ResultRecorder(tmp_workspace)
+        recorder.save(sample_result)
+        import re
+
+        match = re.match(r"^(.+)_run\d+$", sample_result.run_id)
+        base_id = match.group(1) if match else sample_result.run_id
+        loaded = recorder.load_jsonl(base_id)
+        assert loaded[0].cost.cache_read_tokens == 5000
+        assert loaded[0].cost.cache_creation_tokens == 1000
+        assert loaded[0].cost.thinking_tokens == 200

@@ -88,3 +88,12 @@ def normalize_iterations(
     baseline: float = 20.0,
 ) -> float:
     return sigmoid_normalize(avg_iterations, optimal, baseline, lower_is_better=True)
+
+
+def normalize_token_efficiency(
+    tokens_per_iteration: float,
+    optimal: float = 2000.0,
+    baseline: float = 15000.0,
+) -> float:
+    """Normalize tokens-per-iteration. Lower is better."""
+    return sigmoid_normalize(tokens_per_iteration, optimal, baseline, lower_is_better=True)

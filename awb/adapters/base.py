@@ -32,8 +32,15 @@ class ToolAdapter(abc.ABC):
         workspace: Path,
         max_turns: int = 20,
         timeout_seconds: int = 1800,
+        on_event: object | None = None,
     ) -> ToolResult:
-        """Run the tool against a task in the given workspace."""
+        """Run the tool against a task in the given workspace.
+
+        Args:
+            on_event: Optional callback(event_dict) called for each stream event
+                as it arrives. Used for real-time token monitoring and budget
+                enforcement. Return False from callback to request early termination.
+        """
         ...
 
     @abc.abstractmethod

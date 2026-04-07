@@ -36,15 +36,15 @@ graph TB
 
 This is the core of what AWB does. Every benchmark run follows this exact five-stage pipeline, and understanding it is essential to understanding why scores come out the way they do.
 
-**Stage 1 (Prepare)** clones the target repo at a pinned commit SHA and runs setup commands (venv creation, dependency installation). This ensures every tool starts from identical state — no run inherits artifacts from a previous one.
+**Stage 1 (Prepare)** provisions a workspace for the task. AWB maintains two cache layers: a bare-clone cache at `~/.cache/awb/clones/` (makes `git clone --local` effectively instant) and a workspace template cache at `~/.cache/awb/templates/` (eliminates pip install for tasks that share the same setup). On a cache hit, `prepare()` is a `shutil.copytree` plus a `git checkout` (~2 seconds). On a miss, it clones, checks out, runs setup commands, then copies the finished workspace into the template cache for future runs. The `--use-uv` flag rewrites `pip install` into `uv pip install` for 10-30x faster cold builds.
 
 **Stage 2 (Baseline)** counts lint warnings and security findings *before* the AI tool touches anything. This baseline is compared against post-run counts to measure whether the tool improved or degraded code quality, rather than penalizing tools for pre-existing issues in the repo.
 
-**Stage 3 (Execute)** hands the task prompt to the tool adapter, which runs the AI tool as a subprocess. Stream events (token counts, tool calls, model info) are parsed in real-time to capture cost and iteration metrics without waiting for the tool to finish.
+**Stage 3 (Execute)** hands the task prompt to the tool adapter, which runs the AI tool as a subprocess. In v1.1 the Claude Code adapter streams stream-json events incrementally — as each line lands on stdout, a callback parses it into the `MetricCollector` and checks against the task's `max_input_tokens` / `max_output_tokens` budget. If the budget is exceeded, the callback returns `False`, the runner terminates the subprocess, and the partial result is scored normally. This replaces the old post-hoc batch parsing and enables real-time token accounting.
 
-**Stage 4 (Verify)** runs the test suite, evaluates partial credit criteria, and re-counts lint/security issues. This is completely tool-agnostic — every tool is measured by the same test commands and rubric, ensuring fair comparison.
+**Stage 4 (Verify)** runs the test suite, evaluates partial credit criteria, and re-counts lint/security issues. Partial credit criteria that don't touch the shared venv (grep, file existence checks) are dispatched in parallel via `asyncio.gather`; pytest-based criteria run sequentially to avoid interpreter contention. This is completely tool-agnostic — every tool is measured by the same test commands and rubric, ensuring fair comparison.
 
-**Stage 5 (Score)** normalizes all raw metrics through sigmoid curves with per-task baselines, then produces both a weighted composite score and a capability profile mapping results to the 11 capability dimensions.
+**Stage 5 (Score)** normalizes all raw metrics through sigmoid curves with per-task baselines, then produces both a weighted composite score and a capability profile mapping results to the 11 capability dimensions. The `efficiency` dimension is a 50/50 blend of iteration count and tokens-per-iteration, so a tool that finishes in 3 turns but burns 40k tokens per turn is scored lower than one that takes 5 turns at 2k tokens each.
 
 ```mermaid
 %%{init: {'theme': 'base', 'themeVariables': {'primaryColor': '#2563eb', 'primaryTextColor': '#fff', 'lineColor': '#6b7280', 'fontSize': '13px'}}}%%
@@ -100,6 +100,21 @@ flowchart LR
     classDef red fill:#ef4444,stroke:#dc2626,color:#fff
 ```
 
+## Execution Modes
+
+`BenchmarkRunner.run_all()` in [awb/core/runner.py](awb/core/runner.py) branches between four execution modes, selected by CLI flags on `awb run`:
+
+| Mode | Flag | Task ordering | Termination |
+|------|------|---------------|-------------|
+| Full | (default) | YAML discovery order | Fixed `--runs` count |
+| Adaptive | `--adaptive` | YAML order | Run 1 hits all tasks; runs 2+ only re-run near-misses (60-99% score) |
+| Progressive | `--progressive` | Easy → medium → hard | Stops after easy if pass rate < 40%; skips hard if medium < 20% |
+| Fast-check | `--fast-check` | Hand-picked (8 tasks) | Single run, reports estimated full-suite score ± margin |
+
+Fast-check selection lives in [awb/core/fast_check.py](awb/core/fast_check.py) — one representative task per category from a hand-curated list (`BF-001`, `CR-001`, `DB-001`, `FA-001`, `LC-001`, `MF-001`, `RF-001`, `WF-001`). The `estimate_full_score()` helper computes a mean and t-distribution confidence margin from the 8 samples.
+
+Adaptive timeouts (new in v1.1): `BenchmarkRunner._adaptive_timeout()` tightens runs 2+ to `min(original_timeout, 2 × run1_actual)`. A task that completed in 45s on run 1 gets a 90s timeout on runs 2 and 3, preventing 900s hangs when the tool regresses into a loop.
+
 ## Module Dependency Graph
 
 This diagram shows how AWB's 7 packages depend on each other. The architecture follows a strict layered pattern: the CLI layer at the top orchestrates everything but contains no logic itself; the Core layer owns execution and data; Adapters, Verification, and Scoring are peer modules that the Core layer calls; Analysis and Submission sit on top of Scoring and operate on saved results.
@@ -118,10 +133,11 @@ graph TD
     subgraph Core["Core"]
         Config["config.py<br/><i>Dataclasses,<br/>weights, paths</i>"]:::gray
         TaskLoader["task_loader.py<br/><i>YAML + schema<br/>validation</i>"]:::gray
-        Runner["runner.py<br/><i>Async orchestrator</i>"]:::gray
-        RepoMgr["repo_manager.py<br/><i>Git clone + setup</i>"]:::gray
-        Results["results.py<br/><i>JSON save/load</i>"]:::gray
-        MetricCol["metrics.py<br/><i>Token counting,<br/>timing</i>"]:::gray
+        Runner["runner.py<br/><i>Async orchestrator,<br/>progressive,<br/>token budget</i>"]:::gray
+        RepoMgr["repo_manager.py<br/><i>Clone + template cache,<br/>uv pip support</i>"]:::gray
+        Results["results.py<br/><i>JSON + JSONL</i>"]:::gray
+        MetricCol["metrics.py<br/><i>Streaming tokens,<br/>cache hit ratio</i>"]:::gray
+        FastCheck["fast_check.py<br/><i>Representative<br/>task selection</i>"]:::gray
     end
 
     subgraph Adapters["Adapters"]
@@ -207,6 +223,10 @@ graph TD
 This diagram traces how a single task's raw metrics become a composite score. It is the most important diagram for understanding AWB's scoring system and why it produces the scores it does.
 
 The pipeline has four layers. **Raw Metrics** (gray) are the direct measurements: did tests pass, how many partial credit points were earned, how much did it cost, how long did it take. **Per-Task Baselines** (blue) are derived from the task's difficulty level — a hard task costing $2.00 is scored differently than an easy task costing $2.00, because the baselines are $1.00/$3.00 for hard vs $0.05/$0.30 for easy. **Sigmoid Normalization** (purple) maps each raw metric to a 0-100 score using the formula `score = 100 / (1 + exp(k * (value - baseline)))`, which produces ~95 at the optimal value, ~50 at the baseline, and smoothly decays toward 0 for worse values without ever going negative. **Weights** (amber) apply the configured importance of each dimension — correctness at 55% dominates because a tool that gets the wrong answer fast and cheap should not outscore one that gets it right.
+
+**Efficiency dimension (v1.1):** The `efficiency` score is a 50/50 blend of `normalize_iterations()` and a new `normalize_token_efficiency()` applied to tokens-per-iteration (optimal 2k, baseline 15k). A tool that finishes a task in 3 iterations but burns 30k tokens per iteration scores lower on efficiency than one that takes 6 iterations at 3k tokens each. This rewards cache-efficient, focused exploration and penalizes runaway context reads.
+
+**Cost efficiency vs efficiency:** These are distinct. `cost_efficiency` measures total USD (end-to-end API spend) against per-task dollar baselines. `efficiency` measures resource discipline (iterations + tokens-per-iteration) independent of pricing. A tool using a cheap model can spend less total USD while still being inefficient per-iteration, and vice versa. The `token_efficient` and `rate_limited` weight profiles lift both dimensions for scenarios where API budget is the binding constraint.
 
 The composite score at the bottom is the final number that appears on the leaderboard. It ranges from 0 to 100 and is directly comparable across tools, models, and configurations.
 
@@ -326,6 +346,8 @@ classDiagram
     class TaskConstraints {
         +int max_iterations
         +int timeout_seconds
+        +int max_input_tokens
+        +int max_output_tokens
     }
 
     class TaskBaselines {
@@ -392,6 +414,9 @@ classDiagram
     class RunCost {
         +int input_tokens
         +int output_tokens
+        +int cache_read_tokens
+        +int cache_creation_tokens
+        +int thinking_tokens
         +float estimated_cost_usd
     }
 
@@ -428,7 +453,7 @@ This diagram shows what happens when you run `awb gap`. Unlike scoring (which pr
 
 The flow has three stages. **Classify Failures** categorizes each non-passing task into one of four failure modes: `timeout` (tool ran out of time), `test_error` (tool wrote code but tests fail — the most common failure mode), `partial_completion` (some criteria pass but not all), and `code_error` (zero partial credit — the tool went completely wrong). This classification matters because each failure mode suggests different improvements.
 
-**Pattern Detection** looks across all failures for systematic weaknesses. It checks whether the tool fails 70%+ of tasks testing a specific capability (e.g., "fails all multi_file_reasoning tasks"), whether there's a difficulty cliff (passes easy, fails hard), and whether the tool burns tokens on tasks it ultimately fails (spending >$1 on a failed task suggests the tool should have stopped earlier).
+**Pattern Detection** looks across all failures for systematic weaknesses. It checks whether the tool fails 70%+ of tasks testing a specific capability (e.g., "fails all multi_file_reasoning tasks"), whether there's a difficulty cliff (passes easy, fails hard), and whether the tool burns tokens on tasks it ultimately fails (spending >$1 on a failed task suggests the tool should have stopped earlier). v1.1 adds two more patterns: **cost-per-point outliers** (tasks where `$ / partial_credit_pct` exceeds 3× the median — the tool paid dearly for small scores) and **low cache efficiency** (aggregate `cache_read / (cache_read + cache_create + input)` below 30%, indicating repeated context re-reads).
 
 **Gap Report** synthesizes everything into actionable output: a capability radar showing per-dimension scores, ranked improvement actions based on frequency across failures, and rule-based workflow suggestions mapped to (failure_category, capability) pairs. The suggestions are deterministic (not LLM-generated) so they're reproducible across runs.
 

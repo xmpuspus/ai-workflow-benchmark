@@ -381,3 +381,46 @@ def test_all_schema_capabilities_in_enum():
     }
     actual = {c.value for c in Capability}
     assert actual == expected
+
+
+# --- Token efficiency scoring ---
+
+
+class TestTokenEfficiencyScoring:
+    def test_normalize_token_efficiency_optimal(self):
+        from awb.scoring.normalize import normalize_token_efficiency
+
+        score = normalize_token_efficiency(2000.0)
+        assert score >= 90
+
+    def test_normalize_token_efficiency_baseline(self):
+        from awb.scoring.normalize import normalize_token_efficiency
+
+        score = normalize_token_efficiency(15000.0)
+        assert 45 <= score <= 55
+
+    def test_normalize_token_efficiency_terrible(self):
+        from awb.scoring.normalize import normalize_token_efficiency
+
+        score = normalize_token_efficiency(50000.0)
+        assert score < 20
+
+    def test_weight_profiles_sum_to_one(self):
+        from awb.scoring.composite import load_weight_profile
+
+        for profile in ("default", "correctness_focused", "production",
+                         "token_efficient", "rate_limited"):
+            weights = load_weight_profile(profile)
+            total = sum(weights.values())
+            assert abs(total - 1.0) < 0.001, f"{profile} sums to {total}"
+
+    def test_efficiency_blends_iterations_and_tokens(self, sample_task, sample_result):
+        from awb.scoring.composite import compute_task_score
+
+        # With tokens, efficiency should differ from pure iteration score
+        sample_result.cost.input_tokens = 50000
+        sample_result.cost.output_tokens = 10000
+        sample_result.metrics.iteration_count = 5
+        score = compute_task_score(sample_result, sample_task)
+        assert "efficiency" in score.per_metric
+        assert 0 <= score.per_metric["efficiency"] <= 100

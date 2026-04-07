@@ -95,7 +95,16 @@ Delta in security findings from `verification.security_commands`. Optimal = 0 ne
 
 ### Efficiency (weight: 2%)
 
-Number of tool turns used. Baselines derived from difficulty: easy optimal=3, medium=8, hard=15. Maximum from `constraints.max_iterations`.
+A 50/50 blend of two sigmoid-normalized sub-scores:
+
+- **Iteration count** — tool turns used versus per-task baselines (easy optimal=3, medium=8, hard=15; baseline = `constraints.max_iterations`)
+- **Tokens per iteration** — total tokens divided by iteration count, normalized against optimal=2,000 and baseline=15,000
+
+This dual measurement distinguishes between two failure modes that raw iteration count cannot separate: a tool that finishes in 3 turns by reading half the codebase (low iters, high tokens/iter) and a tool that finishes in 8 focused turns (higher iters, low tokens/iter). The latter is more token-efficient even though it used more iterations, and scores higher on this dimension.
+
+### Token budget enforcement
+
+Tasks can specify `constraints.max_input_tokens` and `constraints.max_output_tokens` (both default to 0 = unlimited). When set, the Claude Code adapter streams stream-json events in real time and calls a budget-check callback on every event. If the running input or output token total exceeds the budget, the callback returns `False`, the adapter terminates the subprocess gracefully (SIGTERM → wait 5s → SIGKILL), and the task is scored on whatever partial credit was earned up to that point. This prevents runaway consumption on tasks where a tool enters a context-read loop, and makes rate-limited evaluation scenarios directly measurable.
 
 ## Task Design
 
@@ -184,7 +193,7 @@ Task timeouts are calibrated from empirical p95 wall-clock times (p95 × 2.5). P
 
 ### Weight profiles
 
-Three built-in profiles in `awb/scoring/weights.yaml`:
+Five built-in profiles in `awb/scoring/weights.yaml`:
 
 ```yaml
 default:
@@ -195,13 +204,61 @@ default:
   reliability: 0.05
   security: 0.03
   efficiency: 0.02
+
+correctness_focused:  # research-grade: favor getting the right answer above all
+  correctness: 0.70
+  cost_efficiency: 0.10
+  ...
+
+production:  # shipping to users: reliability and security matter more
+  correctness: 0.45
+  cost_efficiency: 0.20
+  reliability: 0.10
+  security: 0.08
+  ...
+
+token_efficient:  # tight API budgets: cost and per-iteration discipline rewarded
+  correctness: 0.40
+  cost_efficiency: 0.25
+  efficiency: 0.15
+  ...
+
+rate_limited:  # hitting TPM/RPM ceilings: cost dominates
+  correctness: 0.35
+  cost_efficiency: 0.30
+  efficiency: 0.15
+  ...
 ```
+
+The `token_efficient` and `rate_limited` profiles exist because the real-world bottleneck for teams using Claude Code has shifted from "does it work" to "does it work within my API budget". A tool that solves 80% of tasks at $0.10 each beats one that solves 85% at $1.00 each when the operator is hitting rate limits. These profiles let users score the same raw results under different economic constraints without re-running.
 
 ### Statistical framework
 
 - **Confidence intervals**: t-distribution based (no scipy required). Reports mean, 95% CI lower/upper, standard deviation, and sufficiency flag.
 - **Significance testing**: Sign test for paired comparison of two tools on shared tasks. Reports p-value, Cohen's d effect size, and interpretation.
 - **Integrity checks**: Contamination detection (completions <10s with success), variance anomalies (identical times/tokens across runs suggesting cached replay).
+
+## Execution Modes
+
+v1.1 introduces three execution modes that trade coverage for speed and token cost. They do not change how scoring works — they change which tasks are run. A result produced in progressive or fast-check mode is scored by the same sigmoid normalization as a full-suite result; the difference is sample size.
+
+**Full mode** (default) runs every task for `--runs` iterations. This is the reference evaluation. Results from this mode are directly comparable across tools.
+
+**Progressive mode** (`--progressive`) sorts tasks by difficulty and runs easy tasks first. After easy tasks complete on run 1, the runner checks pass rate: if below 40%, the run terminates with a clear explanation that the tool is not ready for harder tasks. Same check after medium tasks at a 20% threshold. Progressive results are scored normally but cover only the difficulty tiers that completed — gap analysis will flag that hard tasks were skipped. This mode exists to stop wasting tokens on tools that clearly aren't going to handle non-trivial work.
+
+**Fast-check mode** (`--fast-check`) runs 8 hand-picked representative tasks (one per category) for a single run. It reports an estimated full-suite score with a 95% confidence margin computed from the 8 samples. Fast-check results are not published on the leaderboard — they are a sighting shot. Use them for PR gates, config iteration, or deciding whether a new tool is worth a full evaluation.
+
+**Adaptive runs** (`--adaptive`) is not a mode but a modifier. It applies to runs 2 and 3, skipping tasks that were decisive on run 1 (scored 0%, 100%, or below a configurable minimum) and only re-running near-misses. Combined with adaptive timeout tightening (runs 2+ get `min(original, 2 × run1_actual)` per task), this cuts runs 2-3 wall clock by 40-60% without losing the variance signal that matters.
+
+| Mode | Tasks | Runs | Typical wall clock | Typical API cost |
+|------|-------|------|-------------------|------------------|
+| Full | 100 | 3 | ~3 hours | ~$150 |
+| Full + adaptive | 100 + ~40 | 1 + 2 partial | ~1.5 hours | ~$100 |
+| Progressive (strong tool) | 100 | 3 | ~3 hours | ~$150 |
+| Progressive (weak tool) | ~48 | 3 | ~1 hour | ~$40-75 |
+| Fast-check | 8 | 1 | ~15 minutes | ~$4 |
+
+Wall-clock estimates assume `-j 4` parallelism and the workspace template cache is warm (`awb warmup` run once). Cost estimates are for Claude Opus 4.6 with typical extended thinking.
 
 ## Workflow Lift Score
 
@@ -237,6 +294,10 @@ External submissions can be compared with `awb compare-submissions`, which finds
 As of v1.0.0, all result JSON files include a `"version": "1.0"` field. Metric keys are aligned with `weights.yaml` dimension names (correctness, cost_efficiency, speed, code_quality, reliability, security, efficiency). Weight profiles are validated to sum to 1.0 on load. Partial credit criteria are validated to sum to exactly 100 points by `awb validate`.
 
 Results from v0.5.x can be converted with `awb migrate-results <old_dir> --output <new_dir>`. The migration adds version fields, renames metrics, and preserves the original data in a `_v05x_original` key for auditability.
+
+**v1.1 additive fields.** Result JSON files now include three new `cost` fields when the tool's stream-json exposes them: `cache_read_tokens`, `cache_creation_tokens`, and `thinking_tokens`. These default to 0 for adapters that don't report them and are backward compatible — any v1.0 loader that reads the `cost` object will simply ignore the new keys. The `constraints` object on task YAMLs adds optional `max_input_tokens` and `max_output_tokens` fields with default 0 (unlimited), so existing task definitions remain valid.
+
+**JSONL output.** Alongside per-file JSON, each benchmark run now appends every result to `{results_dir}/{base_run_id}.jsonl` for fast batch loading. The per-file JSONs remain the source of truth and are unchanged — the JSONL is a projection for tooling that wants to stream results without globbing hundreds of files.
 
 ## Known Limitations
 

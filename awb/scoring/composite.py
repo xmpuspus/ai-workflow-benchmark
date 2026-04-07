@@ -18,9 +18,26 @@ from awb.scoring.normalize import (
     normalize_security,
     normalize_speed,
     normalize_success_rate,
+    normalize_token_efficiency,
 )
 
 DIFFICULTY_WEIGHT = {"easy": 1.0, "medium": 1.5, "hard": 2.5}
+
+
+def _compute_efficiency(result, baselines) -> float:
+    """Blended efficiency: 50% iteration count + 50% tokens-per-iteration."""
+    iter_score = normalize_iterations(
+        result.metrics.iteration_count,
+        baselines.iterations_optimal,
+        baselines.iterations_baseline,
+    )
+    total_tokens = result.cost.input_tokens + result.cost.output_tokens
+    iters = result.metrics.iteration_count or 1
+    tpi = total_tokens / iters if total_tokens > 0 else 0
+    if tpi > 0:
+        token_score = normalize_token_efficiency(tpi)
+        return round(0.5 * iter_score + 0.5 * token_score, 1)
+    return iter_score
 
 _weight_cache: dict[str, dict[str, float]] = {}
 
@@ -89,11 +106,7 @@ def compute_task_score(
         "code_quality": normalize_quality(result.quality.lint_delta, 1),
         "reliability": normalize_regressions(result.quality.test_regressions, 1),
         "security": normalize_security(result.quality.security_delta, 1),
-        "efficiency": normalize_iterations(
-            result.metrics.iteration_count,
-            baselines.iterations_optimal,
-            baselines.iterations_baseline,
-        ),
+        "efficiency": _compute_efficiency(result, baselines),
     }
 
     composite = sum(per_metric.get(k, 0) * w for k, w in weights.items())

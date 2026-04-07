@@ -92,3 +92,107 @@ def test_parse_non_dict_ignored():
     mc.parse_stream_event("not a dict")
     mc.parse_stream_event(None)
     assert mc._iterations == 0
+
+
+def test_cache_token_tracking():
+    mc = MetricCollector()
+    mc.parse_stream_event(
+        {
+            "type": "assistant",
+            "message": {
+                "usage": {
+                    "input_tokens": 500,
+                    "output_tokens": 100,
+                    "cache_read_input_tokens": 2000,
+                    "cache_creation_input_tokens": 300,
+                },
+                "content": [],
+            },
+        }
+    )
+    cost = mc.to_cost()
+    assert cost.cache_read_tokens == 2000
+    assert cost.cache_creation_tokens == 300
+
+
+def test_result_event_overrides_cache_tokens():
+    mc = MetricCollector()
+    mc.parse_stream_event(
+        {
+            "type": "result",
+            "usage": {
+                "input_tokens": 5000,
+                "output_tokens": 1000,
+                "cache_read_input_tokens": 8000,
+                "cache_creation_input_tokens": 500,
+            },
+        }
+    )
+    cost = mc.to_cost()
+    assert cost.cache_read_tokens == 8000
+    assert cost.cache_creation_tokens == 500
+    assert cost.input_tokens == 5000 + 8000 + 500
+
+
+def test_tokens_per_iteration():
+    mc = MetricCollector()
+    mc.record_tokens(10000, 5000)
+    mc._iterations = 5
+    assert mc.tokens_per_iteration == 3000.0
+
+
+def test_tokens_per_iteration_zero_iters():
+    mc = MetricCollector()
+    mc.record_tokens(1000, 500)
+    assert mc.tokens_per_iteration == 0.0
+
+
+def test_cache_hit_ratio():
+    mc = MetricCollector()
+    mc._cache_read = 800
+    mc._cache_create = 200
+    mc._input_tokens = 0
+    assert mc.cache_hit_ratio == 0.8
+
+
+def test_cache_hit_ratio_zero():
+    mc = MetricCollector()
+    assert mc.cache_hit_ratio == 0.0
+
+
+def test_per_iteration_tokens_tracked():
+    mc = MetricCollector()
+    mc.parse_stream_event(
+        {
+            "type": "assistant",
+            "message": {
+                "usage": {"input_tokens": 100, "output_tokens": 50},
+                "content": [],
+            },
+        }
+    )
+    mc.parse_stream_event(
+        {
+            "type": "assistant",
+            "message": {
+                "usage": {"input_tokens": 200, "output_tokens": 80},
+                "content": [],
+            },
+        }
+    )
+    per_iter = mc.per_iteration_tokens
+    # 2 completed iterations + 1 pending (empty) current_iter
+    assert len(per_iter) >= 2
+    assert per_iter[0].input_tokens == 100
+    assert per_iter[1].input_tokens == 200
+
+
+def test_cost_includes_new_fields():
+    mc = MetricCollector()
+    mc._cache_read = 1000
+    mc._cache_create = 500
+    mc._thinking_tokens = 200
+    cost = mc.to_cost()
+    assert cost.cache_read_tokens == 1000
+    assert cost.cache_creation_tokens == 500
+    assert cost.thinking_tokens == 200

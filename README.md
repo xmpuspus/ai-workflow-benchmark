@@ -27,11 +27,14 @@ AWB benchmarks the full stack: **tool + configuration + workflow + model**, toge
 ```bash
 pip install awb
 
-awb quickstart                              # verify your setup
-awb run --runs 3 --parallel --adaptive      # full 100-task benchmark (parallel, smart re-runs)
-awb run --category workflow --runs 1        # workflow tasks only (quick test)
-awb gap results/runs/<run_dir>/             # analyze capability gaps
+awb quickstart                                        # verify your setup
+awb warmup                                            # pre-build workspace templates (one-time, ~5 min)
+awb run --fast-check claude-code-custom               # 8 tasks, ~15 min, ~$4 (quick signal)
+awb run --progressive --adaptive claude-code-custom   # full suite with early exit + smart re-runs
+awb gap results/runs/<run_dir>/                       # analyze capability gaps
 ```
+
+**New in v1.1.0:** `awb warmup` caches workspaces for 10-30x faster setup. `--fast-check` gives a quick signal in 15 min for ~$4. `--progressive` stops early on weak tools. `--use-uv` swaps pip for uv. See [Execution Modes](#execution-modes) below.
 
 ## How It Works
 
@@ -59,7 +62,17 @@ Seven dimensions, sigmoid-normalized with per-task baselines derived from diffic
 | Code quality | 10% | Lint warning delta (pre vs. post) |
 | Reliability | 5% | Pre-existing tests broken by the change |
 | Security | 3% | New security issues introduced |
-| Efficiency | 2% | Tool turns used vs. task max |
+| Efficiency | 2% | Blend of iteration count and tokens-per-iteration |
+
+**Weight profiles** (select with `load_weight_profile(name)`):
+
+| Profile | Focus | Use When |
+|---------|-------|----------|
+| `default` | Balanced | Standard evaluation |
+| `correctness_focused` | 70% correctness | Research-grade rigor |
+| `production` | 45% correctness, 20% cost, 10% reliability, 8% security | Shipping to users |
+| `token_efficient` | 25% cost, 15% efficiency | Tight API budgets |
+| `rate_limited` | 30% cost, 15% efficiency | Hitting TPM/RPM limits |
 
 **Sigmoid curve:** `score = 100 / (1 + exp(k * (value - baseline)))`
 
@@ -196,7 +209,32 @@ awb run --runs 1 --dry-run        # preview without executing
 awb run --resume                   # skip tasks with existing results
 awb run --parallel -j 4            # run 4 tasks concurrently
 awb run --adaptive                 # re-run near-miss tasks (60-99%) after initial pass
+awb run --progressive              # easy → medium → hard, stop early if pass rate too low
+awb run --fast-check               # 8 representative tasks, 1 run (~15 min, ~$4)
+awb run --use-uv                   # use uv instead of pip for 10-30x faster installs
 ```
+
+### Execution Modes
+
+AWB v1.1 ships four execution modes tuned for different evaluation scenarios:
+
+| Mode | Tasks run | Wall clock | Token cost | Use when |
+|------|-----------|-----------|-----------|----------|
+| Full suite | 300 (100 × 3 runs) | ~3 hrs | ~$150 | Final evaluation, publishing results |
+| Full + adaptive | ~180 | ~1.5 hrs | ~$100 | Standard workflow, strong tools |
+| Progressive | ~150 on weak tools | ~1 hr | ~$40-75 | Unknown/mediocre tools |
+| Fast-check | 8 | ~15 min | ~$4 | PR gates, iterating on config |
+
+### `awb warmup` — Pre-build workspace templates
+
+```bash
+awb warmup              # build templates for all 63 unique (repo, commit, setup) combos
+awb warmup --dry-run    # show combos without building
+awb warmup --clear      # reset template cache
+awb warmup --use-uv     # use uv for faster initial builds
+```
+
+Workspace templates are cached at `~/.cache/awb/templates/`. First build takes ~5 min; subsequent `awb run` invocations copy templates in ~2s instead of running `pip install` from scratch. Cuts ~55 min off a full benchmark run with 74 FastAPI tasks.
 
 ### `awb gap` — Capability gap analysis
 
@@ -337,8 +375,9 @@ class MyToolAdapter(ToolAdapter):
     display_name = "My Tool"
 
     async def execute(self, prompt: str, workspace: Path,
-                      max_turns: int = 20, timeout_seconds: int = 1800) -> ToolResult:
-        ...
+                      max_turns: int = 20, timeout_seconds: int = 1800,
+                      on_event=None) -> ToolResult:
+        ...  # on_event(event) callback for streaming token monitor; return False to abort
 
     def check_available(self) -> bool:
         ...
@@ -375,10 +414,31 @@ The format captures tool version, model, hardware class, and per-task run result
 - Confidence intervals via t-distribution (no scipy required for core scoring)
 - Significance testing via sign test for paired tool comparison
 - Integrity checks: contamination detection (completions <10s flagged), variance anomalies (identical times/tokens across runs)
-- Weight profiles: `default`, `correctness_focused`, `production` (see `awb/scoring/weights.yaml`)
+- Weight profiles: `default`, `correctness_focused`, `production`, `token_efficient`, `rate_limited` (see `awb/scoring/weights.yaml`)
 - Stability metric: per-task `TaskStability` (std_dev, score_range, is_unstable); high-variance tasks can be down-weighted in composite scoring
+- Token efficiency: sigmoid normalizer (optimal=2k tokens/iter, baseline=15k) blended 50/50 with iteration count in the efficiency dimension
 
 ## Changelog
+
+### 1.1.0 (2026-04-07)
+
+Performance and token optimization release. 33-50% faster full runs, ~97% cheaper quick evaluations.
+
+- **Workspace template cache** — ~55 min saved on full runs (74 FastAPI tasks no longer re-run pip install)
+- **`awb warmup`** — pre-build all unique workspace templates in parallel
+- **`--use-uv`** — 10-30x faster pip installs via uv
+- **`--progressive`** — easy → medium → hard execution, stops early if weak tool (50-80% token savings)
+- **`--fast-check`** — 8 representative tasks, 1 run, ~15 min, ~$4 (97% cheaper than full suite)
+- **Token budget enforcement** — `max_input_tokens`/`max_output_tokens` in task constraints, streaming kill switch
+- **Streaming token monitor** — Claude Code adapter parses stream events as they arrive
+- **Parallel partial credit** — independent grep/file checks run via asyncio.gather; pytest stays sequential
+- **Adaptive timeouts** — runs 2+ tighten timeout to `min(original, 2x run1_actual)`
+- **Richer RunCost** — cache_read, cache_creation, thinking token fields
+- **Token efficiency in scoring** — efficiency dimension blends iterations + tokens-per-iteration
+- **Two new weight profiles** — `token_efficient` and `rate_limited` for cost-sensitive evaluation
+- **Token-aware gap analysis** — cost-per-point outliers, cache hit rate patterns, token burn detection
+- **JSONL results** — additive output format alongside per-file JSON for fast batch loading
+- **184 tests** (up from 135)
 
 ### 1.0.9 (2026-04-04)
 
