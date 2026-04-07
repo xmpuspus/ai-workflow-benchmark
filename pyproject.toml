@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "awb"
-version = "1.1.2"
+dynamic = ["version"]
 description = "Benchmark harness measuring AI coding tool+workflow performance, not just model capability. 100 tasks, sigmoid scoring, 12 capability dimensions, gap analysis."
 readme = "README.md"
 license = "MIT"
@@ -64,6 +64,9 @@ gemini-cli = "awb.adapters.gemini_cli:GeminiCliAdapter"
 codex-cli = "awb.adapters.codex_cli:CodexCliAdapter"
 windsurf = "awb.adapters.windsurf:WindsurfAdapter"
 copilot = "awb.adapters.copilot_cli:CopilotCliAdapter"
+
+[tool.hatch.version]
+path = "awb/__init__.py"
 
 [tool.hatch.build.targets.wheel]
 packages = ["awb"]

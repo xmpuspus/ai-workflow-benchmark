@@ -79,9 +79,14 @@ def generate_leaderboard(
     results_dir: Path | None = None,
     output_dir: Path | None = None,
 ) -> Path:
-    """Generate static HTML leaderboard. Returns path to output index.html."""
+    """Generate static HTML leaderboard. Returns path to output index.html.
+
+    Default output_dir is `./results/leaderboard/` in the current working
+    directory. Writing under the package install dir breaks on read-only
+    installs and pollutes site-packages.
+    """
     leaderboard_dir = Path(__file__).resolve().parent
-    output_dir = output_dir or leaderboard_dir / "output"
+    output_dir = output_dir or Path.cwd() / "results" / "leaderboard"
     output_dir.mkdir(parents=True, exist_ok=True)
 
     results = load_results(results_dir)

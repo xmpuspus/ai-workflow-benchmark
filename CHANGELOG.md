@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.1.3 (2026-04-07)
+
+Release-hygiene follow-ups to the v1.1.x release train:
+
+- **Single source of truth for version.** `pyproject.toml` now uses `dynamic = ["version"]` with `[tool.hatch.version] path = "awb/__init__.py"`, so `awb/__init__.py` is the only place the version lives. Fixes the v1.1.0 → v1.1.1 incident where the two files drifted.
+- **`scripts/test_pypi_install.sh`** — release smoke test that installs the just-built wheel in a fresh venv and exercises every CLI command end-to-end (info, tools, validate, quickstart, warmup, run dry-runs, gap, compare, stability, calibrate-*, export, submit, compare-submissions, leaderboard, workflow export/validate/diff, migrate-results). Catches packaging bugs that editable dev installs hide. `scripts/publish.sh` now runs it automatically before `twine upload`.
+- **Leaderboard default output path fix.** `awb leaderboard` previously wrote to `<package_install_dir>/awb/leaderboard/output/` — this broke on read-only installs and polluted site-packages. Now defaults to `./results/leaderboard/` in the current working directory, overridable with `--output-dir`.
+
 ## 1.1.2 (2026-04-07)
 
 Packaging fixes found via exhaustive CLI smoke tests of the fresh PyPI install:
