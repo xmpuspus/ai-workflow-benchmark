@@ -50,6 +50,13 @@ class TaskConstraints:
 
 
 @dataclass
+class TaskProvenance:
+    source_pr_url: str = ""
+    created_at: str = ""
+    last_verified_at: str = ""
+
+
+@dataclass
 class TaskDefinition:
     id: str
     category: str
@@ -65,6 +72,9 @@ class TaskDefinition:
     issue_description: str = ""
     files_to_examine: list[str] = field(default_factory=list)
     workspace_claude_md: str = ""
+    provenance: TaskProvenance | None = None
+    contamination_risk: str = "unknown"
+    label: str = "synthetic_overlay"
 
 
 @dataclass

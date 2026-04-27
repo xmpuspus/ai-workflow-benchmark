@@ -13,6 +13,7 @@ from awb.core.config import (
     PartialCreditCriterion,
     TaskConstraints,
     TaskDefinition,
+    TaskProvenance,
     TaskRepo,
     TaskVerification,
 )
@@ -66,6 +67,17 @@ def _parse_task(raw: dict) -> TaskDefinition:
 
     issue_raw = raw.get("issue") or {}
 
+    provenance_raw = raw.get("provenance")
+    provenance = (
+        TaskProvenance(
+            source_pr_url=provenance_raw.get("source_pr_url", ""),
+            created_at=provenance_raw.get("created_at", ""),
+            last_verified_at=provenance_raw.get("last_verified_at", ""),
+        )
+        if isinstance(provenance_raw, dict)
+        else None
+    )
+
     return TaskDefinition(
         id=raw["id"],
         category=raw["category"],
@@ -81,6 +93,9 @@ def _parse_task(raw: dict) -> TaskDefinition:
         issue_description=issue_raw.get("description", ""),
         files_to_examine=issue_raw.get("files_to_examine") or [],
         workspace_claude_md=raw.get("workspace_claude_md", ""),
+        provenance=provenance,
+        contamination_risk=raw.get("contamination_risk", "unknown"),
+        label=raw.get("label", "synthetic_overlay"),
     )
 
 
