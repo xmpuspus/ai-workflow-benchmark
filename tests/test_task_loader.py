@@ -107,3 +107,29 @@ class TestLoadAllTasks:
         tasks = load_all_tasks()
         # May be empty if no valid tasks exist yet, but shouldn't error
         assert isinstance(tasks, list)
+
+
+class TestTokenBudgetFields:
+    def test_token_budget_fields_survive_yaml_parse(self, valid_task_dict):
+        valid_task_dict["constraints"]["max_input_tokens"] = 50000
+        valid_task_dict["constraints"]["max_output_tokens"] = 8000
+        with tempfile.NamedTemporaryFile(suffix=".yaml", mode="w", delete=False) as f:
+            yaml.dump(valid_task_dict, f)
+            path = Path(f.name)
+        try:
+            task = load_task(path)
+            assert task.constraints.max_input_tokens == 50000
+            assert task.constraints.max_output_tokens == 8000
+        finally:
+            path.unlink()
+
+    def test_token_budget_defaults_to_zero_when_omitted(self, valid_task_dict):
+        with tempfile.NamedTemporaryFile(suffix=".yaml", mode="w", delete=False) as f:
+            yaml.dump(valid_task_dict, f)
+            path = Path(f.name)
+        try:
+            task = load_task(path)
+            assert task.constraints.max_input_tokens == 0
+            assert task.constraints.max_output_tokens == 0
+        finally:
+            path.unlink()

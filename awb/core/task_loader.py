@@ -60,6 +60,8 @@ def _parse_task(raw: dict) -> TaskDefinition:
     constraints = TaskConstraints(
         max_iterations=constraints_raw.get("max_iterations", 20),
         timeout_seconds=constraints_raw.get("timeout_seconds", 1800),
+        max_input_tokens=constraints_raw.get("max_input_tokens", 0),
+        max_output_tokens=constraints_raw.get("max_output_tokens", 0),
     )
 
     issue_raw = raw.get("issue") or {}
