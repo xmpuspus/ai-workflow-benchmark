@@ -2,13 +2,36 @@
 
 from __future__ import annotations
 
+import hashlib
 import statistics
 from collections import defaultdict
 from dataclasses import dataclass
+from pathlib import Path
 
 from awb.core.config import RunResult
 
 MIN_PLAUSIBLE_SECONDS = 10
+
+
+def compute_task_set_hash(tasks_dir: Path | str) -> str:
+    """Return SHA-256 over the canonicalized contents of every task YAML.
+
+    Walks `tasks_dir` recursively for *.yaml (skipping files starting with '_'),
+    sorts paths alphabetically, then hashes (path, bytes) pairs in that order
+    so the result is independent of filesystem walk order. Use this hash to
+    pin "the exact task set this result was computed against" in result
+    records, leaderboard rows, and external submissions.
+    """
+    root = Path(str(tasks_dir))
+    h = hashlib.sha256()
+    paths = sorted(p for p in root.glob("**/*.yaml") if not p.name.startswith("_"))
+    for p in paths:
+        rel = p.relative_to(root).as_posix().encode()
+        h.update(b"\x00path:")
+        h.update(rel)
+        h.update(b"\x00bytes:")
+        h.update(p.read_bytes())
+    return h.hexdigest()
 
 
 @dataclass
