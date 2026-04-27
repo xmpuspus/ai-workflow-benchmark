@@ -13,6 +13,7 @@ from rich.console import Console
 from rich.progress import BarColumn, MofNCompleteColumn, Progress, TextColumn, TimeElapsedColumn
 
 from awb.core.config import (
+    TASKS_DIR,
     RunEnvironment,
     RunOutcome,
     RunQuality,
@@ -24,6 +25,8 @@ from awb.core.metrics import MetricCollector
 from awb.core.repo_manager import RepoManager
 from awb.core.results import ResultRecorder
 from awb.core.timeout import TaskTimeoutError, run_with_timeout
+from awb.scoring.integrity import compute_task_set_hash
+from awb.trace import LLM_REQUEST, TOOL_USE, TraceWriter, new_span
 from awb.verification.lint_checker import count_lint_issues
 from awb.verification.partial_credit import evaluate_partial_credit
 from awb.verification.security_scanner import count_security_issues
@@ -70,6 +73,8 @@ class BenchmarkRunner:
         self._environment = RunEnvironment()
         self._adapter = _get_adapter(tool)
         self._run1_times: dict[str, float] = {}  # task_id -> wall clock from run 1
+        # Compute once per runner so every saved result pins the same task set.
+        self._task_set_hash = compute_task_set_hash(Path(str(TASKS_DIR)))
 
         # Resume: try to find an incomplete run for this tool
         if self.resume:
@@ -362,12 +367,20 @@ class BenchmarkRunner:
         outcome = RunOutcome(success=False, partial_credit_score=0, partial_credit_max=0)
         quality = RunQuality()
 
+        # Trace writer — open before adapter runs, closed in finally
+        run_dir = self.recorder.results_dir / run_id
+        run_dir.mkdir(parents=True, exist_ok=True)
+        trace_rel = f"{task.id}_{self.tool}.trace.jsonl"
+        trace_path = run_dir / trace_rel
+        trace_writer = TraceWriter(trace_path)
+
         # Token budget callback for streaming enforcement
         budget_exceeded = False
 
         def _on_event(event: dict) -> bool | None:
             nonlocal budget_exceeded
             collector.parse_stream_event(event)
+            _emit_span_for_event(trace_writer, event, task.id)
             # Check token budget if set
             max_in = task.constraints.max_input_tokens
             max_out = task.constraints.max_output_tokens
@@ -473,8 +486,13 @@ class BenchmarkRunner:
 
         finally:
             metrics = collector.to_metrics()
+            trace_writer.close()
             if workspace:
                 await self.repo_manager.cleanup(workspace)
+
+        # Trace path is recorded relative to the run dir so result JSON stays
+        # portable across machines.
+        recorded_trace_path = trace_rel if trace_path.exists() else ""
 
         result = RunResult(
             task_id=task.id,
@@ -489,6 +507,8 @@ class BenchmarkRunner:
             quality=quality,
             environment=self._environment,
             workflow=self.workflow,
+            task_set_hash=self._task_set_hash,
+            trace_path=recorded_trace_path,
         )
 
         self.recorder.save(result)
@@ -512,3 +532,34 @@ async def _count_baseline(kind: str, task: TaskDefinition, workspace: Path) -> i
     except Exception as exc:
         log.debug("Baseline %s count failed: %s", kind, exc)
     return 0
+
+
+def _emit_span_for_event(writer: TraceWriter, event: dict, task_id: str) -> None:
+    """Translate a Claude-Code stream event into one OTel-aligned span.
+
+    Best-effort and non-fatal: trace persistence must never crash a benchmark
+    run. Quietly skips events that don't map to a known span shape.
+    """
+    if not isinstance(event, dict):
+        return
+    try:
+        event_type = event.get("type", "")
+        if event_type == "assistant":
+            usage = ((event.get("message") or {}).get("usage") or {})
+            attrs: dict = {"task.id": task_id, "gen_ai.system": "anthropic"}
+            for src, dst in (
+                ("input_tokens", "gen_ai.usage.input_tokens"),
+                ("output_tokens", "gen_ai.usage.output_tokens"),
+                ("cache_read_input_tokens", "gen_ai.usage.cache_read_input_tokens"),
+                ("cache_creation_input_tokens", "gen_ai.usage.cache_creation_input_tokens"),
+            ):
+                if src in usage:
+                    attrs[dst] = usage[src]
+            writer.write(new_span(LLM_REQUEST, attributes=attrs))
+        elif event_type == "tool_use":
+            tool_name = event.get("tool") or event.get("name") or "unknown"
+            writer.write(
+                new_span(TOOL_USE, attributes={"task.id": task_id, "gen_ai.tool.name": tool_name})
+            )
+    except Exception as exc:
+        log.debug("Trace span emit failed (non-fatal): %s", exc)

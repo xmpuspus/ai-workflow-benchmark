@@ -175,6 +175,8 @@ class RunResult:
     tool_version: str = ""
     model: str = ""
     workflow: WorkflowInfo | None = None
+    task_set_hash: str = ""
+    trace_path: str = ""
 
     def to_dict(self) -> dict[str, Any]:
         breakdown = [
@@ -234,4 +236,8 @@ class RunResult:
                 "mode": self.workflow.mode,
                 "config_hash": self.workflow.config_hash,
             }
+        if self.task_set_hash:
+            d["task_set_hash"] = self.task_set_hash
+        if self.trace_path:
+            d["trace_path"] = self.trace_path
         return d

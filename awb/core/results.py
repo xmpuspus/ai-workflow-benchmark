@@ -205,4 +205,6 @@ def _dict_to_result(data: dict) -> RunResult:
             hardware=env_data.get("hardware", ""),
         ),
         workflow=workflow,
+        task_set_hash=data.get("task_set_hash", ""),
+        trace_path=data.get("trace_path", ""),
     )
