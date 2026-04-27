@@ -55,8 +55,8 @@ def _print_readiness_summary() -> None:
         results = by_tool[tool]
         n = len(results) or 1
 
-        def _mean(fn):
-            return sum(fn(r) for r in results) / n
+        def _mean(fn, _results=results, _n=n):
+            return sum(fn(r) for r in _results) / _n
 
         # Map result fields onto the 7 readiness dimensions on a 0-100 scale.
         correctness = 100.0 * sum(1 for r in results if r.outcome.success) / n
@@ -67,7 +67,9 @@ def _print_readiness_summary() -> None:
         # Review burden: fewer modified files + lines = lower burden = higher score.
         # Heuristic: 0 changes -> 100, 50+ files -> ~0; same for lines >= 1000.
         review_burden = 100.0 - min(100.0, _mean(lambda r: r.metrics.files_modified) * 2.0)
-        maintainability = 100.0 - min(100.0, max(0.0, _mean(lambda r: r.quality.lint_delta) * 5.0))
+        maintainability = 100.0 - min(
+            100.0, max(0.0, _mean(lambda r: r.quality.lint_delta) * 5.0)
+        )
         # Cost: $0 -> 100, $5 -> 0
         cost = max(0.0, 100.0 - 20.0 * _mean(lambda r: r.cost.estimated_cost_usd))
         # Speed: 0s -> 100, 1800s -> 0
