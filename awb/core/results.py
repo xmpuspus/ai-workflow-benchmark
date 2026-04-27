@@ -28,6 +28,9 @@ class ResultRecorder:
         run_dir.mkdir(parents=True, exist_ok=True)
         path = run_dir / f"{result.task_id}_{result.tool}.json"
         data = result.to_dict()
+        # v2 schema: schema_version is the canonical version key. Keep 'version'
+        # for one release for backward compat with v1.x readers.
+        data["schema_version"] = 2
         data["version"] = "1.0"
         with open(path, "w") as f:
             json.dump(data, f, indent=2)

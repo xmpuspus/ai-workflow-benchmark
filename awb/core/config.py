@@ -18,6 +18,8 @@ except (ImportError, TypeError, FileNotFoundError):
 RESULTS_DIR = Path(os.environ.get("AWB_RESULTS_DIR", Path.cwd() / "results" / "runs"))
 TASK_SCHEMA_PATH = TASKS_DIR / "schema.json"
 RESULT_SCHEMA_PATH = RESULTS_DIR / "schema.json"
+# Always-bundled copy of the v2 result schema (lives next to awb/__init__.py).
+PKG_RESULT_SCHEMA_PATH = Path(__file__).resolve().parent.parent / "results-schema.json"
 
 @dataclass
 class TaskRepo:

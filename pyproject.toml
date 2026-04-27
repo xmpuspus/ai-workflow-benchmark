@@ -79,6 +79,7 @@ include = [
     "awb/scoring/*.yaml",
     "awb/workflow/*.json",
     "awb/submission/*.json",
+    "awb/results-schema.json",
     "awb/leaderboard/templates/**",
     "awb/leaderboard/static/**",
 ]
