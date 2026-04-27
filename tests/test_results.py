@@ -138,3 +138,82 @@ class TestJSONLResults:
         assert loaded[0].cost.cache_read_tokens == 5000
         assert loaded[0].cost.cache_creation_tokens == 1000
         assert loaded[0].cost.thinking_tokens == 200
+
+
+class TestSchemaV2:
+    def test_save_emits_schema_version_2(self, tmp_workspace, sample_result):
+        sample_result.task_set_hash = "deadbeef" * 8
+        recorder = ResultRecorder(tmp_workspace)
+        path = recorder.save(sample_result)
+        with open(path) as f:
+            data = json.load(f)
+        assert data["schema_version"] == 2
+        assert data["task_set_hash"] == "deadbeef" * 8
+
+    def test_v2_result_validates_against_bundled_schema(self, tmp_workspace, sample_result):
+        import jsonschema
+
+        from awb.core.config import PKG_RESULT_SCHEMA_PATH
+
+        sample_result.task_set_hash = "ab" * 32  # 64 hex chars
+        recorder = ResultRecorder(tmp_workspace)
+        path = recorder.save(sample_result)
+        with open(path) as f:
+            data = json.load(f)
+        with open(PKG_RESULT_SCHEMA_PATH) as f:
+            schema = json.load(f)
+        # Strip legacy 'version' key — v2 schema is strict (additionalProperties: false)
+        data.pop("version", None)
+        jsonschema.validate(instance=data, schema=schema)
+
+    def test_v2_schema_rejects_unknown_top_level_field(self):
+        import jsonschema
+        import pytest as _pytest
+
+        from awb.core.config import PKG_RESULT_SCHEMA_PATH
+
+        with open(PKG_RESULT_SCHEMA_PATH) as f:
+            schema = json.load(f)
+        bogus = {
+            "schema_version": 2,
+            "task_id": "BF-001",
+            "tool": "x",
+            "run_id": "r",
+            "timestamp": "2026-04-27T00:00:00Z",
+            "task_set_hash": "0" * 64,
+            "outcome": {"success": True, "partial_credit_score": 0, "partial_credit_max": 0},
+            "metrics": {},
+            "cost": {},
+            "quality": {},
+            "environment": {},
+            "extra_field": "should-not-validate",
+        }
+        with _pytest.raises(jsonschema.ValidationError):
+            jsonschema.validate(instance=bogus, schema=schema)
+
+
+class TestMigrateV1ToV2:
+    def test_v1_data_gets_schema_version_and_task_set_hash(self):
+        from awb.commands.migrate import _migrate_one
+
+        v1 = {"version": "1.0", "task_id": "BF-001", "tool": "x"}
+        v2 = _migrate_one(v1)
+        assert v2["schema_version"] == 2
+        assert "task_set_hash" in v2
+        assert v2["trace_path"] == ""
+
+    def test_v2_data_is_idempotent(self):
+        from awb.commands.migrate import _migrate_one
+
+        already = {"schema_version": 2, "task_id": "BF-001", "task_set_hash": "ab" * 32}
+        out = _migrate_one(already)
+        assert out is already
+
+    def test_v05x_data_passes_through_v1_then_v2(self):
+        from awb.commands.migrate import _migrate_one
+
+        v05 = {"task_id": "BF-001", "tool": "x"}  # no version key
+        v2 = _migrate_one(v05)
+        assert v2["schema_version"] == 2
+        assert v2["version"] == "1.0"
+        assert "_v05x_original" in v2

@@ -107,3 +107,64 @@ class TestLoadAllTasks:
         tasks = load_all_tasks()
         # May be empty if no valid tasks exist yet, but shouldn't error
         assert isinstance(tasks, list)
+
+
+class TestProvenanceFields:
+    def test_parses_provenance_and_label(self, valid_task_dict):
+        valid_task_dict["provenance"] = {
+            "source_pr_url": "https://github.com/x/y/pull/123",
+            "created_at": "2026-01-15T00:00:00Z",
+            "last_verified_at": "2026-04-01T00:00:00Z",
+        }
+        valid_task_dict["contamination_risk"] = "low"
+        valid_task_dict["label"] = "real_pr"
+        with tempfile.NamedTemporaryFile(suffix=".yaml", mode="w", delete=False) as f:
+            yaml.dump(valid_task_dict, f)
+            path = Path(f.name)
+        try:
+            task = load_task(path)
+            assert task.provenance is not None
+            assert task.provenance.source_pr_url == "https://github.com/x/y/pull/123"
+            assert task.provenance.created_at == "2026-01-15T00:00:00Z"
+            assert task.contamination_risk == "low"
+            assert task.label == "real_pr"
+        finally:
+            path.unlink()
+
+    def test_defaults_when_provenance_omitted(self, valid_task_dict):
+        with tempfile.NamedTemporaryFile(suffix=".yaml", mode="w", delete=False) as f:
+            yaml.dump(valid_task_dict, f)
+            path = Path(f.name)
+        try:
+            task = load_task(path)
+            assert task.provenance is None
+            assert task.contamination_risk == "unknown"
+            assert task.label == "synthetic_overlay"
+        finally:
+            path.unlink()
+
+
+class TestTokenBudgetFields:
+    def test_token_budget_fields_survive_yaml_parse(self, valid_task_dict):
+        valid_task_dict["constraints"]["max_input_tokens"] = 50000
+        valid_task_dict["constraints"]["max_output_tokens"] = 8000
+        with tempfile.NamedTemporaryFile(suffix=".yaml", mode="w", delete=False) as f:
+            yaml.dump(valid_task_dict, f)
+            path = Path(f.name)
+        try:
+            task = load_task(path)
+            assert task.constraints.max_input_tokens == 50000
+            assert task.constraints.max_output_tokens == 8000
+        finally:
+            path.unlink()
+
+    def test_token_budget_defaults_to_zero_when_omitted(self, valid_task_dict):
+        with tempfile.NamedTemporaryFile(suffix=".yaml", mode="w", delete=False) as f:
+            yaml.dump(valid_task_dict, f)
+            path = Path(f.name)
+        try:
+            task = load_task(path)
+            assert task.constraints.max_input_tokens == 0
+            assert task.constraints.max_output_tokens == 0
+        finally:
+            path.unlink()

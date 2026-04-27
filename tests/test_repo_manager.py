@@ -2,14 +2,13 @@
 
 from __future__ import annotations
 
-import hashlib
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
 from awb.core.config import TaskDefinition
-from awb.core.repo_manager import _TEMPLATE_DIR, RepoManager
+from awb.core.repo_manager import _TEMPLATE_DIR, RepoManager, _setup_cache_key
 
 
 @pytest.fixture
@@ -23,10 +22,7 @@ def manager(tmp_path):
 
 
 def _template_key_for(task: TaskDefinition) -> str:
-    setup_key = tuple(sorted(task.repo.setup_commands))
-    return hashlib.sha256(
-        repr((task.repo.url, task.repo.commit, setup_key)).encode()
-    ).hexdigest()
+    return _setup_cache_key(task.repo.url, task.repo.commit, task.repo.setup_commands)
 
 
 # ---------------------------------------------------------------------------
@@ -76,12 +72,29 @@ def test_template_key_changes_on_different_url(task):
     assert key1 != key2
 
 
-def test_template_key_order_independent(task):
+def test_template_key_order_sensitive(task):
+    """Install order matters; reordering setup_commands must change the cache key.
+
+    Reason: pip install A then pip install B can resolve differently than
+    pip install B then pip install A when the two share transitive deps.
+    """
     task.repo.setup_commands = ["pip install .", "pip install pytest"]
     key1 = _template_key_for(task)
     task.repo.setup_commands = ["pip install pytest", "pip install ."]
     key2 = _template_key_for(task)
-    assert key1 == key2
+    assert key1 != key2
+
+
+def test_setup_cache_key_helper_is_order_sensitive():
+    """The module-level helper itself is order-sensitive."""
+    a = _setup_cache_key("u", "c", ["pip install foo", "pip install bar"])
+    b = _setup_cache_key("u", "c", ["pip install bar", "pip install foo"])
+    assert a != b
+
+
+def test_setup_cache_key_helper_is_deterministic():
+    cmds = ["pip install foo", "pip install bar"]
+    assert _setup_cache_key("u", "c", cmds) == _setup_cache_key("u", "c", list(cmds))
 
 
 # ---------------------------------------------------------------------------

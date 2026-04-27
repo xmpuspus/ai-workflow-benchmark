@@ -94,3 +94,19 @@ def test_codex_config_hash_deterministic():
 
     adapter = CodexCliAdapter()
     assert adapter.get_config_hash() == adapter.get_config_hash()
+
+
+def test_on_event_signature_is_callable_typed():
+    """ToolAdapter.execute(on_event=...) must be a Callable, not bare object."""
+    import inspect
+
+    from awb.adapters.base import StreamEventCallback, ToolAdapter
+
+    sig = inspect.signature(ToolAdapter.execute)
+    on_event_param = sig.parameters["on_event"]
+    annotation_str = str(on_event_param.annotation)
+    assert "Callable" in annotation_str or "StreamEventCallback" in annotation_str, (
+        f"on_event still typed as {annotation_str!r} — expected Callable or StreamEventCallback"
+    )
+    # Sanity: the alias itself exists and points at a Callable
+    assert "Callable" in str(StreamEventCallback)

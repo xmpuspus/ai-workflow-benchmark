@@ -3,8 +3,26 @@
 from __future__ import annotations
 
 import abc
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
+
+# A stream-event callback. The adapter calls it for every streamed event;
+# returning False signals "stop now" (used for token-budget enforcement).
+# Required key:
+#   - "type": str   one of "assistant", "tool_use", "result"
+# Optional keys (when type == "assistant"):
+#   - "message": {"usage": {"input_tokens": int, "output_tokens": int,
+#                            "cache_read_input_tokens": int,
+#                            "cache_creation_input_tokens": int},
+#                  "content": [{"type": "tool_use", "name": str, ...}, ...]}
+# Optional keys (when type == "tool_use"):
+#   - "tool" or "name": str        tool name
+# Optional keys (when type == "result"):
+#   - "total_cost_usd" or "cost_usd": float
+#   - "usage": same shape as assistant.message.usage
+#   - "num_turns": int
+StreamEventCallback = Callable[[dict], bool | None]
 
 
 @dataclass
@@ -32,14 +50,15 @@ class ToolAdapter(abc.ABC):
         workspace: Path,
         max_turns: int = 20,
         timeout_seconds: int = 1800,
-        on_event: object | None = None,
+        on_event: StreamEventCallback | None = None,
     ) -> ToolResult:
         """Run the tool against a task in the given workspace.
 
         Args:
-            on_event: Optional callback(event_dict) called for each stream event
-                as it arrives. Used for real-time token monitoring and budget
-                enforcement. Return False from callback to request early termination.
+            on_event: Optional callback invoked for each streamed event. Return
+                False to request early termination (used for token-budget
+                enforcement); return None or True to continue. See the
+                StreamEventCallback type alias above for the event schema.
         """
         ...
 

@@ -17,6 +17,18 @@ _CACHE_DIR = Path.home() / ".cache" / "awb" / "clones"
 _TEMPLATE_DIR = Path.home() / ".cache" / "awb" / "templates"
 
 
+def _setup_cache_key(url: str, commit: str, setup_commands: list[str]) -> str:
+    """Hash a (url, commit, setup_commands) tuple for the workspace template cache.
+
+    Order of setup_commands participates in the hash because install order is
+    semantically meaningful (e.g., installing requirements.txt before -e .
+    differs from the reverse, and later installs can override earlier ones).
+    """
+    return hashlib.sha256(
+        repr((url, commit, tuple(setup_commands))).encode()
+    ).hexdigest()
+
+
 class RepoManager:
     def __init__(self, workspace_root: Path | None = None, use_uv: bool = False):
         self.workspace_root = workspace_root or Path("/tmp/awb-workspaces")
@@ -83,10 +95,9 @@ class RepoManager:
                 )
 
         # Workspace template cache: hash (url, commit, setup_commands) → skip pip install on hits
-        setup_key = tuple(sorted(task.repo.setup_commands))
-        template_key = hashlib.sha256(
-            repr((task.repo.url, task.repo.commit, setup_key)).encode()
-        ).hexdigest()
+        template_key = _setup_cache_key(
+            task.repo.url, task.repo.commit, task.repo.setup_commands
+        )
         template_path = _TEMPLATE_DIR / template_key
 
         if (template_path / ".ready").exists():

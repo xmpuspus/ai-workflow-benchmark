@@ -1,6 +1,6 @@
 <div align="center">
   <h1>AI Workflow Benchmark (AWB)</h1>
-  <p><strong>Measure AI coding tool+workflow performance, not just model capability.</strong></p>
+  <p><strong>AWB evaluates whether an AI coding workflow can safely ship real software, not whether a model can pass a static issue benchmark.</strong></p>
   <p>
     <a href="https://pypi.org/project/awb/"><img src="https://img.shields.io/pypi/v/awb" alt="PyPI"></a>
     <a href="https://github.com/xmpuspus/ai-workflow-benchmark/actions"><img src="https://img.shields.io/github/actions/workflow/status/xmpuspus/ai-workflow-benchmark/test.yml" alt="Tests"></a>
@@ -9,18 +9,28 @@
     <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-green" alt="License"></a>
   </p>
   <br/>
-  <img src="demos/awb-showcase.gif" alt="AWB Demo — install, validate, run, analyze" width="680"/>
+  <img src="demos/v12_trace_readiness.gif" alt="AWB v1.2 — fast-check run, awb trace grade behavior scores, awb leaderboard --readiness composite" width="800"/>
   <br/>
-  <sub>Install from PyPI, validate 100 tasks, run vanilla vs custom, get capability profiles and improvement suggestions.</sub>
+  <sub>v1.2.0: trust hashes, OpenTelemetry-aligned trace artifacts, <code>awb trace grade</code> for behavior scoring, and the Production Readiness Score.</sub>
 </div>
 
 ---
 
 ## Why This Exists
 
-SWE-bench tests models. AWB tests workflows. The same model running vanilla Claude Code vs. a purpose-built setup with a tuned CLAUDE.md, hooks, and structured agents produces meaningfully different results on real engineering tasks. No existing benchmark captures that gap — they all evaluate the model in isolation.
+The 2025 Stack Overflow Developer Survey shows 84% of professional developers using AI in their workflow, up from 76% the year before — but accuracy trust collapsed from 40% to 29% over the same period ([survey.stackoverflow.co/2025/ai](https://survey.stackoverflow.co/2025/ai)). [METR's RCT of 16 experienced open-source maintainers](https://metr.org/blog/2025-07-10-early-2025-ai-experienced-os-dev-study/) found AI tooling **increased** task completion time by 19%, while developers self-reported a 20% speedup — a 39-point gap between perception and reality ([arXiv:2507.09089](https://arxiv.org/abs/2507.09089)). Static issue benchmarks like SWE-bench Verified — recently flagged as having flawed tests on a majority of audited tasks, prompting [SWE-bench Pro](https://www.swebench.com/) — measure model capability in isolation.
 
-AWB benchmarks the full stack: **tool + configuration + workflow + model**, together, on 100 tasks drawn from real open-source repositories.
+AWB measures whether a configured tool+workflow combination can ship correct, regression-safe, low-burden changes against pinned real-world repositories. The same model running vanilla Claude Code vs. a purpose-built setup with a tuned CLAUDE.md, hooks, and structured agents produces meaningfully different results on real engineering tasks. AWB benchmarks the full stack: **tool + configuration + workflow + model**, together, on 100 tasks drawn from real open-source repositories.
+
+## What's New in v1.2.0
+
+- **Task-set hash on every result** (`task_set_hash`, SHA-256 over the bundled task YAMLs) so you can prove which exact task set produced a given score.
+- **OpenTelemetry-aligned trace artifact**: every benchmark run writes a `.trace.jsonl` file using OTel GenAI semantic conventions (`gen_ai.client.operation`, `gen_ai.tool.use`) plus AWB-specific spans for shell commands, file edits, and test runs.
+- **`awb trace grade <run_dir>`** scores four shipping disciplines from the trace: read-tests-before-edit, ran-verification-after-change, no-out-of-scope-edits, no-repeated-failing-command-loop.
+- **Production Readiness Score** (`awb leaderboard --readiness`) — composite over 7 dimensions answering: can this workflow safely ship?
+- **Strict result schema v2** (`additionalProperties: false`, required `schema_version`, `task_set_hash`). `awb migrate-results` extends to v1→v2.
+- **Task provenance fields**: optional `provenance.{source_pr_url, created_at, last_verified_at}`, `contamination_risk`, `label` (`real_pr` / `synthetic_overlay` / `mutated` / `fresh`) lay the groundwork for fresh-task harvesting in v1.3.
+- **Seven P0 trust blockers fixed**: token-budget fields now parse correctly, workflow schema enum matches the 9-adapter registry, setup cache key is order-sensitive, missing security scanners surface a warning instead of silently passing as clean, adapter `on_event` is properly typed as `Callable`, gap analysis classifies `regression_introduced` and `no_edits_made` separately.
 
 ## Quick Start
 
@@ -291,6 +301,19 @@ Per-task score variance across multiple runs. Flags unstable tasks for prompt cl
 <img src="demos/cli-leaderboard.gif" alt="awb leaderboard" width="600"/>
 
 Generates a static HTML site with Chart.js radar chart, CSV export, and historical run tracking.
+
+Add `--readiness` to print the **Production Readiness Score** per tool to stdout. The score is a weighted composite of correctness (35%), regression-safety (20%), security (15%), review-burden (10%), maintainability (8%), cost (7%), and speed (5%) — all normalized 0-100. Designed to answer the only question that matters in production: *can this workflow safely ship?*
+
+### `awb trace grade` — Score behaviors from trace artifacts
+
+Every benchmark run writes a `<task_id>_<tool>.trace.jsonl` file using OpenTelemetry GenAI semantic conventions (`gen_ai.client.operation`, `gen_ai.tool.use`, `gen_ai.usage.input_tokens`) plus AWB-specific spans for shell commands (`task.shell_command`), file edits (`task.file_edit`), and test runs (`task.test_run`). `awb trace grade <run_dir>` reads each trace and scores four shipping disciplines on a 0-100 scale:
+
+| Behavior | What it checks |
+|----------|----------------|
+| `read_tests_before_edit` | Did the tool read a test file before its first edit? |
+| `ran_verification_after_change` | Was a test run / pytest invocation issued after the last file edit? |
+| `no_out_of_scope_edits` | Did edits stay within `files_to_examine` from the task spec? |
+| `no_repeated_failing_command_loop` | Did the tool retry the same failing shell command 2+ times? |
 
 ### `awb calibrate-difficulty` — Recalibrate difficulty labels
 

@@ -1,5 +1,38 @@
 # Changelog
 
+## 1.2.0 (2026-04-27)
+
+Trust-and-differentiation release: fixes seven trust blockers identified in the v2 strategy, then ships the first slice of v2 (task-set hash, fresh/verified metadata, OpenTelemetry-aligned trace artifact, `awb trace grade`, Production Readiness Score). Positioning sentence: *AWB evaluates whether an AI coding workflow can safely ship real software, not whether a model can pass a static issue benchmark.*
+
+### Added (P1)
+
+- **`task_set_hash`** — `awb.scoring.integrity.compute_task_set_hash()` walks the bundled tasks directory and returns a deterministic SHA-256 over (path, bytes) pairs. Stamped on every result so leaderboard rows can refuse to compare across mismatched task sets.
+- **OpenTelemetry-aligned trace artifact** — new `awb/trace/` package writes a `<task_id>_<tool>.trace.jsonl` file beside each result. Spans use OTel GenAI conventions (`gen_ai.client.operation`, `gen_ai.tool.use`, `gen_ai.usage.input_tokens`, `gen_ai.tool.name`) plus AWB-specific names for shell commands, file edits, and test runs. The runner wires these via the existing adapter `on_event` callback; collectors can ingest the JSONL with no transform.
+- **`awb trace grade <run_dir>`** — scores each trace.jsonl by four shipping disciplines (read tests before edit, ran verification after change, no out-of-scope edits, no repeated failing-command loop). Each score 0-100.
+- **Production Readiness Score** — `awb.scoring.readiness.compute_readiness_score()` composite over 7 dimensions (correctness 35%, regression-safety 20%, security 15%, review-burden 10%, maintainability 8%, cost 7%, speed 5%). New `--readiness` flag on `awb leaderboard` prints per-tool composites to stdout.
+- **Task provenance fields** — optional `provenance.{source_pr_url, created_at, last_verified_at}`, `contamination_risk` (`low`/`medium`/`high`/`unknown`), and `label` (`real_pr`/`synthetic_overlay`/`mutated`/`fresh`) on the task schema. Backward compatible — all 100 existing tasks validate unchanged.
+
+### Fixed (P0 trust blockers)
+
+- **Token budget fields no longer dropped** during YAML parse. `max_input_tokens` and `max_output_tokens` now flow from the task spec into `TaskConstraints`, enabling the runner's existing budget enforcement.
+- **Workflow descriptor schema enum aligned with adapter registry** — schema now permits all 9 registered adapters (was 4). New guard test asserts the two stay in sync.
+- **Setup cache key is now order-sensitive** — the previous `tuple(sorted(setup_commands))` collided two semantically-different setups; install order can change resolved deps. Extracted `_setup_cache_key()` helper.
+- **Missing security scanner binary surfaces a warning instead of silent clean pass** — `bandit`/`semgrep` not installed used to return clean; now `run_security_scan` marks `all_clean=False` and annotates the output.
+- **Adapter `on_event` is now properly typed** as `Callable[[dict], bool | None]` with documented event schema (assistant/tool_use/result, with usage shape). Exported `StreamEventCallback` alias.
+- **Gap analysis classifier enriched** — two new categories: `regression_introduced` (when `quality.test_regressions > 0`) and `no_edits_made` (when `metrics.files_modified == 0`), each with their own suggestion rules.
+
+### Changed
+
+- **Result schema bumped to v2** (strict): `additionalProperties: false` at every level, required `schema_version=2`, required `task_set_hash` (sha256 hex), optional `trace_path`. The schema is bundled in the wheel as `awb/results-schema.json` so installed packages can validate offline.
+- **`awb migrate-results` now handles v0.5.x → v1.0 → v2** in one pipeline. Idempotent on already-v2 records; backfills `task_set_hash` with a sentinel zero hash for legacy results.
+- **`RunResult.to_dict()` emits `schema_version`, `task_set_hash`, and `trace_path`** alongside the legacy `version` key (kept for one release for backward compat with v1.x readers).
+- **README opening rewritten** to lead with the v1.2 positioning and cite real sources (Stack Overflow 2025 Developer Survey, METR's July 2025 RCT, OpenAI's SWE-bench Verified contamination findings).
+- **New hero demo GIF** at `demos/v12_trace_readiness.gif` shows the three new commands in 32pt Menlo so it reads cleanly on social embeds.
+
+### Migration note
+
+Existing v1.x result files are forward-compatible with v2 readers. To upgrade them in place: `awb migrate-results results/runs/`. New runs automatically write v2.
+
 ## 1.1.4 (2026-04-07)
 
 Demo GIFs regenerated to reflect v1.1 features. Docs-only release.

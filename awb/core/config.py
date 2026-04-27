@@ -18,6 +18,8 @@ except (ImportError, TypeError, FileNotFoundError):
 RESULTS_DIR = Path(os.environ.get("AWB_RESULTS_DIR", Path.cwd() / "results" / "runs"))
 TASK_SCHEMA_PATH = TASKS_DIR / "schema.json"
 RESULT_SCHEMA_PATH = RESULTS_DIR / "schema.json"
+# Always-bundled copy of the v2 result schema (lives next to awb/__init__.py).
+PKG_RESULT_SCHEMA_PATH = Path(__file__).resolve().parent.parent / "results-schema.json"
 
 @dataclass
 class TaskRepo:
@@ -50,6 +52,13 @@ class TaskConstraints:
 
 
 @dataclass
+class TaskProvenance:
+    source_pr_url: str = ""
+    created_at: str = ""
+    last_verified_at: str = ""
+
+
+@dataclass
 class TaskDefinition:
     id: str
     category: str
@@ -65,6 +74,9 @@ class TaskDefinition:
     issue_description: str = ""
     files_to_examine: list[str] = field(default_factory=list)
     workspace_claude_md: str = ""
+    provenance: TaskProvenance | None = None
+    contamination_risk: str = "unknown"
+    label: str = "synthetic_overlay"
 
 
 @dataclass
@@ -165,6 +177,8 @@ class RunResult:
     tool_version: str = ""
     model: str = ""
     workflow: WorkflowInfo | None = None
+    task_set_hash: str = ""
+    trace_path: str = ""
 
     def to_dict(self) -> dict[str, Any]:
         breakdown = [
@@ -224,4 +238,8 @@ class RunResult:
                 "mode": self.workflow.mode,
                 "config_hash": self.workflow.config_hash,
             }
+        if self.task_set_hash:
+            d["task_set_hash"] = self.task_set_hash
+        if self.trace_path:
+            d["trace_path"] = self.trace_path
         return d

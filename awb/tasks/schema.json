@@ -105,6 +105,25 @@
       "type": "string",
       "description": "Optional inline CLAUDE.md content written to workspace .claude/CLAUDE.md before tool runs"
     },
+    "provenance": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "source_pr_url": {"type": "string", "format": "uri"},
+        "created_at": {"type": "string", "format": "date-time"},
+        "last_verified_at": {"type": "string", "format": "date-time"}
+      }
+    },
+    "contamination_risk": {
+      "type": "string",
+      "enum": ["low", "medium", "high", "unknown"],
+      "description": "Estimated likelihood that this task appears in frontier-model training corpora"
+    },
+    "label": {
+      "type": "string",
+      "enum": ["real_pr", "synthetic_overlay", "mutated", "fresh"],
+      "description": "Origin of the task: harvested from a real PR, hand-crafted overlay on a real repo, mutated from a real bug, or freshly authored after a known training cutoff"
+    },
     "constraints": {
       "type": "object",
       "additionalProperties": false,

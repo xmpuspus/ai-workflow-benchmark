@@ -6,7 +6,20 @@
   "properties": {
     "spec": {"type": "string", "const": "awb/v1"},
     "name": {"type": "string", "minLength": 1},
-    "tool": {"type": "string", "enum": ["claude-code-vanilla", "claude-code-custom", "cursor", "aider"]},
+    "tool": {
+      "type": "string",
+      "enum": [
+        "claude-code-vanilla",
+        "claude-code-custom",
+        "cursor",
+        "aider",
+        "pi",
+        "gemini-cli",
+        "codex-cli",
+        "windsurf",
+        "copilot"
+      ]
+    },
     "model": {"type": "string"},
     "mode": {"type": "string", "enum": ["vanilla", "custom"]},
     "config": {
