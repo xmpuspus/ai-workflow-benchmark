@@ -70,13 +70,13 @@ def _grade_ran_verification_after_change(spans: Iterable[dict]) -> int:
     last_edit_idx = -1
     last_test_idx = -1
     for i, s in enumerate(spans):
-        if s.get("span_name") == FILE_EDIT:
+        name = s.get("span_name")
+        if name == FILE_EDIT:
             last_edit_idx = i
-        elif s.get("span_name") == TEST_RUN:
+        elif name == TEST_RUN:
             last_test_idx = i
-        elif s.get("span_name") == SHELL_COMMAND:
-            if _looks_like_test_command(_attr(s, "shell.command")):
-                last_test_idx = i
+        elif name == SHELL_COMMAND and _looks_like_test_command(_attr(s, "shell.command")):
+            last_test_idx = i
     if last_edit_idx < 0:
         return 100
     return 100 if last_test_idx > last_edit_idx else 0
