@@ -34,12 +34,28 @@ class GapReport:
 
 
 def classify_failure(result: RunResult, task: TaskDefinition) -> str:
-    """Classify the type of failure for a task result."""
+    """Classify the type of failure for a task result.
+
+    Categories (most-specific first):
+      - success
+      - timeout                  wall clock >= 95% of allotted timeout
+      - regression_introduced    pre-existing tests broken by the change
+      - no_edits_made            tool produced zero file changes
+      - test_error               tests were a verification criterion and failed
+      - partial_completion       earned some points but did not finish
+      - code_error               anything else
+    """
     if result.outcome.success:
         return "success"
 
     if result.metrics.wall_clock_seconds >= task.constraints.timeout_seconds * 0.95:
         return "timeout"
+
+    if result.quality.test_regressions > 0:
+        return "regression_introduced"
+
+    if result.metrics.files_modified == 0:
+        return "no_edits_made"
 
     # Check if tests were attempted but failed
     has_test_criteria = any(

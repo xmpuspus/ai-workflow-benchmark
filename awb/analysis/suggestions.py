@@ -63,6 +63,24 @@ SUGGESTION_RULES: dict[tuple[str, str], list[str]] = {
         "Tool made incorrect changes due to misunderstanding existing code",
         "Configure tool to read more context around the target code before editing",
     ],
+    ("regression_introduced", "refactoring_discipline"): [
+        "Tool broke pre-existing tests while applying its change",
+        "Add 'run the existing test suite before and after every edit' to workflow",
+        "Configure the tool to halt and re-plan when a previously passing test fails",
+    ],
+    ("regression_introduced", "test_writing"): [
+        "Pre-existing tests regressed — likely an unsafe change to shared code paths",
+        "Add a pre-edit step that captures the baseline test set, then diffs after",
+    ],
+    ("no_edits_made", "code_comprehension"): [
+        "Tool produced zero file changes — likely got stuck exploring",
+        "Reduce ambiguity in the prompt or add explicit pointers to files_to_examine",
+        "Lower max_iterations so the tool commits to a change instead of looping on Read",
+    ],
+    ("no_edits_made", "context_discovery"): [
+        "Tool finished without writing any files — search/discovery overran the budget",
+        "Provide a more directed entry point or seed file in the workflow descriptor",
+    ],
 }
 
 
