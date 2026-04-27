@@ -171,3 +171,20 @@ class TestResolveAdapter:
         d = _make_descriptor("unknown-tool")
         with pytest.raises(ValueError, match="Unknown adapter"):
             resolve_adapter(d)
+
+
+class TestSchemaRegistryAlignment:
+    def test_workflow_schema_enum_matches_adapter_registry(self):
+        import json
+
+        from awb.adapters.registry import _FALLBACK
+
+        schema_path = Path(__file__).parent.parent / "awb" / "workflow" / "schema.json"
+        schema = json.loads(schema_path.read_text())
+        enum_tools = set(schema["properties"]["tool"]["enum"])
+        registry_tools = set(_FALLBACK.keys())
+        assert enum_tools == registry_tools, (
+            f"workflow schema enum drift vs adapter registry: "
+            f"only-in-schema={enum_tools - registry_tools}, "
+            f"only-in-registry={registry_tools - enum_tools}"
+        )
