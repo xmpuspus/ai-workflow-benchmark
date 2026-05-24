@@ -1,5 +1,125 @@
 # Changelog
 
+## 1.3.0 (2026-05-24)
+
+Storefront and trust release: fixes credibility leaks in the docs, adds real
+reliability + provenance data behind the v1.2 schema, polishes every CLI
+output through one visual contract, and replaces 29 synthesized demo GIFs
+with a single real recording.
+
+### Added
+
+- **`--format json`** on `awb gap`, `awb compare`, `awb stability`, and
+  `awb leaderboard --readiness` so analysis output can be piped into
+  scripts. Dataclass-aware JSON encoder via `awb/commands/_shared.py`.
+- **`awb leaderboard --readiness --explain`** prints the 7 sub-scores per
+  tool in a ranked Rich Panel; magic constants extracted (`REVIEW_BURDEN
+  _FILES_TO_ZERO`, `COST_USD_TO_ZERO`, `SPEED_SECONDS_TO_ZERO`,
+  `MAINTAINABILITY_LINT_TO_ZERO`).
+- **`awb validate`** defaults to a one-line summary; `-v/--verbose`
+  restores per-file PASS/FAIL.
+- **`is_stub` adapter attribute**: stub adapters now fail fast at startup
+  before workspace provisioning instead of crashing mid-run. Cursor,
+  Aider, Windsurf, Copilot all carry `is_stub = True` until validated.
+- **Real `aider` adapter implementation**: `aider --message --yes
+  --no-stream`. Marked `is_stub = True` pending an end-to-end run.
+- **`RunEnvironment` records** `python_version`, `awb_version`,
+  `adapter_version`, `pip_freeze_hash` (sha256 prefix of sorted
+  `pip freeze`) for full reproducibility provenance.
+- **`RunError` dataclass + `RunOutcome.error`**: a crash now lands in
+  the result with `exc_type`, `exc_message`, and the last 8 traceback
+  lines so it is distinguishable from a real low-score run.
+- **`scripts/backfill_provenance.py`** stamped every task YAML with
+  `provenance.{created_at, last_verified_at}`, `contamination_risk: high`,
+  and `label: synthetic_overlay`. The v1.2 trust framing is now backed by
+  data on all 100 tasks.
+- **Visual contract** in `awb/commands/_shared.py`: project-wide color
+  constants (OK/WARN/BAD/INFO/MUTED), `score_style`, `confidence_label`,
+  Unicode block `bar()`, `summary_table`, `headline_panel`, `emit_json`.
+- **`CITATION.cff`** + **`codemeta.json`** at repo root for academic
+  citation. README "Citing AWB" section with BibTeX template.
+- **`METHODOLOGY.md` "Related work"** cites HAL (arXiv:2510.11977),
+  SWE-bench (arXiv:2310.06770), SWE-bench Pro (arXiv:2509.16941),
+  LiveCodeBench (arXiv:2403.07974), METR RE-Bench (arXiv:2411.15114),
+  Aider Polyglot, Artificial Analysis, and Cohen 1988.
+- **`docs/zenodo-doi.md`** documents the one-time GitHub-Zenodo setup
+  and per-release DOI mint recipe.
+- **`.github/workflows/leaderboard.yml`** deploys
+  `results/baselines/*.json` plus the static HTML to GitHub Pages on push.
+- **Reproducible demo recipe** in the README Quick Start.
+
+### Fixed
+
+- **JSONL append race under `--parallel`** (`awb/core/results.py`):
+  wrap `_append_jsonl` in `fcntl.LOCK_EX` so 5-15KB result records do
+  not interleave (POSIX atomic-append only covers <PIPE_BUF). Regression
+  test writes 100 concurrent ~8KB records and asserts 100 valid JSON
+  lines.
+- **Git operations had no timeout** (`awb/core/repo_manager.py`):
+  `_run` / `_run_shell` now take a `timeout=` kwarg, wrap
+  `proc.communicate()` in `asyncio.wait_for`, kill on `TimeoutError`.
+  Sync git helpers (`get_diff`, `get_modified_files`, `get_lines_
+  changed`) pass `timeout=60` to `subprocess.run`. A flaky network can
+  no longer hang the whole runner.
+- **`pi` adapter blocked the event loop** (`awb/adapters/pi.py`): the
+  documented synchronous `Popen + communicate` body now runs inside
+  `asyncio.to_thread` so `--parallel` mode is not single-threaded with
+  extra steps.
+- **Doc count drift**: capability counts in README/METHODOLOGY were off
+  by 2-6 per row (`completeness_tracking` was claimed 10, actually 4).
+  Difficulty tiers (`easy ~44 / med ~5 / hard ~31` summed to 80 not 100;
+  actual is 48/17/35). Language distribution claimed "59 Python + 1
+  TypeScript"; actual is 100 Python-touching tasks, zero TypeScript.
+  Repos Used inflated by Pydantic, SQLAlchemy, and Hono which never
+  appear as a `repo.url`.
+- **Stale test count**: CLAUDE.md and CONTRIBUTING.md said "135 tests";
+  actual is 246 (was 240 before this release).
+- **ADAPTER.md** still claimed "60 tasks"; updated to 100.
+- **ARCHITECTURE.md mermaid + tree** pointed at three filenames that
+  do not exist (`scoring/stability.py`, `analysis/calibrate_*.py`).
+  Renamed to actual files (`scoring/statistics.py`,
+  `analysis/{difficulty,timeout}_calibrator.py`).
+- **Misquoted Stack Overflow stat**: README hero claimed "trust
+  collapsed from 40% to 29%"; replaced with the actual 2025 figure
+  (33% trust, 46% distrust).
+- **Broken SWE-bench Pro link**: pointed at the umbrella landing page;
+  fixed to <https://scaleapi.github.io/SWE-bench_Pro-os/> with
+  arXiv:2509.16941 citation.
+
+### Changed
+
+- **Capability profile rendering**: `=` ASCII bars replaced with Unicode
+  block bars (`█░`) plus `(n, conf=high|med|low)` per row. "Top
+  Improvement Actions" renamed to "Top Suggestions" so the README
+  example finally matches actual CLI output.
+- **`awb compare`** collapsed from 9 columns to 6 (Task, A, B, Score Δ,
+  Time Δ, Cost Δ) with delta colors and a mean-Δ footer.
+- **Production Readiness Score** renders as a Rich Panel with rank
+  ordering and a "next step" pointer to `awb trace grade`.
+- **Result schema**: `environment.{python_version, awb_version,
+  adapter_version, pip_freeze_hash}` and `outcome.error` are now
+  permitted optional fields. Backward-compatible with v1.2 records.
+- **README hero hook** tightened from 27 words to 15. Em-dash cadence
+  trimmed (three em-dashes in one paragraph was the classic AI tell).
+- **Softened "first to" framing**: README "How AWB relates to other
+  benchmarks" subsection concedes HAL and Artificial Analysis are
+  already in adjacent territory and positions AWB's contribution as
+  the deterministic, workflow-isolated complement.
+
+### Removed
+
+- 29 hand-painted Pillow-synthesized demo GIFs (3.2 MB) replaced by
+  one real `vhs`-recorded `demos/hero.gif` (297 KB).
+- The 5 `demos/make_*.py` synthesis scripts. New recipe lives in
+  `demos/hero.tape`.
+- 22 inline `<img src="demos/cli-*.gif">` and 8 link-only references
+  from the README. README shrank from 526 to 498 lines.
+
+### Tests
+
+- 246 passing (was 240 in v1.2). Six new: JSONL concurrency race,
+  stub-adapter attribute contract, plus existing regressions.
+
 ## 1.2.0 (2026-04-27)
 
 Trust and differentiation release: fixes seven trust blockers from the v2 strategy, then ships the first v2 slice (task-set hash, fresh/verified metadata, OpenTelemetry-aligned trace artifact, `awb trace grade`, Production Readiness Score).
