@@ -1,0 +1,61 @@
+name: Publish leaderboard
+
+# Builds the static HTML leaderboard from results/baselines/<version>.json
+# and deploys to GitHub Pages whenever a baseline file changes or on demand.
+#
+# Provides the "live published leaderboard" Phase 4 deliverable. Real
+# baseline numbers must be generated locally with API keys (see
+# scripts/generate_baseline.py) and committed to results/baselines/.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "results/baselines/**"
+      - "awb/leaderboard/**"
+      - ".github/workflows/leaderboard.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: "pages"
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install awb
+        run: pip install -e .
+      - name: Generate static leaderboard from baseline JSONs
+        run: |
+          mkdir -p site
+          if [ -d results/baselines ] && compgen -G "results/baselines/*.json" > /dev/null; then
+            cp -R awb/leaderboard/static/* site/ || true
+            cp -R awb/leaderboard/templates/* site/ || true
+            cp results/baselines/*.json site/
+          else
+            echo "<!doctype html><title>AWB leaderboard</title>" > site/index.html
+            echo "<p>No baselines published yet. See README.</p>" >> site/index.html
+          fi
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: site
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4

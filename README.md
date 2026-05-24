@@ -22,6 +22,12 @@ The 2025 Stack Overflow Developer Survey shows 84% of professional developers us
 
 AWB measures whether a configured tool+workflow combination can ship correct, regression-safe, low-burden changes against pinned real-world repositories. The same model running vanilla Claude Code vs. a purpose-built setup with a tuned CLAUDE.md, hooks, and structured agents produces meaningfully different results on real engineering tasks. AWB benchmarks the full stack: **tool + configuration + workflow + model**, together, on 100 tasks drawn from real open-source repositories.
 
+### How AWB relates to other benchmarks
+
+Related work measures complementary axes. [HAL](https://arxiv.org/abs/2510.11977) analyzes agent traces with LLM judges across 11 tasks at 2.5B-token scale. [Artificial Analysis](https://artificialanalysis.ai/agents/coding-agents) publishes harness-vs-harness comparisons holding the model constant. [SWE-bench Verified](https://www.swebench.com/) and [SWE-bench Pro](https://scaleapi.github.io/SWE-bench_Pro-os/) score patches against real GitHub issues. [LiveCodeBench](https://arxiv.org/abs/2403.07974) addresses contamination by time-segmenting contest problems. [METR RE-Bench](https://arxiv.org/abs/2411.15114) compares humans and agents in matched ML-engineering environments.
+
+AWB's distinct contribution is twofold: (1) a paired **vanilla-vs-custom** adapter pair that isolates the workflow-configuration delta for the same model, surfaced as a single Workflow Lift score with a sign-test p-value; (2) **deterministic** trace-grading rubrics (read-tests-before-edit, ran-verification-after-change, no-out-of-scope-edits, no-repeated-failing-loop) computed from OpenTelemetry-aligned `.trace.jsonl` artifacts, not LLM judges. See [METHODOLOGY.md#related-work](METHODOLOGY.md#related-work) for citation details.
+
 ## What's New in v1.2.0
 
 - **Task-set hash on every result** (`task_set_hash`, SHA-256 over the bundled task YAMLs) so you can prove which exact task set produced a given score.
@@ -488,10 +494,25 @@ See [CHANGELOG.md](CHANGELOG.md) for the full history (v1.0.0, v0.5.x, v0.4.x, v
 
 ## Links
 
-- [Methodology](METHODOLOGY.md) — Fair comparison principles, metric definitions, known limitations
+- [Methodology](METHODOLOGY.md) — Fair comparison principles, metric definitions, related work, known limitations
 - [Architecture](ARCHITECTURE.md) — Module graph, data models, pipeline diagrams
 - [Contributing](CONTRIBUTING.md) — Adding tasks, tools, and submitting results
 - [PyPI](https://pypi.org/project/awb/) — `pip install awb`
+
+## Citing AWB
+
+If you use AWB in research, cite the GitHub repo plus the version-specific Zenodo DOI (instructions: [docs/zenodo-doi.md](docs/zenodo-doi.md)). Machine-readable metadata lives in [CITATION.cff](CITATION.cff) and [codemeta.json](codemeta.json).
+
+```bibtex
+@software{puspus_awb,
+  author    = {Puspus, Xavier},
+  title     = {{AWB: AI Workflow Benchmark}},
+  version   = {1.2.0},
+  year      = {2026},
+  publisher = {Zenodo},
+  url       = {https://github.com/xmpuspus/ai-workflow-benchmark}
+}
+```
 
 ## License
 

@@ -323,3 +323,47 @@ To reproduce a specific result:
 4. Clone the task repo at the commit SHA in the task YAML
 5. Run with the same hardware class (noted in `environment.hardware`)
 6. Verify configuration via `config_hash` in the result file
+7. Match `environment.python_version` and `environment.pip_freeze_hash`
+8. Match `task_set_hash` so the task corpus is identical
+
+## Related work
+
+AWB is not the first benchmark in this space. It is positioned as the
+deterministic, workflow-isolated complement to harness comparisons and
+LLM-judged trace analyses.
+
+- **SWE-bench / SWE-bench Verified.** Jimenez et al., *Can Language Models
+  Resolve Real-World GitHub Issues?* ICLR 2024.
+  [arXiv:2310.06770](https://arxiv.org/abs/2310.06770). Patch-style scoring
+  against real Python GitHub issues; AWB inherits the "real repo at pinned
+  SHA" discipline but scores beyond binary pass/fail.
+- **SWE-bench Pro.** Chen et al., 2025.
+  [arXiv:2509.16941](https://arxiv.org/abs/2509.16941). Contamination-
+  resistant successor with held-out and commercial repos. Informs AWB's
+  v1.3 fresh-task roadmap; AWB's `contamination_risk` field uses the
+  same vocabulary.
+- **HAL (Holistic Agent Leaderboard).** Stein et al., 2025.
+  [arXiv:2510.11977](https://arxiv.org/abs/2510.11977). 11-benchmark
+  aggregation with LLM-judged trace analysis at 2.5B-token scale. AWB's
+  trace grader is the *deterministic* counterpart: four hand-written
+  rubrics over OpenTelemetry spans rather than an LLM judge.
+- **Artificial Analysis coding-agents leaderboard.**
+  [artificialanalysis.ai/agents/coding-agents](https://artificialanalysis.ai/agents/coding-agents).
+  Publishes harness-vs-harness comparisons holding the model constant.
+  AWB's vanilla-vs-custom adapter pair plus Workflow Lift sign test is
+  the per-configuration analogue inside a single tool.
+- **LiveCodeBench.** Jain et al.,
+  [arXiv:2403.07974](https://arxiv.org/abs/2403.07974). Contamination
+  evasion via time-segmented contest problems. Canonical reference for
+  "contamination is a real problem in coding benchmarks."
+- **METR RE-Bench.** Wijk et al.,
+  [arXiv:2411.15114](https://arxiv.org/abs/2411.15114). Compares humans
+  and agents in matched ML-engineering environments. AWB's vanilla-vs-
+  custom protocol is a direct parallel: same model, different scaffold.
+- **Aider Polyglot leaderboard.**
+  [aider.chat/docs/leaderboards](https://aider.chat/docs/leaderboards/).
+  The most-cited tool-level benchmark in the practitioner community.
+- **Cohen's d.** Cohen, J. (1988). *Statistical Power Analysis for the
+  Behavioral Sciences* (2nd ed.). The standard reference behind the
+  small/medium/large interpretation thresholds (0.2 / 0.5 / 0.8) used by
+  `awb/scoring/statistics.py`.

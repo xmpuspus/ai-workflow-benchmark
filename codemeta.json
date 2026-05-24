@@ -1,0 +1,43 @@
+{
+  "@context": "https://doi.org/10.5063/schema/codemeta-2.0",
+  "@type": "SoftwareSourceCode",
+  "name": "AWB: AI Workflow Benchmark",
+  "identifier": "awb",
+  "description": "Benchmark harness measuring AI coding tool + workflow performance (not just model capability) on 100 real-repo tasks. Sigmoid scoring across 7 dimensions, 12 capability axes, deterministic trace-grading rubrics, and a Production Readiness Score.",
+  "codeRepository": "https://github.com/xmpuspus/ai-workflow-benchmark",
+  "url": "https://github.com/xmpuspus/ai-workflow-benchmark",
+  "license": "https://spdx.org/licenses/MIT",
+  "version": "1.2.0",
+  "datePublished": "2026-04-27",
+  "programmingLanguage": "Python",
+  "runtimePlatform": "Python 3.11+",
+  "operatingSystem": ["Linux", "macOS"],
+  "author": [
+    {
+      "@type": "Person",
+      "givenName": "Xavier",
+      "familyName": "Puspus",
+      "email": "xpuspus@gmail.com"
+    }
+  ],
+  "keywords": [
+    "benchmark",
+    "ai-coding",
+    "llm-evaluation",
+    "claude-code",
+    "workflow-evaluation",
+    "shipping-discipline",
+    "swe-bench",
+    "agent-trace",
+    "production-readiness"
+  ],
+  "softwareRequirements": [
+    "click>=8.1",
+    "pyyaml>=6.0",
+    "jsonschema>=4.20",
+    "jinja2>=3.1",
+    "rich>=13.0",
+    "tabulate>=0.9"
+  ],
+  "developmentStatus": "active"
+}

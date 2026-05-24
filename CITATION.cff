@@ -1,0 +1,27 @@
+cff-version: 1.2.0
+title: "AWB: AI Workflow Benchmark"
+message: "If you use AWB in research, please cite this entry."
+type: software
+authors:
+  - family-names: Puspus
+    given-names: Xavier
+    email: xpuspus@gmail.com
+repository-code: "https://github.com/xmpuspus/ai-workflow-benchmark"
+url: "https://github.com/xmpuspus/ai-workflow-benchmark"
+abstract: >
+  AWB is an open benchmark harness that measures AI coding tool + workflow
+  performance on 100 real-repository tasks pinned to commit SHAs. It scores
+  seven sigmoid-normalized dimensions (correctness, cost, speed, code
+  quality, reliability, security, efficiency) and reports a Production
+  Readiness Score plus a Workflow Lift between vanilla and configured tool
+  runs. Trace artifacts use OpenTelemetry GenAI semantic conventions.
+keywords:
+  - benchmark
+  - ai-coding
+  - llm-evaluation
+  - claude-code
+  - workflow-evaluation
+  - shipping-discipline
+license: MIT
+version: "1.2.0"
+date-released: "2026-04-27"
