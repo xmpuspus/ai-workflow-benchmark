@@ -105,19 +105,25 @@ class ClaudeCodeVanillaAdapter(ToolAdapter):
                     stderr_chunks.append(chunk)
                 return b"".join(stderr_chunks)
 
-            try:
-                stderr_task = asyncio.create_task(_read_stderr())
+            # Named tasks so they can be cancelled in `finally` if still
+            # pending. Without this, the `terminate.wait()` task survives
+            # past return on the happy path and asyncio logs
+            # "Task was destroyed but it is pending!" at shutdown — same
+            # for stderr_task on early-return (timeout) paths.
+            stderr_task = asyncio.create_task(_read_stderr())
+            read_task = asyncio.create_task(_read_stream())
+            terminate_task = asyncio.create_task(terminate.wait())
+            stderr_bytes = b""
 
-                # Read stream with timeout, checking for termination signal
-                read_task = asyncio.create_task(_read_stream())
+            try:
                 done, _ = await asyncio.wait(
-                    {read_task, asyncio.create_task(terminate.wait())},
+                    {read_task, terminate_task},
                     timeout=timeout_seconds,
                     return_when=asyncio.FIRST_COMPLETED,
                 )
 
                 if terminate.is_set():
-                    # Token budget exceeded — kill gracefully
+                    # Token budget exceeded, kill gracefully
                     proc.terminate()
                     try:
                         await asyncio.wait_for(proc.wait(), timeout=5)
@@ -164,6 +170,14 @@ class ClaudeCodeVanillaAdapter(ToolAdapter):
                     exit_code=124,
                     tool_version=self.get_version(),
                 )
+            finally:
+                # Drain any still-pending tasks so asyncio does not log
+                # "Task was destroyed but it is pending!" at shutdown.
+                for task in (terminate_task, stderr_task, read_task):
+                    if not task.done():
+                        task.cancel()
+                        with contextlib.suppress(asyncio.CancelledError, Exception):
+                            await task
 
         except FileNotFoundError:
             return ToolResult(

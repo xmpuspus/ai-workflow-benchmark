@@ -6,22 +6,48 @@ against a full-suite run.
 
 ## File format
 
-`<tool>-<version>-<run-id>.json` containing:
+`<tool>-<awb_version>-<scope>.json` (where `scope` is `full` or
+`fast-check`) emitted by `awb export`:
 
-- `awb_version`: the AWB release that produced the run
-- `tool`, `tool_version`, `model`: identifying the agent under test
-- `task_set_hash`: SHA-256 of the task YAMLs (must match the bundled
-  task set in `awb_version` for cross-comparison)
-- `runs`: array of per-task `RunResult` records (schema v2)
-- `aggregate`: summary statistics (mean composite, capability profile,
-  workflow lift if applicable)
+```jsonc
+{
+  "spec_version": "awb/v2",
+  "submission": {
+    "submitter": "anonymous",
+    "submitted_at": "2026-05-24T01:54:23Z",
+    "tool":    { "name": "claude-code-custom", "version": "..." },
+    "model":   { "name": "..." },
+    "environment": {
+      "os": "Darwin 25.5.0",
+      "hardware_class": "other",
+      "hardware_detail": "Apple M5, 24GB"
+    },
+    "awb_version": "1.3.0"
+  },
+  "results": [
+    { "task_id": "BF-001", "runs": [ ... per-run RunResult records ... ] },
+    ...
+  ]
+}
+```
+
+The `submission.awb_version` field is what gates cross-baseline
+comparison: two baselines built against the same `awb_version` carry
+the same `task_set_hash` and are directly comparable.
 
 ## Generating a baseline
 
 ```bash
+# Fast-check baseline (8 representative tasks, 1 run, ~15 min, ~$4)
+awb run --fast-check claude-code-custom
+awb export results/runs/<run_id>/ \
+  -o results/baselines/claude-code-custom-1.3.0-fast-check.json
+
+# Full-suite baseline (100 tasks, 3 runs each, ~3 hrs, ~$150)
 awb run --runs 3 claude-code-custom
 awb run --runs 3 claude-code-vanilla
-awb export results/runs/<run_id>/ -o results/baselines/claude-code-custom-1.2.0.json
+awb export results/runs/<run_id>/ \
+  -o results/baselines/claude-code-custom-1.3.0-full.json
 ```
 
 ## Cross-version comparison
