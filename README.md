@@ -48,7 +48,23 @@ awb warmup                                            # pre-build workspace temp
 awb run --fast-check claude-code-custom               # 8 tasks, ~15 min, ~$4 (quick signal)
 awb run --progressive --adaptive claude-code-custom   # full suite with early exit + smart re-runs
 awb gap results/runs/<run_dir>/                       # analyze capability gaps
+awb leaderboard --readiness --explain                 # Production Readiness Score per tool
 ```
+
+### Five-minute reproducible demo
+
+Run this end-to-end against the published v1.2.0 baseline. Should finish in ~15 minutes for ~$4 of API spend and produce a tweetable Workflow Lift number plus a capability profile.
+
+```bash
+pip install awb==1.2.0
+awb quickstart                                       # 1. verify environment
+awb warmup --use-uv                                  # 2. pre-build templates
+awb run --fast-check claude-code-custom              # 3. ~15 min, ~$4, real run
+awb leaderboard --readiness --explain                # 4. composite readiness score
+awb trace grade results/runs/<run_id>/               # 5. behavior rubric scores
+```
+
+Compare against the published baseline at `results/baselines/claude-code-custom-1.2.0.json`. Same `task_set_hash` means your numbers are directly comparable.
 
 **New in v1.1.0:** `awb warmup` caches workspaces for 10-30x faster setup. `--fast-check` gives a quick signal in 15 min for ~$4. `--progressive` stops early on weak tools. `--use-uv` swaps pip for uv. See [Execution Modes](#execution-modes) below.
 
