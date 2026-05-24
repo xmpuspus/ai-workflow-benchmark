@@ -23,9 +23,9 @@ graph TB
     Run --> Runner["BenchmarkRunner<br/><i>core/runner.py</i>"]:::primary
     Gap --> GapEngine["GapReport<br/><i>analysis/gap_analysis.py</i>"]:::secondary
     Compare --> CompareEngine["compare_submissions<br/><i>submission/compare.py</i>"]:::secondary
-    Stability --> StabilityEngine["TaskStability<br/><i>scoring/stability.py</i>"]:::secondary
-    CalDiff --> CalDiffEngine["calibrate_difficulty<br/><i>analysis/calibrate_difficulty.py</i>"]:::secondary
-    CalTime --> CalTimeEngine["calibrate_timeouts<br/><i>analysis/calibrate_timeouts.py</i>"]:::secondary
+    Stability --> StabilityEngine["TaskStability<br/><i>scoring/statistics.py</i>"]:::secondary
+    CalDiff --> CalDiffEngine["calibrate_difficulty<br/><i>analysis/difficulty_calibrator.py</i>"]:::secondary
+    CalTime --> CalTimeEngine["calibrate_timeouts<br/><i>analysis/timeout_calibrator.py</i>"]:::secondary
 
     classDef primary fill:#2563eb,stroke:#1d4ed8,color:#fff
     classDef secondary fill:#f59e0b,stroke:#d97706,color:#1f2937
@@ -162,15 +162,15 @@ graph TD
         Capabilities["capabilities.py<br/><i>Capability radar</i>"]:::purple
         Stats["statistics.py<br/><i>CI, significance</i>"]:::purple
         Integrity["integrity.py<br/><i>Contamination<br/>detection</i>"]:::purple
-        Stability["stability.py<br/><i>TaskStability,<br/>variance weighting</i>"]:::purple
+        Stability["statistics.py<br/><i>TaskStability,<br/>variance weighting</i>"]:::purple
         Report["report.py"]:::purple
     end
 
     subgraph Analysis["Analysis"]
         GapAnalysis["gap_analysis.py<br/><i>Failure analysis,<br/>pattern detection</i>"]:::red
         Suggestions["suggestions.py<br/><i>Rule-based<br/>recommendations</i>"]:::red
-        CalDiffEngine["calibrate_difficulty.py<br/><i>Empirical pass rate<br/>recalibration</i>"]:::red
-        CalTimeEngine["calibrate_timeouts.py<br/><i>p95-based timeout<br/>tightening</i>"]:::red
+        CalDiffEngine["difficulty_calibrator.py<br/><i>Empirical pass rate<br/>recalibration</i>"]:::red
+        CalTimeEngine["timeout_calibrator.py<br/><i>p95-based timeout<br/>tightening</i>"]:::red
     end
 
     subgraph Submission["Submission"]
@@ -585,15 +585,15 @@ ai-workflow-benchmark/
 │   │   ├── capabilities.py       # Capability enum + radar
 │   │   ├── statistics.py         # CI, significance testing
 │   │   ├── integrity.py          # Contamination detection
-│   │   ├── stability.py          # TaskStability: std_dev, score_range, is_unstable
+│   │   ├── statistics.py          # TaskStability: std_dev, score_range, is_unstable
 │   │   ├── report.py             # ScoreReport + printing
 │   │   ├── workflow_lift.py      # Workflow Lift Score (custom vs vanilla)
 │   │   └── weights.yaml          # 3 weight profiles
 │   ├── analysis/
 │   │   ├── gap_analysis.py       # FailureAnalysis, GapReport
 │   │   ├── suggestions.py        # Rule-based recommendations
-│   │   ├── calibrate_difficulty.py  # Recalibrate difficulty from empirical pass rates
-│   │   └── calibrate_timeouts.py    # Tighten timeouts from empirical p95 data
+│   │   ├── difficulty_calibrator.py  # Recalibrate difficulty from empirical pass rates
+│   │   └── timeout_calibrator.py    # Tighten timeouts from empirical p95 data
 │   ├── submission/
 │   │   ├── schema.py             # Hardware classes, Submission
 │   │   ├── ingest.py             # Parse + validate JSON

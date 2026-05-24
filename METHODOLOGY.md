@@ -120,20 +120,20 @@ Tasks are drawn from real open-source repositories at pinned commits. Synthetic 
 
 | Category | Count | Rationale |
 |----------|-------|-----------|
-| bug-fix | 14 | Most common real-world task; includes test-first diagnosis and performance bugs |
-| feature-addition | 12 | Extension points, ambiguous requirements, infrastructure, documentation |
-| refactoring | 12 | Semantic preservation, performance optimization, CI/CD config |
-| code-review | 10 | Security review (report-only), concurrency analysis, migration guides |
-| debugging | 11 | Hypothesis generation, regression bisection, profiling, stack traces |
-| multi-file | 10 | Cross-module reasoning, merge conflicts, dependency migration |
+| bug-fix | 12 | Most common real-world task; includes test-first diagnosis and performance bugs |
+| feature-addition | 9 | Extension points, ambiguous requirements, infrastructure, documentation |
+| refactoring | 11 | Semantic preservation, performance optimization, CI/CD config |
+| code-review | 9 | Security review (report-only), concurrency analysis, migration guides |
+| debugging | 10 | Hypothesis generation, regression bisection, profiling, stack traces |
+| multi-file | 7 | Cross-module reasoning, merge conflicts, dependency migration |
 | legacy-code | 12 | Modernization, large codebase navigation, deprecation patterns |
 | workflow | 30 | TODO completeness, hook/skill integration, configuration tasks |
 
 ### Difficulty levels
 
-- **easy** (~44 tasks) - Single file, under 50 lines changed, obvious fix (empirical pass rate >65%)
-- **medium** (~5 tasks) - 1-3 files, moderate reasoning required (empirical pass rate 35-65%)
-- **hard** (~31 tasks) - Multiple files, non-obvious root cause, architectural decisions (empirical pass rate <35%)
+- **easy** (48 tasks) - Single file, under 50 lines changed, obvious fix (empirical pass rate >65%)
+- **medium** (17 tasks) - 1-3 files, moderate reasoning required (empirical pass rate 35-65%)
+- **hard** (35 tasks) - Multiple files, non-obvious root cause, architectural decisions (empirical pass rate <35%)
 
 Difficulty labels are calibrated from empirical pass rates collected across benchmark runs. The `awb calibrate-difficulty` command recalibrates labels when sufficient run data exists; `--apply` writes the updated labels back to task YAMLs.
 
@@ -143,22 +143,22 @@ Each task maps to 1-3 capabilities from a fixed taxonomy. This enables capabilit
 
 | Capability | Tasks | What it measures |
 |------------|-------|-----------------|
-| code_comprehension | 41 | Understanding existing code before modifying |
-| framework_knowledge | 35 | Knowing API patterns (Pydantic v2, async SQLAlchemy, etc.) |
-| bug_diagnosis | 26 | Structured root cause analysis, test-first diagnosis |
-| refactoring_discipline | 26 | Changing code without breaking behavior |
-| multi_file_reasoning | 23 | Coordinating changes across multiple files |
-| test_writing | 10 | Writing correct, meaningful tests |
+| code_comprehension | 45 | Understanding existing code before modifying |
+| framework_knowledge | 36 | Knowing API patterns (Pydantic v2, async SQLAlchemy, etc.) |
+| refactoring_discipline | 29 | Changing code without breaking behavior |
+| bug_diagnosis | 27 | Structured root cause analysis, test-first diagnosis |
+| multi_file_reasoning | 22 | Coordinating changes across multiple files |
+| test_writing | 12 | Writing correct, meaningful tests |
 | security_awareness | 10 | Identifying and fixing security vulnerabilities |
-| completeness_tracking | 10 | Following all requirements, not stopping at 80% |
-| convention_adherence | 10 | Discovering and following project conventions |
-| context_discovery | 10 | Reading project docs and config before editing |
-| security_methodology | 10 | Applying security checklists systematically |
+| convention_adherence | 8 | Discovering and following project conventions |
+| context_discovery | 5 | Reading project docs and config before editing |
+| security_methodology | 5 | Applying security checklists systematically |
+| completeness_tracking | 4 | Following all requirements, not stopping at 80% |
 | cost_discipline | derived | Token efficiency across all tasks |
 
 ### Language distribution
 
-59 Python tasks, 1 TypeScript task. Python tasks use modern frameworks (FastAPI, httpx, Flask, Click, Starlette, Pydantic, SQLAlchemy 2.0) with venv-based setup. TypeScript uses Hono with npm.
+All 100 tasks are Python-based against modern frameworks (FastAPI, httpx, Flask, Click, Starlette) with venv-based setup. Eight tasks also touch Docker, YAML, or Markdown alongside Python.
 
 ## Scoring
 

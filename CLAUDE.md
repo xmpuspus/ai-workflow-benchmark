@@ -8,7 +8,7 @@
 - `awb/scoring/` — Sigmoid normalization, composite scoring, capability profiles, stability metrics, statistics
 - `awb/analysis/` — Gap analysis engine, workflow improvement suggestions, difficulty/timeout calibrators
 - `awb/submission/` — External submission format and cross-submission comparison
-- `tests/` — pytest suite (135 tests)
+- `tests/` — pytest suite (240 tests)
 
 ## Development
 
@@ -39,7 +39,7 @@ See `awb/tasks/schema.json`. Required fields: `id`, `category`, `title`, `diffic
 
 Valid categories: `bug-fix`, `feature-addition`, `refactoring`, `code-review`, `debugging`, `multi-file`, `legacy-code`, `workflow`
 
-Valid capabilities: `code_comprehension`, `bug_diagnosis`, `multi_file_reasoning`, `framework_knowledge`, `test_writing`, `refactoring_discipline`, `security_awareness`, `completeness_tracking`, `convention_adherence`, `context_discovery`, `security_methodology`
+Valid capabilities: `code_comprehension`, `bug_diagnosis`, `multi_file_reasoning`, `framework_knowledge`, `test_writing`, `refactoring_discipline`, `security_awareness`, `completeness_tracking`, `convention_adherence`, `context_discovery`, `security_methodology`. `cost_discipline` is a derived capability computed from token efficiency across all tasks; it is not declared in YAML.
 
 ## Scoring
 

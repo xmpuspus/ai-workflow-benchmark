@@ -214,7 +214,7 @@ Strips `CLAUDE*` env vars and `PI_SESSION` to prevent the nested Pi from inherit
 # Single task test
 awb run pi -t BF-001 --runs 1
 
-# Full benchmark (60 tasks × 3 runs)
+# Full benchmark (100 tasks × 3 runs)
 awb run pi --runs 3
 
 # Filter by difficulty
@@ -231,5 +231,5 @@ awb gap results/runs/<run_dir>/
 
 - Pi with Opus 4.6 averages ~30-60s per easy task
 - FastAPI repo tasks take longer due to large codebase (~48M workspace)
-- The full 60×3 run takes roughly 3-5 hours with Opus
+- The full 100×3 run takes roughly 5-8 hours with Opus
 - Sonnet would be significantly faster if speed is prioritized over quality

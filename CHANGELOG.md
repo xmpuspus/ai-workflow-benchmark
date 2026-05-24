@@ -2,7 +2,7 @@
 
 ## 1.2.0 (2026-04-27)
 
-Trust-and-differentiation release: fixes seven trust blockers identified in the v2 strategy, then ships the first slice of v2 (task-set hash, fresh/verified metadata, OpenTelemetry-aligned trace artifact, `awb trace grade`, Production Readiness Score). Positioning sentence: *AWB evaluates whether an AI coding workflow can safely ship real software, not whether a model can pass a static issue benchmark.*
+Trust and differentiation release: fixes seven trust blockers from the v2 strategy, then ships the first v2 slice (task-set hash, fresh/verified metadata, OpenTelemetry-aligned trace artifact, `awb trace grade`, Production Readiness Score).
 
 ### Added (P1)
 

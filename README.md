@@ -18,7 +18,7 @@
 
 ## Why This Exists
 
-The 2025 Stack Overflow Developer Survey shows 84% of professional developers using AI in their workflow, up from 76% the year before — but accuracy trust collapsed from 40% to 29% over the same period ([survey.stackoverflow.co/2025/ai](https://survey.stackoverflow.co/2025/ai)). [METR's RCT of 16 experienced open-source maintainers](https://metr.org/blog/2025-07-10-early-2025-ai-experienced-os-dev-study/) found AI tooling **increased** task completion time by 19%, while developers self-reported a 20% speedup — a 39-point gap between perception and reality ([arXiv:2507.09089](https://arxiv.org/abs/2507.09089)). Static issue benchmarks like SWE-bench Verified — recently flagged as having flawed tests on a majority of audited tasks, prompting [SWE-bench Pro](https://www.swebench.com/) — measure model capability in isolation.
+The 2025 Stack Overflow Developer Survey shows 84% of professional developers using AI in their workflow, up from 76% the year before. Yet only 33% trust AI accuracy while 46% actively distrust it ([survey.stackoverflow.co/2025/ai](https://survey.stackoverflow.co/2025/ai)). [METR's RCT of 16 experienced open-source maintainers](https://metr.org/blog/2025-07-10-early-2025-ai-experienced-os-dev-study/) found AI tooling **increased** task completion time by 19%, while developers self-reported a 20% speedup, a 39-point gap between perception and reality ([arXiv:2507.09089](https://arxiv.org/abs/2507.09089)). Static issue benchmarks like SWE-bench Verified measure model capability in isolation; [SWE-bench Pro](https://scaleapi.github.io/SWE-bench_Pro-os/) ([arXiv:2509.16941](https://arxiv.org/abs/2509.16941)) addresses contamination at scale but still scores patches, not whether a workflow can ship.
 
 AWB measures whether a configured tool+workflow combination can ship correct, regression-safe, low-burden changes against pinned real-world repositories. The same model running vanilla Claude Code vs. a purpose-built setup with a tuned CLAUDE.md, hooks, and structured agents produces meaningfully different results on real engineering tasks. AWB benchmarks the full stack: **tool + configuration + workflow + model**, together, on 100 tasks drawn from real open-source repositories.
 
@@ -27,7 +27,7 @@ AWB measures whether a configured tool+workflow combination can ship correct, re
 - **Task-set hash on every result** (`task_set_hash`, SHA-256 over the bundled task YAMLs) so you can prove which exact task set produced a given score.
 - **OpenTelemetry-aligned trace artifact**: every benchmark run writes a `.trace.jsonl` file using OTel GenAI semantic conventions (`gen_ai.client.operation`, `gen_ai.tool.use`) plus AWB-specific spans for shell commands, file edits, and test runs.
 - **`awb trace grade <run_dir>`** scores four shipping disciplines from the trace: read-tests-before-edit, ran-verification-after-change, no-out-of-scope-edits, no-repeated-failing-command-loop.
-- **Production Readiness Score** (`awb leaderboard --readiness`) — composite over 7 dimensions answering: can this workflow safely ship?
+- **Production Readiness Score** (`awb leaderboard --readiness`): weighted composite over 7 dimensions, calibrated for shipping safety.
 - **Strict result schema v2** (`additionalProperties: false`, required `schema_version`, `task_set_hash`). `awb migrate-results` extends to v1→v2.
 - **Task provenance fields**: optional `provenance.{source_pr_url, created_at, last_verified_at}`, `contamination_risk`, `label` (`real_pr` / `synthetic_overlay` / `mutated` / `fresh`) lay the groundwork for fresh-task harvesting in v1.3.
 - **Seven P0 trust blockers fixed**: token-budget fields now parse correctly, workflow schema enum matches the 9-adapter registry, setup cache key is order-sensitive, missing security scanners surface a warning instead of silently passing as clean, adapter `on_event` is properly typed as `Callable`, gap analysis classifies `regression_introduced` and `no_edits_made` separately.
@@ -115,7 +115,7 @@ Real open-source repos, pinned to release tag SHAs. Setup runs in under 15 secon
 | legacy-code | 12 | 9 / 0 / 3 | SQLAlchemy 2.0 migration, 20-file codebase navigation, dead code removal |
 | workflow | 30 | 9 / 12 / 9 | Completeness tracking, convention discovery, security methodology, context utilization, async safety, config extraction, test-driven implementation |
 
-**Repos used:** FastAPI, httpx, Flask, Starlette, Click, Pydantic, SQLAlchemy 2.0, Hono
+**Repos used:** FastAPI (74), httpx (17), Flask (4), Click (4), Starlette (1). All Python.
 
 **Task IDs:**
 `BF-001–014` · `FA-001–010` · `RF-001–012` · `CR-001–010` · `DB-001–011` · `MF-001–009` · `LC-001–012` · `WF-001–030`
@@ -126,17 +126,17 @@ Each task maps to 1–3 capabilities, producing a radar chart of tool strengths:
 
 | Capability | Tasks | What It Measures |
 |------------|-------|-----------------|
-| code_comprehension | 41 | Understanding existing code before modifying |
-| framework_knowledge | 35 | Knowing API patterns (Pydantic v2, async SQLAlchemy, etc.) |
-| bug_diagnosis | 26 | Structured root cause analysis, test-first diagnosis |
-| refactoring_discipline | 26 | Changing code without breaking behavior |
-| multi_file_reasoning | 23 | Coordinating changes across multiple files |
-| completeness_tracking | 10 | Following all requirements, not stopping at 80% |
-| convention_adherence | 10 | Discovering and following project conventions |
-| context_discovery | 10 | Reading project docs and config before editing |
-| test_writing | 10 | Writing correct, meaningful tests |
+| code_comprehension | 45 | Understanding existing code before modifying |
+| framework_knowledge | 36 | Knowing API patterns (Pydantic v2, async SQLAlchemy, etc.) |
+| refactoring_discipline | 29 | Changing code without breaking behavior |
+| bug_diagnosis | 27 | Structured root cause analysis, test-first diagnosis |
+| multi_file_reasoning | 22 | Coordinating changes across multiple files |
+| test_writing | 12 | Writing correct, meaningful tests |
 | security_awareness | 10 | Identifying and fixing vulnerabilities |
-| security_methodology | 10 | Applying security checklists systematically |
+| convention_adherence | 8 | Discovering and following project conventions |
+| context_discovery | 5 | Reading project docs and config before editing |
+| security_methodology | 5 | Applying security checklists systematically |
+| completeness_tracking | 4 | Following all requirements, not stopping at 80% |
 | cost_discipline | derived | Token efficiency across all tasks |
 
 Example `awb gap` output:
@@ -302,7 +302,7 @@ Per-task score variance across multiple runs. Flags unstable tasks for prompt cl
 
 Generates a static HTML site with Chart.js radar chart, CSV export, and historical run tracking.
 
-Add `--readiness` to print the **Production Readiness Score** per tool to stdout. The score is a weighted composite of correctness (35%), regression-safety (20%), security (15%), review-burden (10%), maintainability (8%), cost (7%), and speed (5%) — all normalized 0-100. Designed to answer the only question that matters in production: *can this workflow safely ship?*
+Add `--readiness` to print the **Production Readiness Score** per tool to stdout. The score is a weighted composite of correctness (35%), regression-safety (20%), security (15%), review-burden (10%), maintainability (8%), cost (7%), and speed (5%), all normalized 0-100. Weighted for shipping safety rather than headline accuracy.
 
 ### `awb trace grade` — Score behaviors from trace artifacts
 

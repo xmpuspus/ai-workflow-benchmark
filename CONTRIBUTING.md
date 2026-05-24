@@ -63,7 +63,7 @@ pytest tests/ -v
 ruff check awb/
 ```
 
-All 135 tests must pass. New features need at least one happy-path test. Bug fixes need a regression test.
+All 240 tests must pass. New features need at least one happy-path test. Bug fixes need a regression test.
 
 ## Submitting Results
 
