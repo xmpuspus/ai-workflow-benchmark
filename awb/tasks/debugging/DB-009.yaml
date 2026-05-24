@@ -109,3 +109,10 @@ verification:
 constraints:
   max_iterations: 25
   timeout_seconds: 658
+
+# === provenance (backfilled) ===
+provenance:
+  created_at: "2026-03-22T09:56:37+08:00"
+  last_verified_at: "2026-03-23T11:22:30.163945+00:00"
+contamination_risk: high
+label: synthetic_overlay

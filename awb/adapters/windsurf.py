@@ -11,6 +11,7 @@ from awb.adapters.base import ToolAdapter, ToolResult
 class WindsurfAdapter(ToolAdapter):
     name = "windsurf"
     display_name = "Windsurf"
+    is_stub = True
 
     async def execute(
         self,

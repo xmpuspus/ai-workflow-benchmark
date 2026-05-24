@@ -53,6 +53,15 @@
               "passed": {"type": "boolean"}
             }
           }
+        },
+        "error": {
+          "type": ["object", "null"],
+          "additionalProperties": false,
+          "properties": {
+            "exc_type": {"type": "string"},
+            "exc_message": {"type": "string"},
+            "traceback_tail": {"type": "string"}
+          }
         }
       }
     },
@@ -94,7 +103,11 @@
       "additionalProperties": false,
       "properties": {
         "os": {"type": "string"},
-        "hardware": {"type": "string"}
+        "hardware": {"type": "string"},
+        "python_version": {"type": "string"},
+        "awb_version": {"type": "string"},
+        "adapter_version": {"type": "string"},
+        "pip_freeze_hash": {"type": "string"}
       }
     },
     "workflow": {

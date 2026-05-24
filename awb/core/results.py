@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import fcntl
 import json
 from pathlib import Path
 
@@ -10,6 +11,7 @@ from awb.core.config import (
     CriterionResult,
     RunCost,
     RunEnvironment,
+    RunError,
     RunMetrics,
     RunOutcome,
     RunQuality,
@@ -39,15 +41,26 @@ class ResultRecorder:
         return path
 
     def _append_jsonl(self, run_id: str, data: dict) -> None:
-        """Append a result to the run's JSONL file."""
-        # Extract base run ID (strip _runN suffix)
+        """Append a result to the run's JSONL file.
+
+        Uses fcntl.LOCK_EX so that concurrent --parallel writers (and any
+        other process appending to the same JSONL) serialize at the OS level.
+        Result records can exceed PIPE_BUF (~4KB), so the POSIX atomic-append
+        guarantee does not apply and interleaving would silently corrupt rows.
+        """
         import re
 
         match = re.match(r"^(.+)_run\d+$", run_id)
         base_id = match.group(1) if match else run_id
         jsonl_path = self.results_dir / f"{base_id}.jsonl"
+        line = json.dumps(data) + "\n"
         with open(jsonl_path, "a") as f:
-            f.write(json.dumps(data) + "\n")
+            try:
+                fcntl.flock(f.fileno(), fcntl.LOCK_EX)
+                f.write(line)
+                f.flush()
+            finally:
+                fcntl.flock(f.fileno(), fcntl.LOCK_UN)
 
     def load_jsonl(self, base_run_id: str) -> list[RunResult]:
         """Load all results from a JSONL file for fast batch access."""
@@ -169,6 +182,15 @@ def _dict_to_result(data: dict) -> RunResult:
             config_hash=wf_data.get("config_hash", ""),
         )
 
+    error_data = outcome_data.get("error")
+    error = None
+    if isinstance(error_data, dict):
+        error = RunError(
+            exc_type=error_data.get("exc_type", ""),
+            exc_message=error_data.get("exc_message", ""),
+            traceback_tail=error_data.get("traceback_tail", ""),
+        )
+
     return RunResult(
         task_id=data["task_id"],
         tool=data["tool"],
@@ -181,6 +203,7 @@ def _dict_to_result(data: dict) -> RunResult:
             partial_credit_score=outcome_data["partial_credit_score"],
             partial_credit_max=outcome_data["partial_credit_max"],
             breakdown=breakdown,
+            error=error,
         ),
         metrics=RunMetrics(
             wall_clock_seconds=metrics_data.get("wall_clock_seconds", 0),
@@ -206,6 +229,10 @@ def _dict_to_result(data: dict) -> RunResult:
         environment=RunEnvironment(
             os=env_data.get("os", ""),
             hardware=env_data.get("hardware", ""),
+            python_version=env_data.get("python_version", ""),
+            awb_version=env_data.get("awb_version", ""),
+            adapter_version=env_data.get("adapter_version", ""),
+            pip_freeze_hash=env_data.get("pip_freeze_hash", ""),
         ),
         workflow=workflow,
         task_set_hash=data.get("task_set_hash", ""),

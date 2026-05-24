@@ -38,6 +38,23 @@ class PiAdapter(ToolAdapter):
         workspace: Path,
         max_turns: int = 20,
         timeout_seconds: int = 1800,
+        on_event=None,
+    ) -> ToolResult:
+        """Run Pi in a worker thread so the event loop stays unblocked.
+
+        Pi requires a synchronous Popen + communicate (see _execute_blocking
+        for the documented reason). To stop that blocking call from pinning
+        the asyncio event loop during --parallel runs, the whole synchronous
+        body runs via asyncio.to_thread.
+        """
+        import asyncio
+
+        return await asyncio.to_thread(
+            self._execute_blocking, prompt, workspace, max_turns, timeout_seconds
+        )
+
+    def _execute_blocking(
+        self, prompt: str, workspace: Path, max_turns: int, timeout_seconds: int
     ) -> ToolResult:
         full_env = self._get_env()
 

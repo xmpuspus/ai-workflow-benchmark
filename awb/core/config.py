@@ -21,6 +21,7 @@ RESULT_SCHEMA_PATH = RESULTS_DIR / "schema.json"
 # Always-bundled copy of the v2 result schema (lives next to awb/__init__.py).
 PKG_RESULT_SCHEMA_PATH = Path(__file__).resolve().parent.parent / "results-schema.json"
 
+
 @dataclass
 class TaskRepo:
     url: str
@@ -88,11 +89,26 @@ class CriterionResult:
 
 
 @dataclass
+class RunError:
+    """Captured exception info for runs that failed unexpectedly.
+
+    Distinguishes "ran to completion with score=0" from "crashed with a
+    Python exception". Surfaced in RunOutcome.error so the consumer can tell
+    the two apart.
+    """
+
+    exc_type: str = ""
+    exc_message: str = ""
+    traceback_tail: str = ""
+
+
+@dataclass
 class RunOutcome:
     success: bool
     partial_credit_score: float
     partial_credit_max: float
     breakdown: list[CriterionResult] = field(default_factory=list)
+    error: RunError | None = None
 
 
 @dataclass
@@ -120,6 +136,35 @@ class RunQuality:
     lint_delta: int = 0
     security_delta: int = 0
     test_regressions: int = 0
+
+
+def _detect_python_version() -> str:
+    import sys
+
+    return f"{sys.version_info.major}.{sys.version_info.minor}.{sys.version_info.micro}"
+
+
+def _detect_awb_version() -> str:
+    try:
+        import awb
+
+        return awb.__version__
+    except Exception:
+        return ""
+
+
+def _pip_freeze_hash() -> str:
+    """SHA-256 prefix of `pip freeze` output for reproducibility."""
+    import hashlib
+
+    try:
+        out = subprocess.check_output(
+            ["pip", "freeze"], text=True, timeout=15, stderr=subprocess.DEVNULL
+        )
+        lines = sorted(line for line in out.splitlines() if line.strip())
+        return hashlib.sha256("\n".join(lines).encode()).hexdigest()[:16]
+    except (subprocess.SubprocessError, FileNotFoundError, OSError):
+        return ""
 
 
 def _detect_hardware() -> str:
@@ -151,6 +196,10 @@ def _detect_hardware() -> str:
 class RunEnvironment:
     os: str = field(default_factory=lambda: f"{platform.system()} {platform.release()}")
     hardware: str = field(default_factory=_detect_hardware)
+    python_version: str = field(default_factory=_detect_python_version)
+    awb_version: str = field(default_factory=_detect_awb_version)
+    adapter_version: str = ""
+    pip_freeze_hash: str = field(default_factory=_pip_freeze_hash)
 
 
 @dataclass
@@ -202,6 +251,17 @@ class RunResult:
                 "partial_credit_score": self.outcome.partial_credit_score,
                 "partial_credit_max": self.outcome.partial_credit_max,
                 "breakdown": breakdown,
+                **(
+                    {
+                        "error": {
+                            "exc_type": self.outcome.error.exc_type,
+                            "exc_message": self.outcome.error.exc_message,
+                            "traceback_tail": self.outcome.error.traceback_tail,
+                        }
+                    }
+                    if self.outcome.error
+                    else {}
+                ),
             },
             "metrics": {
                 "wall_clock_seconds": self.metrics.wall_clock_seconds,
@@ -227,6 +287,10 @@ class RunResult:
             "environment": {
                 "os": self.environment.os,
                 "hardware": self.environment.hardware,
+                "python_version": self.environment.python_version,
+                "awb_version": self.environment.awb_version,
+                "adapter_version": self.environment.adapter_version,
+                "pip_freeze_hash": self.environment.pip_freeze_hash,
             },
         }
         if self.workflow:

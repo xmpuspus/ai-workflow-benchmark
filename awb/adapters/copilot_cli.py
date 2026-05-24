@@ -11,6 +11,7 @@ from awb.adapters.base import ToolAdapter, ToolResult
 class CopilotCliAdapter(ToolAdapter):
     name = "copilot"
     display_name = "GitHub Copilot CLI"
+    is_stub = True
 
     async def execute(
         self,

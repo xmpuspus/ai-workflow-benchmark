@@ -358,10 +358,23 @@ class BenchmarkRunner:
     ) -> RunResult:
         """Execute a single task through the full benchmark lifecycle."""
         run_id = run_id or self._run_id
-        timeout = self._adaptive_timeout(task) if run_num > 1 else (
-            self.timeout_override or task.constraints.timeout_seconds
+        timeout = (
+            self._adaptive_timeout(task)
+            if run_num > 1
+            else (self.timeout_override or task.constraints.timeout_seconds)
         )
         workspace: Path | None = None
+
+        # Fail-fast for stub adapters: refuse before provisioning a workspace
+        # rather than after, which used to waste ~30s on the first task.
+        if getattr(self._adapter, "is_stub", False):
+            import click as _click
+
+            raise _click.UsageError(
+                f"Adapter '{self._adapter.name}' is a stub. "
+                "Install the underlying CLI and flip `is_stub = False` "
+                "in the adapter class to enable."
+            )
 
         collector = MetricCollector()
         outcome = RunOutcome(success=False, partial_credit_score=0, partial_credit_max=0)
@@ -386,13 +399,21 @@ class BenchmarkRunner:
             max_out = task.constraints.max_output_tokens
             if max_in > 0 and collector._input_tokens > max_in:
                 budget_exceeded = True
-                log.warning("Task %s exceeded input token budget (%d > %d)",
-                            task.id, collector._input_tokens, max_in)
+                log.warning(
+                    "Task %s exceeded input token budget (%d > %d)",
+                    task.id,
+                    collector._input_tokens,
+                    max_in,
+                )
                 return False
             if max_out > 0 and collector._output_tokens > max_out:
                 budget_exceeded = True
-                log.warning("Task %s exceeded output token budget (%d > %d)",
-                            task.id, collector._output_tokens, max_out)
+                log.warning(
+                    "Task %s exceeded output token budget (%d > %d)",
+                    task.id,
+                    collector._output_tokens,
+                    max_out,
+                )
                 return False
             return None
 
@@ -421,7 +442,7 @@ class BenchmarkRunner:
 
             # Parse any remaining stream events not yet processed
             # (for adapters that don't support streaming callbacks)
-            if not hasattr(self._adapter, '_streams_events_inline'):
+            if not hasattr(self._adapter, "_streams_events_inline"):
                 for event in tool_result.stream_events:
                     collector.parse_stream_event(event)
 
@@ -429,9 +450,7 @@ class BenchmarkRunner:
             run_dir = self.recorder.results_dir / run_id
             run_dir.mkdir(parents=True, exist_ok=True)
 
-            tests_passed, test_output = await run_tests(
-                task.verification.test_commands, workspace
-            )
+            tests_passed, test_output = await run_tests(task.verification.test_commands, workspace)
             if test_output:
                 log_path = run_dir / f"{task.id}_{self.tool}.log"
                 log_path.write_text(test_output)
@@ -478,11 +497,30 @@ class BenchmarkRunner:
 
             raise click.UsageError(f"Adapter not implemented: {exc}") from exc
 
-        except Exception:
+        except Exception as exc:
             collector.stop()
             log.exception("Task %s failed with unexpected error", task.id)
-            _console.print(f"  [red]error:[/red] {task.id} — see log for details")
-            print(f"Task {task.id} failed unexpectedly — check logs", file=sys.stderr)
+            import traceback as _tb
+
+            from awb.core.config import RunError
+
+            tb_lines = _tb.format_exception(type(exc), exc, exc.__traceback__)
+            tb_tail = "".join(tb_lines[-8:]) if tb_lines else ""
+            outcome = RunOutcome(
+                success=False,
+                partial_credit_score=0,
+                partial_credit_max=0,
+                error=RunError(
+                    exc_type=type(exc).__name__,
+                    exc_message=str(exc)[:500],
+                    traceback_tail=tb_tail[-2000:],
+                ),
+            )
+            _console.print(f"  [red]error:[/red] {task.id} {type(exc).__name__}: {str(exc)[:120]}")
+            print(
+                f"Task {task.id} failed: {type(exc).__name__}: {str(exc)[:200]}",
+                file=sys.stderr,
+            )
 
         finally:
             metrics = collector.to_metrics()
@@ -493,6 +531,17 @@ class BenchmarkRunner:
         # Trace path is recorded relative to the run dir so result JSON stays
         # portable across machines.
         recorded_trace_path = trace_rel if trace_path.exists() else ""
+
+        # Stamp adapter version onto the environment record so a result
+        # carries enough provenance for an independent re-run.
+        env_with_adapter = RunEnvironment(
+            os=self._environment.os,
+            hardware=self._environment.hardware,
+            python_version=self._environment.python_version,
+            awb_version=self._environment.awb_version,
+            adapter_version=self._adapter.get_version(),
+            pip_freeze_hash=self._environment.pip_freeze_hash,
+        )
 
         result = RunResult(
             task_id=task.id,
@@ -505,7 +554,7 @@ class BenchmarkRunner:
             metrics=metrics,
             cost=collector.to_cost(),
             quality=quality,
-            environment=self._environment,
+            environment=env_with_adapter,
             workflow=self.workflow,
             task_set_hash=self._task_set_hash,
             trace_path=recorded_trace_path,
@@ -545,7 +594,7 @@ def _emit_span_for_event(writer: TraceWriter, event: dict, task_id: str) -> None
     try:
         event_type = event.get("type", "")
         if event_type == "assistant":
-            usage = ((event.get("message") or {}).get("usage") or {})
+            usage = (event.get("message") or {}).get("usage") or {}
             attrs: dict = {"task.id": task_id, "gen_ai.system": "anthropic"}
             for src, dst in (
                 ("input_tokens", "gen_ai.usage.input_tokens"),

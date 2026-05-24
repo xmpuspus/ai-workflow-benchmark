@@ -24,9 +24,7 @@ def _setup_cache_key(url: str, commit: str, setup_commands: list[str]) -> str:
     semantically meaningful (e.g., installing requirements.txt before -e .
     differs from the reverse, and later installs can override earlier ones).
     """
-    return hashlib.sha256(
-        repr((url, commit, tuple(setup_commands))).encode()
-    ).hexdigest()
+    return hashlib.sha256(repr((url, commit, tuple(setup_commands))).encode()).hexdigest()
 
 
 class RepoManager:
@@ -37,24 +35,48 @@ class RepoManager:
         _CACHE_DIR.mkdir(parents=True, exist_ok=True)
         _TEMPLATE_DIR.mkdir(parents=True, exist_ok=True)
 
-    async def _run(self, *args: str, cwd: Path | None = None) -> tuple[int, str, str]:
+    async def _run(
+        self, *args: str, cwd: Path | None = None, timeout: float = 300.0
+    ) -> tuple[int, str, str]:
+        """Run a git/cli command with a hard wall-clock timeout.
+
+        Without this, a flaky network or wedged git operation can hang the
+        whole runner indefinitely. Caller passes timeout per operation
+        (typical: 300s for clones, 120s for checkouts, 60s for diffs).
+        """
         proc = await asyncio.create_subprocess_exec(
             *args,
             cwd=cwd,
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
         )
-        stdout, stderr = await proc.communicate()
+        try:
+            stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=timeout)
+        except TimeoutError:
+            with contextlib.suppress(ProcessLookupError):
+                proc.kill()
+            with contextlib.suppress(Exception):
+                await proc.communicate()
+            return 124, "", f"command timed out after {timeout}s: {' '.join(args)}"
         return proc.returncode, stdout.decode(), stderr.decode()
 
-    async def _run_shell(self, cmd: str, cwd: Path | None = None) -> tuple[int, str, str]:
+    async def _run_shell(
+        self, cmd: str, cwd: Path | None = None, timeout: float = 300.0
+    ) -> tuple[int, str, str]:
         proc = await asyncio.create_subprocess_shell(
             cmd,
             cwd=cwd,
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
         )
-        stdout, stderr = await proc.communicate()
+        try:
+            stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=timeout)
+        except TimeoutError:
+            with contextlib.suppress(ProcessLookupError):
+                proc.kill()
+            with contextlib.suppress(Exception):
+                await proc.communicate()
+            return 124, "", f"shell command timed out after {timeout}s: {cmd}"
         return proc.returncode, stdout.decode(), stderr.decode()
 
     async def prepare(self, task: TaskDefinition, run_id: str | None = None) -> Path:
@@ -95,9 +117,7 @@ class RepoManager:
                 )
 
         # Workspace template cache: hash (url, commit, setup_commands) → skip pip install on hits
-        template_key = _setup_cache_key(
-            task.repo.url, task.repo.commit, task.repo.setup_commands
-        )
+        template_key = _setup_cache_key(task.repo.url, task.repo.commit, task.repo.setup_commands)
         template_path = _TEMPLATE_DIR / template_key
 
         if (template_path / ".ready").exists():
@@ -110,9 +130,7 @@ class RepoManager:
                 raise RuntimeError(f"git checkout failed: {err}")
         else:
             # Slow path: clone, checkout, run setup, then cache the result
-            rc, _, err = await self._run(
-                "git", "clone", "--local", str(mirror_dir), str(workspace)
-            )
+            rc, _, err = await self._run("git", "clone", "--local", str(mirror_dir), str(workspace))
             if rc != 0:
                 raise RuntimeError(f"git clone --local failed: {err}")
 
@@ -171,6 +189,7 @@ class RepoManager:
             cwd=workspace,
             capture_output=True,
             text=True,
+            timeout=60,
         )
         return result.stdout
 
@@ -182,6 +201,7 @@ class RepoManager:
             cwd=workspace,
             capture_output=True,
             text=True,
+            timeout=60,
         )
         lines = result.stdout.strip().splitlines()
         return [line for line in lines if line]
@@ -194,6 +214,7 @@ class RepoManager:
             cwd=workspace,
             capture_output=True,
             text=True,
+            timeout=60,
         )
         total = 0
         for line in result.stdout.splitlines():

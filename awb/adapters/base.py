@@ -43,6 +43,10 @@ class ToolAdapter(abc.ABC):
     name: str  # e.g. "claude-code-vanilla"
     display_name: str  # e.g. "Claude Code (Vanilla)"
 
+    # Stub adapters set this to True so the runner can fail fast at startup
+    # instead of provisioning a workspace and then hitting NotImplementedError.
+    is_stub: bool = False
+
     @abc.abstractmethod
     async def execute(
         self,

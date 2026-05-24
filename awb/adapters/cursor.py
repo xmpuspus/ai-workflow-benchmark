@@ -10,6 +10,7 @@ from awb.adapters.base import ToolAdapter, ToolResult
 class CursorAdapter(ToolAdapter):
     name = "cursor"
     display_name = "Cursor"
+    is_stub = True
 
     async def execute(
         self,
@@ -18,10 +19,13 @@ class CursorAdapter(ToolAdapter):
         max_turns: int = 20,
         timeout_seconds: int = 1800,
     ) -> ToolResult:
-        raise NotImplementedError("Cursor adapter not yet implemented - contributions welcome")
+        raise NotImplementedError(
+            "Cursor adapter is a stub. Install Cursor Agent CLI and implement "
+            "execute() to enable. See awb/adapters/aider.py for the pattern."
+        )
 
     def check_available(self) -> bool:
-        raise NotImplementedError("Cursor adapter not yet implemented")
+        return False
 
     def get_config_hash(self) -> str:
-        return "n/a"
+        return "cursor-stub"
