@@ -2,7 +2,7 @@
   "@context": "https://doi.org/10.5063/schema/codemeta-2.0",
   "@type": "SoftwareSourceCode",
   "name": "AWB: AI Workflow Benchmark",
-  "identifier": "awb",
+  "identifier": "https://doi.org/10.5281/zenodo.20361437",
   "description": "Benchmark harness measuring AI coding tool + workflow performance (not just model capability) on 100 real-repo tasks. Sigmoid scoring across 7 dimensions, 12 capability axes, deterministic trace-grading rubrics, and a Production Readiness Score.",
   "codeRepository": "https://github.com/xmpuspus/ai-workflow-benchmark",
   "url": "https://github.com/xmpuspus/ai-workflow-benchmark",

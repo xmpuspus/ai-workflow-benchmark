@@ -6,6 +6,7 @@
     <a href="https://github.com/xmpuspus/ai-workflow-benchmark/actions"><img src="https://img.shields.io/github/actions/workflow/status/xmpuspus/ai-workflow-benchmark/test.yml" alt="Tests"></a>
     <img src="https://img.shields.io/badge/tasks-100-blue" alt="Tasks">
     <img src="https://img.shields.io/badge/python-3.11%2B-blue" alt="Python">
+    <a href="https://doi.org/10.5281/zenodo.20361437"><img src="https://zenodo.org/badge/DOI/10.5281/zenodo.20361437.svg" alt="DOI"></a>
     <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-green" alt="License"></a>
   </p>
   <br/>
@@ -517,16 +518,18 @@ See [CHANGELOG.md](CHANGELOG.md) for the full history (v1.0.0, v0.5.x, v0.4.x, v
 
 ## Citing AWB
 
-If you use AWB in research, cite the GitHub repo plus the version-specific Zenodo DOI (instructions: [docs/zenodo-doi.md](docs/zenodo-doi.md)). Machine-readable metadata lives in [CITATION.cff](CITATION.cff) and [codemeta.json](codemeta.json).
+If you use AWB in research, cite the version-specific Zenodo DOI. The concept DOI [`10.5281/zenodo.20361437`](https://doi.org/10.5281/zenodo.20361437) always resolves to the latest release; the version DOI below pins to v1.3.0 specifically. Machine-readable metadata lives in [CITATION.cff](CITATION.cff) and [codemeta.json](codemeta.json); release process is in [docs/zenodo-doi.md](docs/zenodo-doi.md).
 
 ```bibtex
-@software{puspus_awb,
+@software{puspus_awb_2026,
   author    = {Puspus, Xavier},
   title     = {{AWB: AI Workflow Benchmark}},
-  version   = {1.2.0},
+  version   = {1.3.0},
   year      = {2026},
+  month     = may,
   publisher = {Zenodo},
-  url       = {https://github.com/xmpuspus/ai-workflow-benchmark}
+  doi       = {10.5281/zenodo.20361438},
+  url       = {https://doi.org/10.5281/zenodo.20361438}
 }
 ```
 
