@@ -381,9 +381,7 @@ def run(
             for r in results
         ]
         est, margin = estimate_full_score(fast_data)
-        console.print(
-            f"\n[bold]Estimated full-suite score: {est:.0f} +/- {margin:.0f}[/bold]"
-        )
+        console.print(f"\n[bold]Estimated full-suite score: {est:.0f} +/- {margin:.0f}[/bold]")
 
     # Integrity checks
     from awb.scoring.integrity import run_integrity_checks

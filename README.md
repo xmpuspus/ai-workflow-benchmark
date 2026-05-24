@@ -1,6 +1,6 @@
 <div align="center">
   <h1>AI Workflow Benchmark (AWB)</h1>
-  <p><strong>AWB evaluates whether an AI coding workflow can safely ship real software, not whether a model can pass a static issue benchmark.</strong></p>
+  <p><strong>Benchmarks the full AI coding stack (tool, configuration, workflow, model) on 100 real-repo tasks.</strong></p>
   <p>
     <a href="https://pypi.org/project/awb/"><img src="https://img.shields.io/pypi/v/awb" alt="PyPI"></a>
     <a href="https://github.com/xmpuspus/ai-workflow-benchmark/actions"><img src="https://img.shields.io/github/actions/workflow/status/xmpuspus/ai-workflow-benchmark/test.yml" alt="Tests"></a>
@@ -9,9 +9,9 @@
     <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-green" alt="License"></a>
   </p>
   <br/>
-  <img src="demos/v12_trace_readiness.gif" alt="AWB v1.2 — fast-check run, awb trace grade behavior scores, awb leaderboard --readiness composite" width="800"/>
+  <img src="demos/hero.gif" alt="awb run, awb leaderboard --readiness, awb gap output" width="820"/>
   <br/>
-  <sub>v1.2.0: trust hashes, OpenTelemetry-aligned trace artifacts, <code>awb trace grade</code> for behavior scoring, and the Production Readiness Score.</sub>
+  <sub>v1.2.0: task-set hash, OpenTelemetry-aligned trace artifacts, <code>awb trace grade</code>, and the Production Readiness Score.</sub>
 </div>
 
 ---
@@ -102,7 +102,7 @@ Seven dimensions, sigmoid-normalized with per-task baselines derived from diffic
 
 ## The 100 Tasks
 
-Real open-source repos, pinned to release tag SHAs. Setup runs in under 15 seconds via venv + pip (Python) or npm (TypeScript).
+Real open-source repos, pinned to release tag SHAs. Setup runs in under 15 seconds via venv + pip.
 
 | Category | Count | Easy / Med / Hard | What It Tests |
 |----------|-------|-------------------|---------------|
@@ -206,8 +206,6 @@ The lift is computed per-task (configured score minus vanilla score), averaged a
 
 ### `awb run` — Run benchmark tasks
 
-<img src="demos/cli-run.gif" alt="awb run" width="600"/>
-
 ```bash
 awb run                            # all tools, all tasks, 3 runs (vanilla vs custom comparison)
 awb run claude-code-custom         # single tool
@@ -237,19 +235,11 @@ AWB v1.1 ships four execution modes tuned for different evaluation scenarios:
 
 **Fast-check** (8 representative tasks, 1 per category, reports estimated full-suite score ± margin):
 
-<img src="demos/cli-fast-check.gif" alt="awb run --fast-check" width="600"/>
-
 **Progressive** (easy → medium → hard, stops if easy pass rate < 40% or medium < 20%):
-
-<img src="demos/cli-progressive.gif" alt="awb run --progressive" width="600"/>
 
 **`--use-uv`** (rewrites `pip install` → `uv pip install` for 10-30x faster installs):
 
-<img src="demos/cli-use-uv.gif" alt="awb run --use-uv" width="600"/>
-
 ### `awb warmup` — Pre-build workspace templates
-
-<img src="demos/cli-warmup.gif" alt="awb warmup" width="600"/>
 
 ```bash
 awb warmup              # build templates for all 63 unique (repo, commit, setup) combos
@@ -262,43 +252,29 @@ Workspace templates are cached at `~/.cache/awb/templates/`. First build takes ~
 
 ### `awb gap` — Capability gap analysis
 
-<img src="demos/cli-gap.gif" alt="awb gap" width="600"/>
-
 Analyzes results to produce a capability radar, failure classification, systematic patterns, and ranked improvement suggestions.
 
 ### `awb compare` — Compare two runs
-
-<img src="demos/cli-compare.gif" alt="awb compare" width="600"/>
 
 Side-by-side comparison of two benchmark runs with significance testing.
 
 ### `awb tools` — List adapters
 
-<img src="demos/cli-tools.gif" alt="awb tools" width="600"/>
-
 Shows all registered tool adapters and their availability status.
 
 ### `awb validate` — Validate task YAMLs
-
-<img src="demos/cli-validate.gif" alt="awb validate" width="600"/>
 
 Checks all 100 task YAML files against the schema, including partial credit sum-to-100 validation.
 
 ### `awb info` — Task details
 
-<img src="demos/cli-info.gif" alt="awb info" width="600"/>
-
 Displays full details for a specific task including repo, capabilities, and partial credit rubric.
 
 ### `awb stability` — Score stability report
 
-<img src="demos/cli-stability.gif" alt="awb stability" width="600"/>
-
 Per-task score variance across multiple runs. Flags unstable tasks for prompt clarification or tighter verification.
 
 ### `awb leaderboard` — Generate HTML leaderboard
-
-<img src="demos/cli-leaderboard.gif" alt="awb leaderboard" width="600"/>
 
 Generates a static HTML site with Chart.js radar chart, CSV export, and historical run tracking.
 
@@ -317,13 +293,9 @@ Every benchmark run writes a `<task_id>_<tool>.trace.jsonl` file using OpenTelem
 
 ### `awb calibrate-difficulty` — Recalibrate difficulty labels
 
-<img src="demos/cli-calibrate-difficulty.gif" alt="awb calibrate-difficulty" width="600"/>
-
 Recalibrates task difficulty labels from empirical pass rates. Use `--apply` to write changes back to task YAMLs.
 
 ### `awb calibrate-timeouts` — Tighten timeouts
-
-<img src="demos/cli-calibrate-timeouts.gif" alt="awb calibrate-timeouts" width="600"/>
 
 Recomputes task timeouts from empirical p95 wall-clock data. Use `--apply` to write changes.
 
@@ -331,14 +303,14 @@ Recomputes task timeouts from empirical p95 wall-clock data. Use `--apply` to wr
 
 | Command | Description | Demo |
 |---------|-------------|------|
-| `awb quickstart` | Verify setup: tools available, tasks load | <a href="demos/cli-quickstart.gif">demo</a> |
-| `awb export <run_dir> -o file.json` | Export results in submission format | <a href="demos/cli-export.gif">demo</a> |
-| `awb submit <file.json>` | Validate an external submission | <a href="demos/cli-submit.gif">demo</a> |
-| `awb compare-submissions <a> <b>` | Cross-tool comparison with statistics | <a href="demos/cli-compare-submissions.gif">demo</a> |
-| `awb migrate-results <old_dir>` | Convert v0.5.x results to v1.0 format | <a href="demos/cli-migrate.gif">demo</a> |
-| `awb workflow <subcommand>` | Export, validate, diff, or init descriptors | <a href="demos/cli-workflow.gif">demo</a> |
-| `awb --version` | Show version | <a href="demos/cli-version.gif">demo</a> |
-| `awb run --dry-run` | Preview tasks without executing | <a href="demos/cli-run-dryrun.gif">demo</a> |
+| `awb quickstart` | Verify setup: tools available, tasks load | - |
+| `awb export <run_dir> -o file.json` | Export results in submission format | - |
+| `awb submit <file.json>` | Validate an external submission | - |
+| `awb compare-submissions <a> <b>` | Cross-tool comparison with statistics | - |
+| `awb migrate-results <old_dir>` | Convert v0.5.x results to v1.0 format | - |
+| `awb workflow <subcommand>` | Export, validate, diff, or init descriptors | - |
+| `awb --version` | Show version | - |
+| `awb run --dry-run` | Preview tasks without executing | - |
 
 ## Adding Tasks
 

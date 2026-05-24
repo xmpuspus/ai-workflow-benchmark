@@ -13,7 +13,14 @@ from awb.commands._shared import console
 
 @click.command()
 @click.option("--task-dir", type=click.Path(exists=True), help="Tasks directory")
-def validate(task_dir: str | None):
+@click.option(
+    "-v",
+    "--verbose",
+    is_flag=True,
+    default=False,
+    help="Print PASS/FAIL per file. Default is one-line summary.",
+)
+def validate(task_dir: str | None, verbose: bool):
     """Validate all task YAML files against the schema."""
     from awb.core.config import TASKS_DIR
     from awb.core.task_loader import validate_task_yaml
@@ -26,22 +33,33 @@ def validate(task_dir: str | None):
         console.print("[yellow]No task YAML files found[/yellow]")
         return
 
-    errors_found = False
+    failures: list[tuple[Path, list[str]]] = []
     for path in task_files:
         errors = validate_task_yaml(path)
         rel = path.relative_to(tasks_path)
         if errors:
-            errors_found = True
-            console.print(f"[red]FAIL[/red] {rel}")
-            for e in errors:
-                console.print(f"  - {e}")
-        else:
+            failures.append((rel, errors))
+            if verbose:
+                console.print(f"[red]FAIL[/red] {rel}")
+                for e in errors:
+                    console.print(f"  - {e}")
+        elif verbose:
             console.print(f"[green]PASS[/green] {rel}")
 
-    if errors_found:
+    total = len(task_files)
+    ok = total - len(failures)
+    if failures:
+        if not verbose:
+            for rel, errors in failures:
+                console.print(f"[red]FAIL[/red] {rel}")
+                for e in errors:
+                    console.print(f"  - {e}")
+        console.print(
+            f"\n[red]{len(failures)}/{total} failed[/red], [green]{ok}/{total} valid[/green]"
+        )
         sys.exit(1)
     else:
-        console.print(f"\n[green]All {len(task_files)} tasks valid[/green]")
+        console.print(f"[green]{ok}/{total} tasks valid[/green]")
 
 
 @click.command()
