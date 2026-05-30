@@ -84,6 +84,8 @@ Clone repo at pinned SHA
 
 Each task starts from a fresh `git clone` at a pinned commit. Every tool gets the same prompt, the same timeout, and the same verification suite. Results are scored with sigmoid normalization so scores are never negative and never collapse at the boundary.
 
+> **Security:** AWB clones third-party repos and runs their setup/test code plus the AI tool with no sandbox. Treat task sets and their repos as trusted input and run in a disposable environment. See [docs/SECURITY.md](docs/SECURITY.md) for the trust boundary and the planned per-task Docker isolation.
+
 ## Scoring System
 
 Seven dimensions, sigmoid-normalized with per-task baselines derived from difficulty:
