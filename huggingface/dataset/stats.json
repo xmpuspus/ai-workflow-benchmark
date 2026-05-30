@@ -1,0 +1,52 @@
+{
+  "n_tasks": 100,
+  "task_set_hash": "dd122b27a82893ad0591abc7d226dd4b1abe2048e94d3db9e8da0075ad6c1db9",
+  "categories": {
+    "bug-fix": 12,
+    "code-review": 9,
+    "debugging": 10,
+    "feature-addition": 9,
+    "legacy-code": 12,
+    "multi-file": 7,
+    "refactoring": 11,
+    "workflow": 30
+  },
+  "difficulty": {
+    "medium": 17,
+    "hard": 35,
+    "easy": 48
+  },
+  "languages": {
+    "python": 98,
+    "markdown": 1,
+    "dockerfile": 1,
+    "yaml": 2,
+    "docker": 1
+  },
+  "capabilities": {
+    "framework_knowledge": 36,
+    "test_writing": 12,
+    "bug_diagnosis": 27,
+    "multi_file_reasoning": 22,
+    "code_comprehension": 45,
+    "security_awareness": 10,
+    "refactoring_discipline": 29,
+    "completeness_tracking": 4,
+    "security_methodology": 5,
+    "convention_adherence": 8,
+    "context_discovery": 5
+  },
+  "repos": {
+    "https://github.com/tiangolo/fastapi": 74,
+    "https://github.com/encode/httpx": 17,
+    "https://github.com/pallets/flask": 4,
+    "https://github.com/pallets/click": 4,
+    "https://github.com/encode/starlette": 1
+  },
+  "labels": {
+    "synthetic_overlay": 100
+  },
+  "contamination_risk": {
+    "high": 100
+  }
+}
