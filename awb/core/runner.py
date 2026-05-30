@@ -26,7 +26,8 @@ from awb.core.repo_manager import RepoManager
 from awb.core.results import ResultRecorder
 from awb.core.timeout import TaskTimeoutError, run_with_timeout
 from awb.scoring.integrity import compute_task_set_hash
-from awb.trace import LLM_REQUEST, TOOL_USE, TraceWriter, new_span
+from awb.trace import TraceWriter
+from awb.trace.translate import TraceTranslator
 from awb.verification.lint_checker import count_lint_issues
 from awb.verification.partial_credit import evaluate_partial_credit
 from awb.verification.security_scanner import count_security_issues
@@ -386,6 +387,9 @@ class BenchmarkRunner:
         trace_rel = f"{task.id}_{self.tool}.trace.jsonl"
         trace_path = run_dir / trace_rel
         trace_writer = TraceWriter(trace_path)
+        # Workspace root is set once the repo is prepared (below) so file spans
+        # carry repo-relative paths that match the task's files_to_examine.
+        translator = TraceTranslator(trace_writer, task.id)
 
         # Token budget callback for streaming enforcement
         budget_exceeded = False
@@ -393,7 +397,7 @@ class BenchmarkRunner:
         def _on_event(event: dict) -> bool | None:
             nonlocal budget_exceeded
             collector.parse_stream_event(event)
-            _emit_span_for_event(trace_writer, event, task.id)
+            translator.handle(event)
             # Check token budget if set
             max_in = task.constraints.max_input_tokens
             max_out = task.constraints.max_output_tokens
@@ -420,6 +424,8 @@ class BenchmarkRunner:
         try:
             # 1. Prepare workspace (run_id scopes the path for concurrent safety)
             workspace = await self.repo_manager.prepare(task, run_id=run_id)
+            # File-edit spans now relativize paths against the real workspace.
+            translator.workspace_root = str(workspace)
 
             # 2. Baseline lint/security counts
             baseline_lint = await _count_baseline("lint", task, workspace)
@@ -581,34 +587,3 @@ async def _count_baseline(kind: str, task: TaskDefinition, workspace: Path) -> i
     except Exception as exc:
         log.debug("Baseline %s count failed: %s", kind, exc)
     return 0
-
-
-def _emit_span_for_event(writer: TraceWriter, event: dict, task_id: str) -> None:
-    """Translate a Claude-Code stream event into one OTel-aligned span.
-
-    Best-effort and non-fatal: trace persistence must never crash a benchmark
-    run. Quietly skips events that don't map to a known span shape.
-    """
-    if not isinstance(event, dict):
-        return
-    try:
-        event_type = event.get("type", "")
-        if event_type == "assistant":
-            usage = (event.get("message") or {}).get("usage") or {}
-            attrs: dict = {"task.id": task_id, "gen_ai.system": "anthropic"}
-            for src, dst in (
-                ("input_tokens", "gen_ai.usage.input_tokens"),
-                ("output_tokens", "gen_ai.usage.output_tokens"),
-                ("cache_read_input_tokens", "gen_ai.usage.cache_read_input_tokens"),
-                ("cache_creation_input_tokens", "gen_ai.usage.cache_creation_input_tokens"),
-            ):
-                if src in usage:
-                    attrs[dst] = usage[src]
-            writer.write(new_span(LLM_REQUEST, attributes=attrs))
-        elif event_type == "tool_use":
-            tool_name = event.get("tool") or event.get("name") or "unknown"
-            writer.write(
-                new_span(TOOL_USE, attributes={"task.id": task_id, "gen_ai.tool.name": tool_name})
-            )
-    except Exception as exc:
-        log.debug("Trace span emit failed (non-fatal): %s", exc)
