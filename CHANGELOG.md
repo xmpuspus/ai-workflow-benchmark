@@ -1,6 +1,12 @@
 # Changelog
 
-## Unreleased
+## 1.4.0 (2026-05-30)
+
+Trust-fix release from a fresh product audit. The headline differentiator —
+deterministic trace grading — was scoring 100 on every run because the runner
+never emitted the spans the rubrics needed. This release makes the grader
+actually grade (validated against a real fast-check run), fixes two silent
+data-loss bugs in the runner, and tightens the storefront.
 
 ### Fixed
 
@@ -23,11 +29,13 @@
 
 - **Baseline export carries trust columns**: per-run `trace_grade` (null when a
   trace has no gradeable spans, so non-streaming tools don't get a fake 100)
-  and a submission-level `readiness` block + `trace_summary`.
+  and a submission-level `readiness` block + `trace_summary`. The published
+  `claude-code-custom-1.4.0-fast-check.json` now ships real, discriminating
+  trace grades (`no_out_of_scope_edits` ranges 17-100 across the 8 tasks).
 - **`grade_trace_or_none`** distinguishes a span-less trace from a genuinely
   perfect one. `readiness_from_results` is shared by the leaderboard and export.
 - **Shell-execution trust boundary documented** in `docs/SECURITY.md`, with
-  Docker isolation scoped for v1.4.
+  per-task Docker isolation scoped as the next step toward community submissions.
 
 ### Changed
 
@@ -35,7 +43,10 @@
   installed. Aider's `--no-stream` means no trace spans, so its trace columns
   report `null`.
 - **Runtime dependencies are exact-pinned** for reproducible installs.
-- README refreshed to v1.3.0 (lead, install pin, baseline reference).
+- **Trace `file.path` is relativized through symlinked workspaces** (macOS
+  `/tmp` -> `/private/tmp`), and `no_out_of_scope_edits` honors directory
+  entries (`tests/`) in `files_to_examine` instead of exact-set membership.
+- README refreshed to v1.4.0 (lead, install pin, baseline reference).
 
 ## 1.3.0 (2026-05-24)
 

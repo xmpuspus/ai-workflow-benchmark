@@ -2,7 +2,7 @@
   "spec_version": "awb/v2",
   "submission": {
     "submitter": "anonymous",
-    "submitted_at": "2026-05-30T12:07:17.126927+00:00",
+    "submitted_at": "2026-05-30T12:43:44.714109+00:00",
     "tool": {
       "name": "claude-code-custom",
       "version": "2.1.156 (Claude Code) + 202 hooks + 0 agents + 28 skills"
@@ -15,7 +15,7 @@
       "hardware_class": "other",
       "hardware_detail": "Apple M5, 24GB"
     },
-    "awb_version": "1.3.0",
+    "awb_version": "1.4.0",
     "readiness": {
       "composite": 86.0,
       "correctness": 75.0,
