@@ -1,4 +1,4 @@
-"""Aider CLI adapter (placeholder)."""
+"""Aider CLI adapter."""
 
 from __future__ import annotations
 
@@ -10,15 +10,17 @@ from awb.adapters.base import ToolAdapter, ToolResult
 class AiderAdapter(ToolAdapter):
     """Aider CLI adapter.
 
-    Aider has a documented CLI: `aider --message <prompt> --yes --no-stream`.
-    A full implementation lives in this file (see execute() below); set
-    is_stub = False once Aider is installed and you have validated the
-    end-to-end run.
+    Real implementation over Aider's documented CLI:
+    `aider --message <prompt> --yes --no-stream`. `check_available()` gates on
+    the binary, so a missing Aider reports unavailable rather than crashing.
+    Note: `--no-stream` means Aider emits no incremental tool events, so its
+    `.trace.jsonl` has no gradeable spans and trace-grade columns show n/a for
+    Aider runs (see grade_trace_or_none).
     """
 
     name = "aider"
     display_name = "Aider"
-    is_stub = True  # flip to False once validated end-to-end on real tasks
+    is_stub = False
 
     async def execute(
         self,

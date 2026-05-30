@@ -1,5 +1,53 @@
 # Changelog
 
+## 1.4.0 (2026-05-30)
+
+Trust-fix release from a fresh product audit. The headline differentiator —
+deterministic trace grading — was scoring 100 on every run because the runner
+never emitted the spans the rubrics needed. This release makes the grader
+actually grade (validated against a real fast-check run), fixes two silent
+data-loss bugs in the runner, and tightens the storefront.
+
+### Fixed
+
+- **Trace grader was vacuous in production.** The runner only emitted
+  `LLM_REQUEST` spans (plus a legacy top-level `tool_use` path real Claude Code
+  never produces), so all four trace-grade rubrics fell through to their
+  trivial-pass branches and scored 100 on every run. A new `TraceTranslator`
+  walks the nested `tool_use` blocks in `assistant` content, emits
+  `FILE_EDIT` / read `TOOL_USE` / `SHELL_COMMAND` spans, and correlates Bash
+  exit codes from `tool_result` events. File paths are relativized against the
+  workspace so `no_out_of_scope_edits` matches `files_to_examine`.
+- **`-j N` was a silent no-op** without `--parallel`. `-j>1` now enables
+  parallel mode on its own; `--parallel` alone fans out to 4; default stays
+  sequential (`-j 1`).
+- **Parallel-task crashes vanished from results.** A task that raised on the
+  parallel path was only logged; it is now recorded as a FAIL with a
+  traceback, and stub/usage errors abort the run like the sequential path.
+
+### Added
+
+- **Baseline export carries trust columns**: per-run `trace_grade` (null when a
+  trace has no gradeable spans, so non-streaming tools don't get a fake 100)
+  and a submission-level `readiness` block + `trace_summary`. The published
+  `claude-code-custom-1.4.0-fast-check.json` now ships real, discriminating
+  trace grades (`no_out_of_scope_edits` ranges 17-100 across the 8 tasks).
+- **`grade_trace_or_none`** distinguishes a span-less trace from a genuinely
+  perfect one. `readiness_from_results` is shared by the leaderboard and export.
+- **Shell-execution trust boundary documented** in `docs/SECURITY.md`, with
+  per-task Docker isolation scoped as the next step toward community submissions.
+
+### Changed
+
+- **Aider is a real adapter** (`is_stub = False`); it gates on the binary being
+  installed. Aider's `--no-stream` means no trace spans, so its trace columns
+  report `null`.
+- **Runtime dependencies are exact-pinned** for reproducible installs.
+- **Trace `file.path` is relativized through symlinked workspaces** (macOS
+  `/tmp` -> `/private/tmp`), and `no_out_of_scope_edits` honors directory
+  entries (`tests/`) in `files_to_examine` instead of exact-set membership.
+- README refreshed to v1.4.0 (lead, install pin, baseline reference).
+
 ## 1.3.0 (2026-05-24)
 
 Storefront and trust release: fixes credibility leaks in the docs, adds real

@@ -12,55 +12,77 @@ from rich.table import Table
 from awb.commands._shared import console
 
 
-@click.command()
-@click.argument("run_dir", type=click.Path(exists=True))
-@click.option("--output", "-o", type=click.Path(), default="submission.json", help="Output file")
-@click.option("--submitter", default="anonymous", help="Submitter name")
-def export(run_dir: str, output: str, submitter: str):
-    """Export benchmark results as a shareable submission JSON."""
-    import json
+def _mean_trace_summary(trace_grades: list) -> dict | None:
+    """Mean of each rubric across runs that produced a gradeable trace."""
+    graded = [g for g in trace_grades if g is not None]
+    if not graded:
+        return None
+    keys = (
+        "read_tests_before_edit",
+        "ran_verification_after_change",
+        "no_out_of_scope_edits",
+        "no_repeated_failing_command_loop",
+    )
+    return {k: round(sum(g[k] for g in graded) / len(graded), 1) for k in keys}
+
+
+def _load_task_defs() -> dict:
+    """Map task_id -> TaskDefinition for files_to_examine lookups. Best-effort."""
+    try:
+        from awb.core.task_loader import load_all_tasks
+
+        return {t.id: t for t in load_all_tasks()}
+    except Exception:
+        return {}
+
+
+def build_submission(results: list, run_dir: Path, task_defs: dict, submitter: str) -> dict:
+    """Assemble the shareable submission dict from a run's results.
+
+    Embeds per-run trace grades (null when the trace has no gradeable spans, so
+    a non-streaming tool doesn't get a fake 100) and a submission-level
+    Production Readiness block, so a regenerated baseline showcases both
+    flagship trust features.
+    """
     from datetime import datetime
 
     from awb import __version__
-    from awb.core.results import ResultRecorder
-
-    recorder = ResultRecorder()
-    results = recorder.load_run(Path(run_dir))
-    if not results:
-        console.print("[red]No results found[/red]")
-        sys.exit(1)
+    from awb.scoring.readiness import readiness_from_results
+    from awb.trace.grader import grade_trace_or_none
 
     by_task: dict = {}
     for r in results:
-        if r.task_id not in by_task:
-            by_task[r.task_id] = []
-        by_task[r.task_id].append(r)
+        by_task.setdefault(r.task_id, []).append(r)
 
+    all_trace_grades: list = []
     submission = {
         "spec_version": "awb/v2",
         "submission": {
             "submitter": submitter,
             "submitted_at": datetime.now(UTC).isoformat(),
-            "tool": {
-                "name": results[0].tool,
-                "version": results[0].tool_version,
-            },
-            "model": {
-                "name": results[0].model or "unknown",
-            },
+            "tool": {"name": results[0].tool, "version": results[0].tool_version},
+            "model": {"name": results[0].model or "unknown"},
             "environment": {
                 "os": results[0].environment.os,
                 "hardware_class": "other",
                 "hardware_detail": results[0].environment.hardware,
             },
             "awb_version": __version__,
+            "readiness": readiness_from_results(results),
         },
         "results": [],
     }
 
     for task_id, task_results in sorted(by_task.items()):
+        files_to_examine = getattr(task_defs.get(task_id), "files_to_examine", []) or []
         runs = []
         for i, r in enumerate(task_results, 1):
+            trace_grade = None
+            if r.trace_path:
+                trace_grade = grade_trace_or_none(
+                    run_dir / r.trace_path, files_to_examine=files_to_examine
+                )
+            all_trace_grades.append(trace_grade)
             runs.append(
                 {
                     "run_number": i,
@@ -85,10 +107,33 @@ def export(run_dir: str, output: str, submitter: str):
                         "security_delta": r.quality.security_delta,
                         "test_regressions": r.quality.test_regressions,
                     },
+                    "trace_grade": trace_grade,
                 }
             )
         submission["results"].append({"task_id": task_id, "runs": runs})
 
+    submission["submission"]["trace_summary"] = _mean_trace_summary(all_trace_grades)
+    return submission
+
+
+@click.command()
+@click.argument("run_dir", type=click.Path(exists=True))
+@click.option("--output", "-o", type=click.Path(), default="submission.json", help="Output file")
+@click.option("--submitter", default="anonymous", help="Submitter name")
+def export(run_dir: str, output: str, submitter: str):
+    """Export benchmark results as a shareable submission JSON."""
+    import json
+
+    from awb.core.results import ResultRecorder
+
+    recorder = ResultRecorder()
+    run_path = Path(run_dir)
+    results = recorder.load_run(run_path)
+    if not results:
+        console.print("[red]No results found[/red]")
+        sys.exit(1)
+
+    submission = build_submission(results, run_path, _load_task_defs(), submitter)
     out = Path(output)
     out.write_text(json.dumps(submission, indent=2))
     console.print(f"Exported {len(results)} result(s) to [bold]{out}[/bold]")

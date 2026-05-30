@@ -11,12 +11,23 @@ from rich.table import Table
 
 from awb.commands._shared import INFO, MUTED, console, emit_json, score_style
 
-# Named constants for the heuristic mapping from RunResult fields onto the
-# 7 readiness dimensions. Extract so they're documented + tunable in one place.
-REVIEW_BURDEN_FILES_TO_ZERO = 50.0  # ~50 modified files -> ~0 review-burden score
-MAINTAINABILITY_LINT_TO_ZERO = 20.0  # 20+ new lint warnings -> ~0 maintainability
-COST_USD_TO_ZERO = 5.0  # $5 per task -> ~0 cost score
-SPEED_SECONDS_TO_ZERO = 1800.0  # 30 min -> ~0 speed score
+# Heuristic thresholds for mapping RunResult fields onto the 7 readiness
+# dimensions. Single source of truth lives in awb.scoring.readiness; re-exported
+# here because this is where they're documented + tuned.
+from awb.scoring.readiness import (  # noqa: E402
+    COST_USD_TO_ZERO,
+    MAINTAINABILITY_LINT_TO_ZERO,
+    REVIEW_BURDEN_FILES_TO_ZERO,
+    SPEED_SECONDS_TO_ZERO,
+)
+
+__all__ = [
+    "COST_USD_TO_ZERO",
+    "MAINTAINABILITY_LINT_TO_ZERO",
+    "REVIEW_BURDEN_FILES_TO_ZERO",
+    "SPEED_SECONDS_TO_ZERO",
+    "leaderboard",
+]
 
 
 @dataclass
@@ -77,7 +88,7 @@ def leaderboard(output_dir: str | None, readiness: bool, explain: bool, fmt: str
 
 def _compute_readiness_scores() -> list[ToolReadiness]:
     from awb.core.results import ResultRecorder
-    from awb.scoring.readiness import compute_readiness_score
+    from awb.scoring.readiness import readiness_from_results
 
     recorder = ResultRecorder()
     runs = recorder.load_all_runs()
@@ -87,55 +98,19 @@ def _compute_readiness_scores() -> list[ToolReadiness]:
             by_tool.setdefault(r.tool, []).append(r)
     out: list[ToolReadiness] = []
     for tool in sorted(by_tool):
-        results = by_tool[tool]
-        n = len(results) or 1
-
-        def _mean(fn, _results=results, _n=n):
-            return sum(fn(r) for r in _results) / _n
-
-        correctness = 100.0 * sum(1 for r in results if r.outcome.success) / n
-        regression_safety = 100.0 * sum(1 for r in results if r.quality.test_regressions == 0) / n
-        security = 100.0 * sum(1 for r in results if r.quality.security_delta <= 0) / n
-        review_burden = max(
-            0.0,
-            100.0 - 100.0 * _mean(lambda r: r.metrics.files_modified) / REVIEW_BURDEN_FILES_TO_ZERO,
-        )
-        maintainability = max(
-            0.0,
-            100.0
-            - 100.0
-            * max(0.0, _mean(lambda r: r.quality.lint_delta))
-            / MAINTAINABILITY_LINT_TO_ZERO,
-        )
-        cost_score = max(
-            0.0,
-            100.0 - 100.0 * _mean(lambda r: r.cost.estimated_cost_usd) / COST_USD_TO_ZERO,
-        )
-        speed = max(
-            0.0,
-            100.0 - 100.0 * _mean(lambda r: r.metrics.wall_clock_seconds) / SPEED_SECONDS_TO_ZERO,
-        )
-        composite = compute_readiness_score(
-            correctness=correctness,
-            regression_safety=regression_safety,
-            security=security,
-            review_burden=review_burden,
-            maintainability=maintainability,
-            cost=cost_score,
-            speed=speed,
-        )
+        d = readiness_from_results(by_tool[tool])
         out.append(
             ToolReadiness(
                 tool=tool,
-                n_results=n,
-                composite=composite,
-                correctness=correctness,
-                regression_safety=regression_safety,
-                security=security,
-                review_burden=review_burden,
-                maintainability=maintainability,
-                cost=cost_score,
-                speed=speed,
+                n_results=d["n_results"] or 1,
+                composite=d["composite"],
+                correctness=d["correctness"],
+                regression_safety=d["regression_safety"],
+                security=d["security"],
+                review_burden=d["review_burden"],
+                maintainability=d["maintainability"],
+                cost=d["cost"],
+                speed=d["speed"],
             )
         )
     out.sort(key=lambda s: -s.composite)

@@ -9,6 +9,7 @@ from awb.trace.spans import (
     TOOL_USE,
     new_span,
 )
+from awb.trace.translate import TraceTranslator
 
 __all__ = [
     "FILE_EDIT",
@@ -16,6 +17,7 @@ __all__ = [
     "SHELL_COMMAND",
     "TEST_RUN",
     "TOOL_USE",
+    "TraceTranslator",
     "TraceWriter",
     "load_trace",
     "new_span",

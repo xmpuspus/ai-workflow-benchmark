@@ -12,7 +12,7 @@
   <br/>
   <img src="demos/hero.gif" alt="awb run, awb leaderboard --readiness, awb gap output" width="820"/>
   <br/>
-  <sub>v1.2.0: task-set hash, OpenTelemetry-aligned trace artifacts, <code>awb trace grade</code>, and the Production Readiness Score.</sub>
+  <sub>v1.4.0: trace grading that actually grades, baselines with trust columns, real <code>-j</code> parallelism, and a documented security boundary.</sub>
 </div>
 
 ---
@@ -29,15 +29,16 @@ Related work measures complementary axes. [HAL](https://arxiv.org/abs/2510.11977
 
 AWB's distinct contribution is twofold: (1) a paired **vanilla-vs-custom** adapter pair that isolates the workflow-configuration delta for the same model, surfaced as a single Workflow Lift score with a sign-test p-value; (2) **deterministic** trace-grading rubrics (read-tests-before-edit, ran-verification-after-change, no-out-of-scope-edits, no-repeated-failing-loop) computed from OpenTelemetry-aligned `.trace.jsonl` artifacts, not LLM judges. See [METHODOLOGY.md#related-work](METHODOLOGY.md#related-work) for citation details.
 
-## What's New in v1.2.0
+## What's New in v1.4.0
 
-- **Task-set hash on every result** (`task_set_hash`, SHA-256 over the bundled task YAMLs) so you can prove which exact task set produced a given score.
-- **OpenTelemetry-aligned trace artifact**: every benchmark run writes a `.trace.jsonl` file using OTel GenAI semantic conventions (`gen_ai.client.operation`, `gen_ai.tool.use`) plus AWB-specific spans for shell commands, file edits, and test runs.
-- **`awb trace grade <run_dir>`** scores four shipping disciplines from the trace: read-tests-before-edit, ran-verification-after-change, no-out-of-scope-edits, no-repeated-failing-command-loop.
-- **Production Readiness Score** (`awb leaderboard --readiness`): weighted composite over 7 dimensions, calibrated for shipping safety.
-- **Strict result schema v2** (`additionalProperties: false`, required `schema_version`, `task_set_hash`). `awb migrate-results` extends to v1→v2.
-- **Task provenance fields**: optional `provenance.{source_pr_url, created_at, last_verified_at}`, `contamination_risk`, `label` (`real_pr` / `synthetic_overlay` / `mutated` / `fresh`) lay the groundwork for fresh-task harvesting in v1.3.
-- **Seven P0 trust blockers fixed**: token-budget fields now parse correctly, workflow schema enum matches the 9-adapter registry, setup cache key is order-sensitive, missing security scanners surface a warning instead of silently passing as clean, adapter `on_event` is properly typed as `Callable`, gap analysis classifies `regression_introduced` and `no_edits_made` separately.
+- **Trace grading actually grades now.** The runner used to emit only token spans, so all four trace rubrics scored a vacuous 100 on every run. It now translates Claude Code's nested `tool_use` blocks into `FILE_EDIT` / read / `SHELL_COMMAND` spans and correlates Bash exit codes — producing real, discriminating scores (the published baseline's `no_out_of_scope_edits` ranges 17-100 across the 8 tasks).
+- **Baselines carry the trust columns**: per-run `trace_grade` and a submission-level `readiness` + `trace_summary` block, so the published baseline showcases both flagship trust features. A span-less trace reports `null`, never a fake 100.
+- **`-j N` works on its own.** `-j>1` enables parallel mode (it used to be a silent no-op without `--parallel`); a crashed parallel task is now recorded as a FAIL with a traceback instead of vanishing from results.
+- **Aider is a real adapter** (`is_stub = False`), gated on the binary being installed.
+- **Exact-pinned runtime dependencies** for reproducible installs, plus invariant guard tests so the README lead, install pin, and baseline reference can't silently drift.
+- **Security posture documented** in [docs/SECURITY.md](docs/SECURITY.md): the shell-execution trust boundary and the per-task Docker isolation planned for safe community submissions.
+
+Carried over from v1.2.0-v1.3.0: public GitHub Pages leaderboard, task-set hash on every result, OpenTelemetry-aligned `.trace.jsonl` artifacts, `awb trace grade`, the Production Readiness Score, strict result schema v2, and reliability + provenance hardening.
 
 ## Quick Start
 
@@ -54,10 +55,10 @@ awb leaderboard --readiness --explain                 # Production Readiness Sco
 
 ### Five-minute reproducible demo
 
-Run this end-to-end against the published v1.2.0 baseline. Should finish in ~15 minutes for ~$4 of API spend and produce a tweetable Workflow Lift number plus a capability profile.
+Run this end-to-end against the published v1.4.0 fast-check baseline. Should finish in ~15 minutes for ~$4 of API spend and produce a tweetable Workflow Lift number plus a capability profile.
 
 ```bash
-pip install awb==1.2.0
+pip install awb==1.4.0
 awb quickstart                                       # 1. verify environment
 awb warmup --use-uv                                  # 2. pre-build templates
 awb run --fast-check claude-code-custom              # 3. ~15 min, ~$4, real run
@@ -65,7 +66,7 @@ awb leaderboard --readiness --explain                # 4. composite readiness sc
 awb trace grade results/runs/<run_id>/               # 5. behavior rubric scores
 ```
 
-Compare against the published baseline at `results/baselines/claude-code-custom-1.2.0.json`. Same `task_set_hash` means your numbers are directly comparable.
+Compare against the published baseline at `results/baselines/claude-code-custom-1.4.0-fast-check.json`. Same `task_set_hash` means your numbers are directly comparable.
 
 **New in v1.1.0:** `awb warmup` caches workspaces for 10-30x faster setup. `--fast-check` gives a quick signal in 15 min for ~$4. `--progressive` stops early on weak tools. `--use-uv` swaps pip for uv. See [Execution Modes](#execution-modes) below.
 
@@ -82,6 +83,8 @@ Clone repo at pinned SHA
 ```
 
 Each task starts from a fresh `git clone` at a pinned commit. Every tool gets the same prompt, the same timeout, and the same verification suite. Results are scored with sigmoid normalization so scores are never negative and never collapse at the boundary.
+
+> **Security:** AWB clones third-party repos and runs their setup/test code plus the AI tool with no sandbox. Treat task sets and their repos as trusted input and run in a disposable environment. See [docs/SECURITY.md](docs/SECURITY.md) for the trust boundary and the planned per-task Docker isolation.
 
 ## Scoring System
 
@@ -518,18 +521,18 @@ See [CHANGELOG.md](CHANGELOG.md) for the full history (v1.0.0, v0.5.x, v0.4.x, v
 
 ## Citing AWB
 
-If you use AWB in research, cite the version-specific Zenodo DOI. The concept DOI [`10.5281/zenodo.20361437`](https://doi.org/10.5281/zenodo.20361437) always resolves to the latest release; the version DOI below pins to v1.3.0 specifically. Machine-readable metadata lives in [CITATION.cff](CITATION.cff) and [codemeta.json](codemeta.json); release process is in [docs/zenodo-doi.md](docs/zenodo-doi.md).
+If you use AWB in research, cite it via Zenodo. The concept DOI [`10.5281/zenodo.20361437`](https://doi.org/10.5281/zenodo.20361437) always resolves to the latest release; each release also mints a version-specific DOI listed on the Zenodo record. Machine-readable metadata lives in [CITATION.cff](CITATION.cff) and [codemeta.json](codemeta.json); release process is in [docs/zenodo-doi.md](docs/zenodo-doi.md).
 
 ```bibtex
 @software{puspus_awb_2026,
   author    = {Puspus, Xavier},
   title     = {{AWB: AI Workflow Benchmark}},
-  version   = {1.3.0},
+  version   = {1.4.0},
   year      = {2026},
   month     = may,
   publisher = {Zenodo},
-  doi       = {10.5281/zenodo.20361438},
-  url       = {https://doi.org/10.5281/zenodo.20361438}
+  doi       = {10.5281/zenodo.20361437},
+  url       = {https://doi.org/10.5281/zenodo.20361437}
 }
 ```
 

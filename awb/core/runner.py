@@ -26,7 +26,8 @@ from awb.core.repo_manager import RepoManager
 from awb.core.results import ResultRecorder
 from awb.core.timeout import TaskTimeoutError, run_with_timeout
 from awb.scoring.integrity import compute_task_set_hash
-from awb.trace import LLM_REQUEST, TOOL_USE, TraceWriter, new_span
+from awb.trace import TraceWriter
+from awb.trace.translate import TraceTranslator
 from awb.verification.lint_checker import count_lint_issues
 from awb.verification.partial_credit import evaluate_partial_credit
 from awb.verification.security_scanner import count_security_issues
@@ -41,6 +42,22 @@ _ADAPTIVE_RERUN_MIN = 60
 # Progressive mode thresholds
 _PROGRESSIVE_EASY_MIN_PASS_RATE = 0.40
 _PROGRESSIVE_MEDIUM_MIN_PASS_RATE = 0.20
+
+# Fan-out used when --parallel is passed without an explicit -j value.
+_DEFAULT_PARALLEL_FANOUT = 4
+
+
+def resolve_parallelism(parallel: bool, concurrency: int) -> tuple[bool, int]:
+    """Decide whether to run in parallel and at what concurrency.
+
+    `-j N` (N>1) is itself a request to parallelize, so it no longer silently
+    no-ops when `--parallel` is absent. `--parallel` on its own picks a sane
+    fan-out. Default (sequential) is preserved: parallel=False, concurrency=1.
+    """
+    if parallel and concurrency <= 1:
+        concurrency = _DEFAULT_PARALLEL_FANOUT
+    enabled = parallel or concurrency > 1
+    return enabled, concurrency
 
 
 class BenchmarkRunner:
@@ -61,7 +78,7 @@ class BenchmarkRunner:
         self.tool = tool
         self.tasks = tasks
         self.runs = runs
-        self.parallel = parallel
+        self.parallel, concurrency = resolve_parallelism(parallel, concurrency)
         self.timeout_override = timeout_override
         self.workflow = workflow
         self.resume = resume
@@ -338,17 +355,63 @@ class BenchmarkRunner:
                     on_task_complete(result)
                 return result
 
-            results = await asyncio.gather(*[_tracked(t) for t in tasks], return_exceptions=True)
-            # Filter out exceptions from failed tasks
-            valid_results = []
-            for r in results:
-                if isinstance(r, BaseException):
-                    log.error("Parallel task failed: %s", r)
-                else:
-                    valid_results.append(r)
-            results = valid_results
+            gathered = await asyncio.gather(*[_tracked(t) for t in tasks], return_exceptions=True)
 
-        return list(results)
+        # Pair each result with its task (gather preserves order) so a raised
+        # exception becomes a recorded FAIL instead of vanishing. Stub/usage
+        # errors abort the whole run, matching the sequential path.
+        import click
+
+        valid_results: list[RunResult] = []
+        for task, r in zip(tasks, gathered, strict=True):
+            if isinstance(r, click.UsageError | NotImplementedError):
+                raise r
+            if isinstance(r, BaseException):
+                log.error("Parallel task %s failed: %s", task.id, r)
+                valid_results.append(self._failed_result(task, r))
+            else:
+                valid_results.append(r)
+
+        return valid_results
+
+    def _failed_result(self, task: TaskDefinition, exc: BaseException) -> RunResult:
+        """Build (and persist) a FAIL result for a task that raised in parallel.
+
+        Mirrors the in-task error capture in run_single so a crash on the
+        parallel path is still surfaced as a scored failure with a traceback.
+        """
+        import traceback as _tb
+
+        from awb.core.config import RunCost, RunError, RunMetrics
+
+        tb_lines = _tb.format_exception(type(exc), exc, exc.__traceback__)
+        tb_tail = "".join(tb_lines[-8:]) if tb_lines else ""
+        result = RunResult(
+            task_id=task.id,
+            tool=self.tool,
+            run_id=getattr(self, "_run_id", "unknown"),
+            timestamp=datetime.now(UTC).isoformat(),
+            outcome=RunOutcome(
+                success=False,
+                partial_credit_score=0,
+                partial_credit_max=0,
+                error=RunError(
+                    exc_type=type(exc).__name__,
+                    exc_message=str(exc)[:500],
+                    traceback_tail=tb_tail[-2000:],
+                ),
+            ),
+            metrics=RunMetrics(),
+            cost=RunCost(),
+            quality=RunQuality(),
+            environment=getattr(self, "_environment", RunEnvironment()),
+            workflow=getattr(self, "workflow", None),
+            task_set_hash=getattr(self, "_task_set_hash", ""),
+        )
+        recorder = getattr(self, "recorder", None)
+        if recorder is not None:
+            recorder.save(result)
+        return result
 
     async def run_single(
         self,
@@ -386,6 +449,9 @@ class BenchmarkRunner:
         trace_rel = f"{task.id}_{self.tool}.trace.jsonl"
         trace_path = run_dir / trace_rel
         trace_writer = TraceWriter(trace_path)
+        # Workspace root is set once the repo is prepared (below) so file spans
+        # carry repo-relative paths that match the task's files_to_examine.
+        translator = TraceTranslator(trace_writer, task.id)
 
         # Token budget callback for streaming enforcement
         budget_exceeded = False
@@ -393,7 +459,7 @@ class BenchmarkRunner:
         def _on_event(event: dict) -> bool | None:
             nonlocal budget_exceeded
             collector.parse_stream_event(event)
-            _emit_span_for_event(trace_writer, event, task.id)
+            translator.handle(event)
             # Check token budget if set
             max_in = task.constraints.max_input_tokens
             max_out = task.constraints.max_output_tokens
@@ -420,6 +486,8 @@ class BenchmarkRunner:
         try:
             # 1. Prepare workspace (run_id scopes the path for concurrent safety)
             workspace = await self.repo_manager.prepare(task, run_id=run_id)
+            # File-edit spans now relativize paths against the real workspace.
+            translator.workspace_root = str(workspace)
 
             # 2. Baseline lint/security counts
             baseline_lint = await _count_baseline("lint", task, workspace)
@@ -581,34 +649,3 @@ async def _count_baseline(kind: str, task: TaskDefinition, workspace: Path) -> i
     except Exception as exc:
         log.debug("Baseline %s count failed: %s", kind, exc)
     return 0
-
-
-def _emit_span_for_event(writer: TraceWriter, event: dict, task_id: str) -> None:
-    """Translate a Claude-Code stream event into one OTel-aligned span.
-
-    Best-effort and non-fatal: trace persistence must never crash a benchmark
-    run. Quietly skips events that don't map to a known span shape.
-    """
-    if not isinstance(event, dict):
-        return
-    try:
-        event_type = event.get("type", "")
-        if event_type == "assistant":
-            usage = (event.get("message") or {}).get("usage") or {}
-            attrs: dict = {"task.id": task_id, "gen_ai.system": "anthropic"}
-            for src, dst in (
-                ("input_tokens", "gen_ai.usage.input_tokens"),
-                ("output_tokens", "gen_ai.usage.output_tokens"),
-                ("cache_read_input_tokens", "gen_ai.usage.cache_read_input_tokens"),
-                ("cache_creation_input_tokens", "gen_ai.usage.cache_creation_input_tokens"),
-            ):
-                if src in usage:
-                    attrs[dst] = usage[src]
-            writer.write(new_span(LLM_REQUEST, attributes=attrs))
-        elif event_type == "tool_use":
-            tool_name = event.get("tool") or event.get("name") or "unknown"
-            writer.write(
-                new_span(TOOL_USE, attributes={"task.id": task_id, "gen_ai.tool.name": tool_name})
-            )
-    except Exception as exc:
-        log.debug("Trace span emit failed (non-fatal): %s", exc)
