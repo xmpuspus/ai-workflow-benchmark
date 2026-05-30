@@ -12,7 +12,7 @@
   <br/>
   <img src="demos/hero.gif" alt="awb run, awb leaderboard --readiness, awb gap output" width="820"/>
   <br/>
-  <sub>v1.2.0: task-set hash, OpenTelemetry-aligned trace artifacts, <code>awb trace grade</code>, and the Production Readiness Score.</sub>
+  <sub>v1.3.0: public leaderboard, reliability + provenance hardening, one CLI visual contract, and a real recorded demo.</sub>
 </div>
 
 ---
@@ -29,15 +29,16 @@ Related work measures complementary axes. [HAL](https://arxiv.org/abs/2510.11977
 
 AWB's distinct contribution is twofold: (1) a paired **vanilla-vs-custom** adapter pair that isolates the workflow-configuration delta for the same model, surfaced as a single Workflow Lift score with a sign-test p-value; (2) **deterministic** trace-grading rubrics (read-tests-before-edit, ran-verification-after-change, no-out-of-scope-edits, no-repeated-failing-loop) computed from OpenTelemetry-aligned `.trace.jsonl` artifacts, not LLM judges. See [METHODOLOGY.md#related-work](METHODOLOGY.md#related-work) for citation details.
 
-## What's New in v1.2.0
+## What's New in v1.3.0
 
-- **Task-set hash on every result** (`task_set_hash`, SHA-256 over the bundled task YAMLs) so you can prove which exact task set produced a given score.
-- **OpenTelemetry-aligned trace artifact**: every benchmark run writes a `.trace.jsonl` file using OTel GenAI semantic conventions (`gen_ai.client.operation`, `gen_ai.tool.use`) plus AWB-specific spans for shell commands, file edits, and test runs.
-- **`awb trace grade <run_dir>`** scores four shipping disciplines from the trace: read-tests-before-edit, ran-verification-after-change, no-out-of-scope-edits, no-repeated-failing-command-loop.
-- **Production Readiness Score** (`awb leaderboard --readiness`): weighted composite over 7 dimensions, calibrated for shipping safety.
-- **Strict result schema v2** (`additionalProperties: false`, required `schema_version`, `task_set_hash`). `awb migrate-results` extends to v1→v2.
-- **Task provenance fields**: optional `provenance.{source_pr_url, created_at, last_verified_at}`, `contamination_risk`, `label` (`real_pr` / `synthetic_overlay` / `mutated` / `fresh`) lay the groundwork for fresh-task harvesting in v1.3.
-- **Seven P0 trust blockers fixed**: token-budget fields now parse correctly, workflow schema enum matches the 9-adapter registry, setup cache key is order-sensitive, missing security scanners surface a warning instead of silently passing as clean, adapter `on_event` is properly typed as `Callable`, gap analysis classifies `regression_introduced` and `no_edits_made` separately.
+- **Public leaderboard** deployed to GitHub Pages via CI ([xmpuspus.github.io/ai-workflow-benchmark](https://xmpuspus.github.io/ai-workflow-benchmark/)), serving the first real published baseline.
+- **Reliability + provenance hardening**: JSONL result writes are file-locked against concurrent runs, every git operation has a wall-clock timeout, and all 100 task YAMLs carry `provenance` / `contamination_risk` / `label`.
+- **One CLI visual contract** (`awb/commands/_shared.py`): Unicode score bars, `--format json` on `gap` / `compare` / `stability` / `leaderboard`, `awb leaderboard --readiness --explain`, and a one-line `awb validate` summary (`-v` restores per-file output).
+- **Stub adapters fail fast** (`is_stub`): cursor / aider / windsurf / copilot refuse at startup before provisioning a workspace instead of crashing mid-run.
+- **Real recorded demo**: `demos/hero.gif` is produced by `vhs` from `demos/hero.tape`, replacing 29 hand-painted GIFs.
+- **Research legitimacy**: `CITATION.cff`, `codemeta.json`, a Zenodo DOI, and a Related Work section in [METHODOLOGY.md](METHODOLOGY.md) situating AWB against HAL, SWE-bench, LiveCodeBench, and METR.
+
+Carried over from v1.2.0: task-set hash on every result, OpenTelemetry-aligned `.trace.jsonl` artifacts, `awb trace grade`, the Production Readiness Score, and strict result schema v2.
 
 ## Quick Start
 
@@ -54,10 +55,10 @@ awb leaderboard --readiness --explain                 # Production Readiness Sco
 
 ### Five-minute reproducible demo
 
-Run this end-to-end against the published v1.2.0 baseline. Should finish in ~15 minutes for ~$4 of API spend and produce a tweetable Workflow Lift number plus a capability profile.
+Run this end-to-end against the published v1.3.0 fast-check baseline. Should finish in ~15 minutes for ~$4 of API spend and produce a tweetable Workflow Lift number plus a capability profile.
 
 ```bash
-pip install awb==1.2.0
+pip install awb==1.3.0
 awb quickstart                                       # 1. verify environment
 awb warmup --use-uv                                  # 2. pre-build templates
 awb run --fast-check claude-code-custom              # 3. ~15 min, ~$4, real run
@@ -65,7 +66,7 @@ awb leaderboard --readiness --explain                # 4. composite readiness sc
 awb trace grade results/runs/<run_id>/               # 5. behavior rubric scores
 ```
 
-Compare against the published baseline at `results/baselines/claude-code-custom-1.2.0.json`. Same `task_set_hash` means your numbers are directly comparable.
+Compare against the published baseline at `results/baselines/claude-code-custom-1.3.0-fast-check.json`. Same `task_set_hash` means your numbers are directly comparable.
 
 **New in v1.1.0:** `awb warmup` caches workspaces for 10-30x faster setup. `--fast-check` gives a quick signal in 15 min for ~$4. `--progressive` stops early on weak tools. `--use-uv` swaps pip for uv. See [Execution Modes](#execution-modes) below.
 
