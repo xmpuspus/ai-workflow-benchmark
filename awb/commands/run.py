@@ -185,11 +185,17 @@ def _run_both(
 @click.option("--capability", "-cap", help="Filter tasks by capability (e.g., security_awareness)")
 @click.option("--difficulty", "-d", help="Filter tasks by difficulty (easy, medium, hard)")
 @click.option("--runs", "-n", default=3, help="Number of runs per task")
-@click.option("--parallel", is_flag=True, help="Run tasks in parallel")
+@click.option("--parallel", is_flag=True, help="Run tasks in parallel (fans out to 4 by default)")
 @click.option("--dry-run", is_flag=True, help="Validate without executing")
 @click.option("--timeout", type=int, help="Override timeout (seconds)")
 @click.option("--resume", is_flag=True, help="Skip tasks that already have results")
-@click.option("-j", "--concurrency", type=int, default=4, help="Max parallel tasks (default: 4)")
+@click.option(
+    "-j",
+    "--concurrency",
+    type=int,
+    default=1,
+    help="Max parallel tasks; -j>1 enables parallel mode (default: 1, sequential)",
+)
 @click.option("--adaptive", is_flag=True, help="Only re-run near-miss tasks on runs 2+")
 @click.option("--progressive", is_flag=True, help="Run easy first, stop early if failing")
 @click.option("--fast-check", is_flag=True, help="Run 8 representative tasks for quick signal")

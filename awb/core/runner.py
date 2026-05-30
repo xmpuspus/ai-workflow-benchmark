@@ -43,6 +43,22 @@ _ADAPTIVE_RERUN_MIN = 60
 _PROGRESSIVE_EASY_MIN_PASS_RATE = 0.40
 _PROGRESSIVE_MEDIUM_MIN_PASS_RATE = 0.20
 
+# Fan-out used when --parallel is passed without an explicit -j value.
+_DEFAULT_PARALLEL_FANOUT = 4
+
+
+def resolve_parallelism(parallel: bool, concurrency: int) -> tuple[bool, int]:
+    """Decide whether to run in parallel and at what concurrency.
+
+    `-j N` (N>1) is itself a request to parallelize, so it no longer silently
+    no-ops when `--parallel` is absent. `--parallel` on its own picks a sane
+    fan-out. Default (sequential) is preserved: parallel=False, concurrency=1.
+    """
+    if parallel and concurrency <= 1:
+        concurrency = _DEFAULT_PARALLEL_FANOUT
+    enabled = parallel or concurrency > 1
+    return enabled, concurrency
+
 
 class BenchmarkRunner:
     def __init__(
@@ -62,7 +78,7 @@ class BenchmarkRunner:
         self.tool = tool
         self.tasks = tasks
         self.runs = runs
-        self.parallel = parallel
+        self.parallel, concurrency = resolve_parallelism(parallel, concurrency)
         self.timeout_override = timeout_override
         self.workflow = workflow
         self.resume = resume
@@ -339,17 +355,63 @@ class BenchmarkRunner:
                     on_task_complete(result)
                 return result
 
-            results = await asyncio.gather(*[_tracked(t) for t in tasks], return_exceptions=True)
-            # Filter out exceptions from failed tasks
-            valid_results = []
-            for r in results:
-                if isinstance(r, BaseException):
-                    log.error("Parallel task failed: %s", r)
-                else:
-                    valid_results.append(r)
-            results = valid_results
+            gathered = await asyncio.gather(*[_tracked(t) for t in tasks], return_exceptions=True)
 
-        return list(results)
+        # Pair each result with its task (gather preserves order) so a raised
+        # exception becomes a recorded FAIL instead of vanishing. Stub/usage
+        # errors abort the whole run, matching the sequential path.
+        import click
+
+        valid_results: list[RunResult] = []
+        for task, r in zip(tasks, gathered, strict=True):
+            if isinstance(r, click.UsageError | NotImplementedError):
+                raise r
+            if isinstance(r, BaseException):
+                log.error("Parallel task %s failed: %s", task.id, r)
+                valid_results.append(self._failed_result(task, r))
+            else:
+                valid_results.append(r)
+
+        return valid_results
+
+    def _failed_result(self, task: TaskDefinition, exc: BaseException) -> RunResult:
+        """Build (and persist) a FAIL result for a task that raised in parallel.
+
+        Mirrors the in-task error capture in run_single so a crash on the
+        parallel path is still surfaced as a scored failure with a traceback.
+        """
+        import traceback as _tb
+
+        from awb.core.config import RunCost, RunError, RunMetrics
+
+        tb_lines = _tb.format_exception(type(exc), exc, exc.__traceback__)
+        tb_tail = "".join(tb_lines[-8:]) if tb_lines else ""
+        result = RunResult(
+            task_id=task.id,
+            tool=self.tool,
+            run_id=getattr(self, "_run_id", "unknown"),
+            timestamp=datetime.now(UTC).isoformat(),
+            outcome=RunOutcome(
+                success=False,
+                partial_credit_score=0,
+                partial_credit_max=0,
+                error=RunError(
+                    exc_type=type(exc).__name__,
+                    exc_message=str(exc)[:500],
+                    traceback_tail=tb_tail[-2000:],
+                ),
+            ),
+            metrics=RunMetrics(),
+            cost=RunCost(),
+            quality=RunQuality(),
+            environment=getattr(self, "_environment", RunEnvironment()),
+            workflow=getattr(self, "workflow", None),
+            task_set_hash=getattr(self, "_task_set_hash", ""),
+        )
+        recorder = getattr(self, "recorder", None)
+        if recorder is not None:
+            recorder.save(result)
+        return result
 
     async def run_single(
         self,
