@@ -132,9 +132,7 @@ class TraceTranslator:
             if tid in self._pending_bash:
                 command = self._pending_bash.pop(tid)
                 exit_code = 1 if block.get("is_error") else 0
-                self._write(
-                    SHELL_COMMAND, {"shell.command": command, "shell.exit_code": exit_code}
-                )
+                self._write(SHELL_COMMAND, {"shell.command": command, "shell.exit_code": exit_code})
 
     def _rel(self, path: str | None) -> str:
         if not path:
