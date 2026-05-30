@@ -148,6 +148,27 @@ def test_out_of_scope_edit_detected_with_relative_paths(tmp_path):
     assert grade_trace(p, files_to_examine=["src/a.py"])["no_out_of_scope_edits"] < 100
 
 
+def test_file_path_relativized_through_symlinked_workspace(tmp_path):
+    # macOS /tmp -> /private/tmp: workspace_root is the symlink path but the
+    # agent reports the resolved path. Relativization must still strip it.
+    import os
+
+    real = tmp_path / "real"
+    (real / "tests").mkdir(parents=True)
+    link = tmp_path / "link"
+    os.symlink(real, link)
+    resolved = os.path.realpath(str(link))
+    assert resolved != str(link)  # guard: the symlink actually resolves elsewhere
+
+    p = tmp_path / "sym.trace.jsonl"
+    w = TraceWriter(p)
+    tr = TraceTranslator(w, "T", workspace_root=str(link))
+    tr.handle(_assistant([_tool_use("Edit", "e1", file_path=f"{resolved}/tests/test_x.py")]))
+    w.close()
+    spans = load_trace(p)
+    assert spans[0]["attributes"]["file.path"] == "tests/test_x.py"
+
+
 def test_legacy_top_level_tool_use_still_emits_span(tmp_path):
     # Backward compat: a fake adapter that sends a top-level tool_use event.
     p = _drain(tmp_path, [{"type": "tool_use", "tool": "bash"}])

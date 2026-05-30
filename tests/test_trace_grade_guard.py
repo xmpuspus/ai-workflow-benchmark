@@ -49,3 +49,27 @@ def test_trace_with_file_edit_grades(tmp_path):
         "no_out_of_scope_edits",
         "no_repeated_failing_command_loop",
     }
+
+
+def test_no_out_of_scope_treats_trailing_slash_as_directory(tmp_path):
+    # files_to_examine often lists a directory like "tests/"; an edit to a file
+    # under it must count as in-scope (exact-set membership would wrongly fail).
+    from awb.trace import FILE_EDIT, TraceWriter, new_span
+    from awb.trace.grader import grade_trace
+
+    p = tmp_path / "dir.trace.jsonl"
+    with TraceWriter(p) as w:
+        w.write(new_span(FILE_EDIT, attributes={"file.path": "tests/test_extra_fields.py"}))
+    scores = grade_trace(p, files_to_examine=["fastapi/routing.py", "tests/"])
+    assert scores["no_out_of_scope_edits"] == 100
+
+
+def test_no_out_of_scope_still_flags_truly_outside_edits(tmp_path):
+    from awb.trace import FILE_EDIT, TraceWriter, new_span
+    from awb.trace.grader import grade_trace
+
+    p = tmp_path / "oos.trace.jsonl"
+    with TraceWriter(p) as w:
+        w.write(new_span(FILE_EDIT, attributes={"file.path": "scripts/release.py"}))
+    scores = grade_trace(p, files_to_examine=["fastapi/routing.py", "tests/"])
+    assert scores["no_out_of_scope_edits"] == 0

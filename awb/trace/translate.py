@@ -15,6 +15,7 @@ logs any per-event error rather than propagating it.
 from __future__ import annotations
 
 import logging
+import os
 from pathlib import Path
 
 from awb.trace.jsonl import TraceWriter
@@ -138,12 +139,21 @@ class TraceTranslator:
         if not path:
             return ""
         if self.workspace_root:
-            root = self.workspace_root.rstrip("/")
-            if path == root:
-                return ""
-            prefix = root + "/"
-            if path.startswith(prefix):
-                return path[len(prefix) :]
+            # Try both the given root and its realpath: on macOS the workspace
+            # lives under /tmp (a symlink to /private/tmp), but the agent reports
+            # the resolved /private/tmp path, so a literal prefix-strip misses.
+            roots = [self.workspace_root.rstrip("/")]
+            try:
+                real = os.path.realpath(self.workspace_root).rstrip("/")
+                if real not in roots:
+                    roots.append(real)
+            except OSError:
+                pass
+            for root in roots:
+                if path == root:
+                    return ""
+                if path.startswith(root + "/"):
+                    return path[len(root) + 1 :]
         return path
 
     def _write(self, span_name: str, attributes: dict) -> None:

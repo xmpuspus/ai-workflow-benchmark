@@ -116,10 +116,21 @@ def _grade_ran_verification_after_change(spans: Iterable[dict]) -> int:
     return 100 if last_test_idx > last_edit_idx else 0
 
 
+def _path_in_scope(path: str, allowed: list[str]) -> bool:
+    """A path is in scope if it matches an allowed file exactly, or sits under
+    an allowed directory entry (one written with a trailing slash, e.g. tests/)."""
+    for a in allowed:
+        if a.endswith("/"):
+            if path == a.rstrip("/") or path.startswith(a):
+                return True
+        elif path == a:
+            return True
+    return False
+
+
 def _grade_no_out_of_scope_edits(spans: Iterable[dict], files_to_examine: list[str]) -> int:
     if not files_to_examine:
         return 100
-    allowed = set(files_to_examine)
     edited = []
     for s in spans:
         if s.get("span_name") == FILE_EDIT:
@@ -128,7 +139,7 @@ def _grade_no_out_of_scope_edits(spans: Iterable[dict], files_to_examine: list[s
                 edited.append(fp)
     if not edited:
         return 100
-    out_of_scope = sum(1 for e in edited if e not in allowed)
+    out_of_scope = sum(1 for e in edited if not _path_in_scope(e, files_to_examine))
     return max(0, round(100 * (1 - out_of_scope / len(edited))))
 
 
