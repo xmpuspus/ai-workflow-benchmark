@@ -2,7 +2,7 @@
   "spec_version": "awb/v2",
   "submission": {
     "submitter": "anonymous",
-    "submitted_at": "2026-05-24T02:16:04.439003+00:00",
+    "submitted_at": "2026-05-30T10:27:50.457409+00:00",
     "tool": {
       "name": "claude-code-custom",
       "version": "2.1.144 (Claude Code) + 202 hooks + 0 agents + 27 skills"
@@ -15,7 +15,19 @@
       "hardware_class": "other",
       "hardware_detail": "Apple M5, 24GB"
     },
-    "awb_version": "1.3.0"
+    "awb_version": "1.3.0",
+    "readiness": {
+      "composite": 86.5,
+      "correctness": 75.0,
+      "regression_safety": 87.5,
+      "security": 100.0,
+      "review_burden": 100.0,
+      "maintainability": 100.0,
+      "cost": 71.1,
+      "speed": 94.5,
+      "n_results": 8
+    },
+    "trace_summary": null
   },
   "results": [
     {
@@ -43,7 +55,8 @@
             "lint_delta": -1,
             "security_delta": 0,
             "test_regressions": 0
-          }
+          },
+          "trace_grade": null
         }
       ]
     },
@@ -72,7 +85,8 @@
             "lint_delta": -1,
             "security_delta": 0,
             "test_regressions": 0
-          }
+          },
+          "trace_grade": null
         }
       ]
     },
@@ -101,7 +115,8 @@
             "lint_delta": -1,
             "security_delta": 0,
             "test_regressions": 0
-          }
+          },
+          "trace_grade": null
         }
       ]
     },
@@ -130,7 +145,8 @@
             "lint_delta": -1,
             "security_delta": 0,
             "test_regressions": 0
-          }
+          },
+          "trace_grade": null
         }
       ]
     },
@@ -159,7 +175,8 @@
             "lint_delta": -1,
             "security_delta": 0,
             "test_regressions": 0
-          }
+          },
+          "trace_grade": null
         }
       ]
     },
@@ -188,7 +205,8 @@
             "lint_delta": -1,
             "security_delta": 0,
             "test_regressions": 1
-          }
+          },
+          "trace_grade": null
         }
       ]
     },
@@ -217,7 +235,8 @@
             "lint_delta": 4,
             "security_delta": 0,
             "test_regressions": 0
-          }
+          },
+          "trace_grade": null
         }
       ]
     },
@@ -246,7 +265,8 @@
             "lint_delta": 0,
             "security_delta": 0,
             "test_regressions": 0
-          }
+          },
+          "trace_grade": null
         }
       ]
     }

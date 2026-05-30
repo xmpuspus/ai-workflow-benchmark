@@ -43,12 +43,46 @@ def _looks_like_test_command(cmd: str) -> bool:
 def grade_trace(path: Path, files_to_examine: list[str] | None = None) -> dict[str, int]:
     """Score a trace.jsonl across 4 behavior dimensions, each 0-100."""
     spans = load_trace(path)
+    return _grade_spans(spans, files_to_examine or [])
+
+
+def _grade_spans(spans: list[dict], files_to_examine: list[str]) -> dict[str, int]:
     return {
         "read_tests_before_edit": _grade_read_tests_before_edit(spans),
         "ran_verification_after_change": _grade_ran_verification_after_change(spans),
-        "no_out_of_scope_edits": _grade_no_out_of_scope_edits(spans, files_to_examine or []),
+        "no_out_of_scope_edits": _grade_no_out_of_scope_edits(spans, files_to_examine),
         "no_repeated_failing_command_loop": _grade_no_repeated_failing_loop(spans),
     }
+
+
+def _has_gradeable_spans(spans: list[dict]) -> bool:
+    """True if the trace contains behavior the rubrics can actually grade.
+
+    A trace of only LLM_REQUEST spans (or no spans at all — e.g. a tool that
+    runs without streaming tool events) carries nothing to grade. Those must
+    report as n/a, not as a perfect 100 from the trivial-pass branches.
+    """
+    for s in spans:
+        name = s.get("span_name")
+        if name in (FILE_EDIT, SHELL_COMMAND, TEST_RUN):
+            return True
+        if name == TOOL_USE and (s.get("attributes") or {}).get("file.path"):
+            return True
+    return False
+
+
+def grade_trace_or_none(
+    path: Path, files_to_examine: list[str] | None = None
+) -> dict[str, int] | None:
+    """Grade a trace, or return None when it has no gradeable behavior.
+
+    Use this anywhere a missing/span-less trace should surface as 'n/a' rather
+    than a misleading perfect score (baseline export, leaderboard columns).
+    """
+    spans = load_trace(path)
+    if not _has_gradeable_spans(spans):
+        return None
+    return _grade_spans(spans, files_to_examine or [])
 
 
 def _grade_read_tests_before_edit(spans: Iterable[dict]) -> int:

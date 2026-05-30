@@ -22,10 +22,12 @@ against a full-suite run.
       "hardware_class": "other",
       "hardware_detail": "Apple M5, 24GB"
     },
-    "awb_version": "1.3.0"
+    "awb_version": "1.3.0",
+    "readiness": { "composite": 86.5, "correctness": 75.0, ... },
+    "trace_summary": { "read_tests_before_edit": 100, ... }
   },
   "results": [
-    { "task_id": "BF-001", "runs": [ ... per-run RunResult records ... ] },
+    { "task_id": "BF-001", "runs": [ { ..., "trace_grade": { ... } | null } ] },
     ...
   ]
 }
@@ -34,6 +36,17 @@ against a full-suite run.
 The `submission.awb_version` field is what gates cross-baseline
 comparison: two baselines built against the same `awb_version` carry
 the same `task_set_hash` and are directly comparable.
+
+`submission.readiness` is the Production Readiness composite (and its 7
+sub-scores) over the run. Each run carries a `trace_grade` block with the
+four deterministic behavior rubrics, and `submission.trace_summary` averages
+them. **`trace_grade` / `trace_summary` are `null` when the trace has no
+gradeable spans** — either the run predates the v1.4 span-translation fix, or
+the tool runs without streaming tool events (e.g. Aider's `--no-stream`). A
+`null` is reported instead of a misleading perfect 100. The shipped
+`claude-code-custom-1.3.0-fast-check.json` was recorded before the fix, so its
+trace grades are `null`; re-running `awb run --fast-check` then `awb export`
+produces non-null grades.
 
 ## Generating a baseline
 
