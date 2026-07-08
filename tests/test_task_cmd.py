@@ -243,7 +243,8 @@ class TestFromPrGuards:
     def test_validation_failure_exits_one(self, monkeypatch, tmp_path, pr_responses):
         monkeypatch.setattr("subprocess.run", _fake_gh_run(pr_responses))
         monkeypatch.setattr(
-            "awb.core.task_loader.validate_task_yaml", lambda path: ["points do not sum to 100"]
+            "awb.core.task_loader.validate_task_yaml",
+            lambda path: ["points do not sum [/x] to 100"],
         )
         runner = CliRunner()
         result = runner.invoke(task, ["from-pr", self.PR_URL, "--out", str(tmp_path / "tasks")])

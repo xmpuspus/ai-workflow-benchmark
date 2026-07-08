@@ -134,7 +134,8 @@ def from_pr(
             contamination_risk=contamination_risk,
         )
     except PrMinerError as e:
-        console.print(f"[{BAD}]{e}[/{BAD}]")
+        # style= instead of markup tags: the error can embed PR-derived text.
+        console.print(str(e), style=BAD, markup=False)
         sys.exit(1)
 
     out_dir = Path(out)
@@ -161,7 +162,8 @@ def from_pr(
     if errors:
         console.print(f"[{BAD}]Generated task failed validation:[/{BAD}]")
         for e in errors:
-            console.print(f"  - {e}")
+            # jsonschema messages quote PR-derived field values; no markup.
+            console.print(f"  - {e}", markup=False)
         sys.exit(1)
 
     if fmt == "json":
