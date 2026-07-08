@@ -33,3 +33,11 @@ def test_schema_copies_stay_in_sync():
     packaged = json.loads((_ROOT / "awb" / "submission" / "schema.json").read_text())
     repo = json.loads((_ROOT / "results" / "submission-schema.json").read_text())
     assert packaged == repo
+
+
+def test_null_trace_summary_validates():
+    # Exports write trace_summary: null when zero traces were graded (the
+    # honest-null convention); the schema must accept it.
+    data = _load_baseline()
+    data["submission"]["trace_summary"] = None
+    assert validate_submission(data) == []

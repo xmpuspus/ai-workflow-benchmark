@@ -179,30 +179,37 @@
           }
         },
         "trace_summary": {
-          "type": "object",
-          "additionalProperties": false,
-          "properties": {
-            "read_tests_before_edit": {
-              "type": "number",
-              "minimum": 0,
-              "maximum": 100
+          "oneOf": [
+            {
+              "type": "null"
             },
-            "ran_verification_after_change": {
-              "type": "number",
-              "minimum": 0,
-              "maximum": 100
-            },
-            "no_out_of_scope_edits": {
-              "type": "number",
-              "minimum": 0,
-              "maximum": 100
-            },
-            "no_repeated_failing_command_loop": {
-              "type": "number",
-              "minimum": 0,
-              "maximum": 100
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "read_tests_before_edit": {
+                  "type": "number",
+                  "minimum": 0,
+                  "maximum": 100
+                },
+                "ran_verification_after_change": {
+                  "type": "number",
+                  "minimum": 0,
+                  "maximum": 100
+                },
+                "no_out_of_scope_edits": {
+                  "type": "number",
+                  "minimum": 0,
+                  "maximum": 100
+                },
+                "no_repeated_failing_command_loop": {
+                  "type": "number",
+                  "minimum": 0,
+                  "maximum": 100
+                }
+              }
             }
-          }
+          ]
         }
       }
     },
