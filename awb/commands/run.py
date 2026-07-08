@@ -316,6 +316,19 @@ def run(
 
     console.print(f"Running {len(tasks)} task(s) x {runs} run(s) with [bold]{tool}[/bold]")
 
+    # Dry run is a pure preview of the selected tasks; it must not pay the
+    # adapter preflight (check_auth makes a real model call, up to 30s).
+    if dry_run:
+        table = Table(title="Tasks (dry run)")
+        table.add_column("ID")
+        table.add_column("Title")
+        table.add_column("Difficulty")
+        table.add_column("Timeout")
+        for t in tasks:
+            table.add_row(t.id, t.title, t.difficulty, f"{t.constraints.timeout_seconds}s")
+        console.print(table)
+        return
+
     # Pre-flight availability + auth check
     from awb.adapters.registry import get_adapter as _get_adapter
 
@@ -335,17 +348,6 @@ def run(
         if not ok:
             console.print(f"[red]{msg}[/red]")
             sys.exit(1)
-
-    if dry_run:
-        table = Table(title="Tasks (dry run)")
-        table.add_column("ID")
-        table.add_column("Title")
-        table.add_column("Difficulty")
-        table.add_column("Timeout")
-        for t in tasks:
-            table.add_row(t.id, t.title, t.difficulty, f"{t.constraints.timeout_seconds}s")
-        console.print(table)
-        return
 
     runner = BenchmarkRunner(
         tool=tool,

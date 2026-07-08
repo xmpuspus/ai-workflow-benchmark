@@ -271,3 +271,24 @@ class TestFromPrGuards:
         )
         assert result.exit_code == 1
         assert "--resume" in result.output
+
+
+def test_dry_run_skips_adapter_preflight(monkeypatch, tmp_path, pr_responses):
+    # Dry run is a preview; it must never invoke the adapter (check_auth
+    # makes a real model call that can take 30 seconds).
+    monkeypatch.setattr("subprocess.run", _fake_gh_run(pr_responses))
+    out = tmp_path / "tasks"
+    CliRunner().invoke(
+        task, ["from-pr", "https://github.com/acme/widgets/pull/42", "--out", str(out)]
+    )
+
+    def _explode(name):
+        raise AssertionError("adapter resolved during --dry-run")
+
+    monkeypatch.setattr("awb.adapters.registry.get_adapter", _explode)
+    result = CliRunner().invoke(
+        run_cmd, ["claude-code-vanilla", "--tasks-dir", str(out), "--dry-run"]
+    )
+    assert result.exit_code == 0, result.output
+    assert "Tasks (dry run)" in result.output
+    assert "rate limiting" in result.output

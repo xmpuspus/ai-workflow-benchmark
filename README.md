@@ -29,7 +29,9 @@ Related work measures complementary axes. [HAL](https://arxiv.org/abs/2510.11977
 
 AWB's distinct contribution is twofold: (1) a paired **vanilla-vs-custom** adapter pair that isolates the workflow-configuration delta for the same model, surfaced as a single Workflow Lift score with a sign-test p-value; (2) **deterministic** trace-grading rubrics (read-tests-before-edit, ran-verification-after-change, no-out-of-scope-edits, no-repeated-failing-loop) computed from OpenTelemetry-aligned `.trace.jsonl` artifacts, not LLM judges. See [METHODOLOGY.md#related-work](METHODOLOGY.md#related-work) for citation details.
 
-## What's New in v1.5.3
+## What's New in v1.5.4
+
+- **`awb run --dry-run` is instant.** The preview paid the adapter auth preflight, a real model call that can take 30 seconds; a dry run now prints the task table without touching the adapter. Surfaced while recording the from-pr demo below.
 
 - **`awb task from-pr` fetches PR files correctly.** The files call passed per_page as a gh -F field, which silently turns the GET into a POST that GitHub 404s, so mining failed on every real PR. per_page now rides the query string; caught by the live fresh-venv smoke against a real merged PR.
 - **`awb submit` accepts the trust columns.** The v1.4.0 baselines added `readiness`, `trace_summary`, and per-run `trace_grade` blocks, but the submission schema still rejected them, so validating an `awb export` (or the published baseline itself) failed. Both schema copies now define the blocks, with a guard test keeping them in sync. `trace_summary: null` (zero graded traces) validates too.
@@ -62,7 +64,7 @@ awb leaderboard --readiness --explain                 # Production Readiness Sco
 Run this end-to-end against the published v1.4.0 fast-check baseline. Should finish in ~15 minutes for ~$4 of API spend and produce a tweetable Workflow Lift number plus a capability profile.
 
 ```bash
-pip install awb==1.5.3
+pip install awb==1.5.4
 awb quickstart                                       # 1. verify environment
 awb warmup --use-uv                                  # 2. pre-build templates
 awb run --fast-check claude-code-custom              # 3. ~15 min, ~$4, real run
@@ -260,6 +262,10 @@ awb drift results/runs/<run_id>_run1/ --baseline results/baselines/<ref>.json
 # 6. Know what a correct change costs before you standardize on a config.
 awb cost results/runs/<run_dir>/
 ```
+
+The loop, recorded live against a real merged PR ([xmpuspus/cloudwright#69](https://github.com/xmpuspus/cloudwright/pull/69), a production bug fix with its own regression test):
+
+![awb task from-pr mining a real merged PR, validating it, and loading it with awb run --tasks-dir](demos/from-pr.gif)
 
 `from-pr` pins the pre-merge commit, overlays the PR's test files onto the old tree (tests exist, implementation does not), and writes a schema-valid task YAML with provenance stamped `real_pr`. Two caveats. First, the test-file overlay resolves objects through AWB's local mirror cache, then falls back to fetching from GitHub; if both miss, refresh the mirror with `awb warmup --clear`. Second, a mined task executes the PR's own test and setup code on your machine during benchmark runs, so only mine repos you trust (see [docs/SECURITY.md](docs/SECURITY.md)).
 
@@ -523,6 +529,10 @@ The format captures tool version, model, hardware class, and per-task run result
 
 ## Changelog
 
+### 1.5.4 (2026-07-08)
+
+`awb run --dry-run` no longer pays the adapter auth preflight (a live model call); previews print instantly. Adds the from-pr demo GIF recorded against a real merged PR.
+
 ### 1.5.3 (2026-07-08)
 
 `awb task from-pr` files fetch fixed: gh api -F fields switch GET to POST and GitHub 404s the files endpoint; per_page moved into the query string. Found by running the published wheel against a real merged PR.
@@ -615,7 +625,7 @@ If you use AWB in research, cite it via Zenodo. The concept DOI [`10.5281/zenodo
 @software{puspus_awb_2026,
   author    = {Puspus, Xavier},
   title     = {{AWB: AI Workflow Benchmark}},
-  version   = {1.5.3},
+  version   = {1.5.4},
   year      = {2026},
   month     = may,
   publisher = {Zenodo},
