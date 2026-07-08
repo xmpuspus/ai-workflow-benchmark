@@ -47,6 +47,11 @@ class ToolAdapter(abc.ABC):
     # instead of provisioning a workspace and then hitting NotImplementedError.
     is_stub: bool = False
 
+    # Adapters that can relocate their CLI config directory (needed for
+    # `awb ab` config A/B testing) set this to True and accept a `config_dir`
+    # constructor kwarg.
+    supports_config_dir: bool = False
+
     @abc.abstractmethod
     async def execute(
         self,
