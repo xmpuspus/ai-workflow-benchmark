@@ -9,7 +9,7 @@ from pathlib import Path
 import click
 from rich.table import Table
 
-from awb.commands._shared import console
+from awb.commands._shared import BAD, console
 
 
 def _score_style(score: float) -> str:
@@ -77,6 +77,7 @@ def _run_both(
             resume=resume,
             concurrency=concurrency,
             adaptive=adaptive,
+            tasks_dir=tasks_dir,
         )
         all_results[variant] = asyncio.run(runner.run_all())
 
@@ -233,6 +234,14 @@ def run(
 
     tasks_dir_path = Path(tasks_dir) if tasks_dir else None
 
+    # Resume matches an incomplete run by tool + task count only; mined
+    # private tasks reuse public ID prefixes (BF-001...), so resuming across
+    # task sets would silently fold cached public results into a private run.
+    if tasks_dir_path and resume:
+        console.print(f"[{BAD}]--resume cannot be combined with --tasks-dir yet[/{BAD}]")
+        console.print("Run the private task set without --resume.")
+        sys.exit(1)
+
     # Resolve tool from workflow or direct argument
     workflow_info = None
     if workflow:
@@ -350,6 +359,7 @@ def run(
         adaptive=adaptive,
         progressive=progressive,
         use_uv=use_uv,
+        tasks_dir=tasks_dir_path,
     )
     try:
         results = asyncio.run(runner.run_all())

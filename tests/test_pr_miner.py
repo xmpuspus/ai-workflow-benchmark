@@ -241,3 +241,18 @@ class TestOverlayGithubFallback:
         mined = mine_task_from_pr("https://github.com/acme/widgets/pull/42")
         overlay = mined.task["repo"]["setup_commands"][-1]
         assert "git fetch https://github.com/acme/widgets" in overlay
+
+
+class TestSourceOnlyPr:
+    def test_mining_pr_with_no_test_files(self, monkeypatch, pr_responses):
+        pr_responses["repos/acme/widgets/pulls/42/files"] = [{"filename": "src/app.py"}]
+        monkeypatch.setattr("subprocess.run", _fake_gh_run(pr_responses))
+        mined = mine_task_from_pr("https://github.com/acme/widgets/pull/42")
+        assert mined.test_files == []
+        assert all("git checkout" not in c for c in mined.task["repo"]["setup_commands"])
+        # No test paths to scope to: the verification command stays bare.
+        assert mined.task["verification"]["test_commands"] == ["python -m pytest"]
+        pts = sum(c["points"] for c in mined.task["verification"]["partial_credit"])
+        assert pts == 100
+        touched = mined.task["verification"]["partial_credit"][-1]["check"]
+        assert "src" in touched

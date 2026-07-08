@@ -49,7 +49,12 @@ def _run_config(tool: str, adapter, tasks, run_id: str, timeout, runs_dir: Path)
     from awb.core.results import ResultRecorder
     from awb.core.runner import BenchmarkRunner
 
-    runner = BenchmarkRunner(tool=tool, tasks=tasks, runs=1, timeout_override=timeout)
+    # concurrency=1: the constructor default is 4-way parallel, which is a
+    # surprising execution mode for an A/B measurement (and inconsistent
+    # with `awb run`'s sequential default).
+    runner = BenchmarkRunner(
+        tool=tool, tasks=tasks, runs=1, timeout_override=timeout, concurrency=1
+    )
     # Inject the config-pinned adapter instance the runner would otherwise
     # build itself from the bare tool name (same override pattern the test
     # suite already uses - see tests/test_runner_trace.py).

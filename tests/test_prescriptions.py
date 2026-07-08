@@ -168,7 +168,9 @@ class TestCapabilityPrescriptions:
         ]
         prescriptions = _capability_prescriptions(results, task_defs, threshold=60)
         assert len(prescriptions) == 1
-        assert prescriptions[0].severity == 1
+        # Severity is the count of below-threshold tasks (same unit as
+        # rubric prescriptions so the combined sort is comparable).
+        assert prescriptions[0].severity == 2
 
     def test_capability_without_prescription_entry_never_fires(self):
         # code_comprehension has no entry in CAPABILITY_PRESCRIPTIONS

@@ -235,3 +235,38 @@ class TestRunTasksDir:
 
         tasks = load_all_tasks(tasks_dir=tasks_dir)
         assert [t.id for t in tasks] == ["BF-998"]
+
+
+class TestFromPrGuards:
+    PR_URL = "https://github.com/acme/widgets/pull/42"
+
+    def test_validation_failure_exits_one(self, monkeypatch, tmp_path, pr_responses):
+        monkeypatch.setattr("subprocess.run", _fake_gh_run(pr_responses))
+        monkeypatch.setattr(
+            "awb.core.task_loader.validate_task_yaml", lambda path: ["points do not sum to 100"]
+        )
+        runner = CliRunner()
+        result = runner.invoke(task, ["from-pr", self.PR_URL, "--out", str(tmp_path / "tasks")])
+        assert result.exit_code == 1
+        assert "failed validation" in result.output
+
+    def test_dry_run_survives_rich_markup_in_pr_title(self, monkeypatch, tmp_path, pr_responses):
+        # PR-author-controlled text must never be parsed as Rich markup.
+        pr_responses["repos/acme/widgets/pulls/42"]["title"] = "Fix bug[/x] in [red]parser"
+        monkeypatch.setattr("subprocess.run", _fake_gh_run(pr_responses))
+        runner = CliRunner()
+        result = runner.invoke(
+            task, ["from-pr", self.PR_URL, "--out", str(tmp_path / "tasks"), "--dry-run"]
+        )
+        assert result.exit_code == 0, result.output
+        assert "Fix bug[/x]" in result.output
+
+    def test_resume_with_tasks_dir_is_refused(self, tmp_path):
+        tasks_dir = tmp_path / "tasks"
+        tasks_dir.mkdir()
+        runner = CliRunner()
+        result = runner.invoke(
+            run_cmd, ["claude-code-custom", "--tasks-dir", str(tasks_dir), "--resume"]
+        )
+        assert result.exit_code == 1
+        assert "--resume" in result.output

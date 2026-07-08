@@ -311,7 +311,9 @@ class ClaudeCodeCustomAdapter(ClaudeCodeVanillaAdapter):
     def get_version(self) -> str:
         """Return claude version plus config summary."""
         base = super().get_version()
-        config_dir = Path.home() / ".claude"
+        # Mirror get_config_hash: an A/B run must record the overridden
+        # config dir in its provenance, not the user's live ~/.claude.
+        config_dir = self.config_dir or (Path.home() / ".claude")
 
         parts = [base]
         for subdir in ["hooks", "agents", "skills"]:

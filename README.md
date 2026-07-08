@@ -250,13 +250,14 @@ awb gap results/runs/<run_dir>/ --prescribe
 
 # 5. Watch for silent regressions (models and harnesses update weekly).
 #    Exit code 1 on drift, so it slots straight into cron or CI.
-awb drift results/runs/<new_run>/ --baseline results/baselines/<ref>.json
+#    Point it at a single run directory (one _runN dir per benchmark pass).
+awb drift results/runs/<run_id>_run1/ --baseline results/baselines/<ref>.json
 
 # 6. Know what a correct change costs before you standardize on a config.
 awb cost results/runs/<run_dir>/
 ```
 
-`from-pr` pins the pre-merge commit, overlays the PR's test files onto the old tree (tests exist, implementation does not), and writes a schema-valid task YAML with provenance stamped `real_pr`. One caveat: the test-file overlay resolves objects through AWB's local mirror cache, so if the mirror predates the PR merge, refresh it with `awb warmup --clear`.
+`from-pr` pins the pre-merge commit, overlays the PR's test files onto the old tree (tests exist, implementation does not), and writes a schema-valid task YAML with provenance stamped `real_pr`. Two caveats. First, the test-file overlay resolves objects through AWB's local mirror cache, then falls back to fetching from GitHub; if both miss, refresh the mirror with `awb warmup --clear`. Second, a mined task executes the PR's own test and setup code on your machine during benchmark runs, so only mine repos you trust (see [docs/SECURITY.md](docs/SECURITY.md)).
 
 ## CLI Reference
 
@@ -330,10 +331,10 @@ Runs the same adapter over the same tasks twice, once per config dir (via `CLAUD
 ### `awb drift` - Alert on regression against a baseline
 
 ```bash
-awb drift results/runs/<new_run>/ --baseline <run_dir_or_baseline.json> --threshold 5.0
+awb drift results/runs/<run_id>_run1/ --baseline <run_dir_or_baseline.json> --threshold 5.0
 ```
 
-Compares mean score and per-task scores against a reference (a prior run dir or a published awb/v2 baseline JSON). Exits 1 when the mean drops more than the threshold, 0 otherwise, so a cron job or CI step can alert on silent model or harness regressions. Warns when task-set hashes differ.
+Compares mean score and per-task scores against a reference (a prior single run directory such as `<run_id>_run1/`, or a published awb/v2 baseline JSON). Exits 1 when the mean drops more than the threshold, 0 otherwise, so a cron job or CI step can alert on silent model or harness regressions. Warns when task-set hashes differ.
 
 ### `awb cost` - Cost per solved task
 

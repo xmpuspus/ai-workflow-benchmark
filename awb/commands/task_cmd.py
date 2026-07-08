@@ -148,7 +148,9 @@ def from_pr(
             emit_json({"task": mined.task, "written_path": None})
         else:
             console.print(f"[{INFO}]Dry run - nothing written[/{INFO}]\n")
-            console.print(yaml_text)
+            # markup=False: the YAML embeds PR-author-controlled text; a title
+            # like "Fix bug[/x]" would raise MarkupError mid-print.
+            console.print(yaml_text, markup=False)
         return
 
     out_dir.mkdir(parents=True, exist_ok=True)

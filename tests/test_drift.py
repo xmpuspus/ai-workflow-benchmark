@@ -326,3 +326,45 @@ class TestDriftCommand:
         runner = CliRunner()
         result = runner.invoke(drift, [str(cur_dir), "--baseline", str(ref_dir)])
         assert result.exit_code == 1
+
+
+class TestCliThresholdBoundary:
+    """The strict `delta < -threshold` boundary, exercised at the CLI layer."""
+
+    def _make_dirs(self, tmp_path, cur_scores, ref_scores):
+        cur_dir = tmp_path / "current"
+        cur_dir.mkdir()
+        for tid, score in cur_scores.items():
+            _write_result(cur_dir, tid, score=score)
+        ref_dir = tmp_path / "reference"
+        ref_dir.mkdir()
+        for tid, score in ref_scores.items():
+            _write_result(ref_dir, tid, score=score)
+        return cur_dir, ref_dir
+
+    def test_exit_zero_at_exact_threshold_text_and_json(self, tmp_path):
+        # delta exactly -5.0 with default threshold 5.0: NOT drifted.
+        cur_dir, ref_dir = self._make_dirs(tmp_path, {"BF-001": 95}, {"BF-001": 100})
+        runner = CliRunner()
+        for extra in ([], ["--format", "json"]):
+            result = runner.invoke(drift, [str(cur_dir), "--baseline", str(ref_dir), *extra])
+            assert result.exit_code == 0, result.output
+
+    def test_exit_one_just_beyond_threshold_text_and_json(self, tmp_path):
+        cur_dir, ref_dir = self._make_dirs(tmp_path, {"BF-001": 94.9}, {"BF-001": 100})
+        runner = CliRunner()
+        for extra in ([], ["--format", "json"]):
+            result = runner.invoke(drift, [str(cur_dir), "--baseline", str(ref_dir), *extra])
+            assert result.exit_code == 1, result.output
+
+    def test_empty_input_json_mode_emits_parseable_error(self, tmp_path):
+        empty = tmp_path / "empty"
+        empty.mkdir()
+        ref_dir = tmp_path / "reference"
+        ref_dir.mkdir()
+        _write_result(ref_dir, "BF-001", score=100)
+        runner = CliRunner()
+        result = runner.invoke(drift, [str(empty), "--baseline", str(ref_dir), "--format", "json"])
+        assert result.exit_code == 1
+        payload = json.loads(result.output)
+        assert "error" in payload

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import sys
 
 import click
@@ -55,7 +56,12 @@ def drift(run_dir: str, baseline_path: str, threshold: float, fmt: str):
     reference = load_reference(baseline_path)
 
     if not current.per_task or not reference.per_task:
-        console.print(f"[{BAD}]No results found in run dir or baseline[/{BAD}]")
+        # Keep json-mode stdout a single parseable document even on the
+        # empty-input error path; cron/CI consumers parse it.
+        if fmt == "json":
+            click.echo(json.dumps({"error": "no results found in run dir or baseline"}))
+        else:
+            console.print(f"[{BAD}]No results found in run dir or baseline[/{BAD}]")
         sys.exit(1)
 
     report = compute_drift(current, reference, threshold)

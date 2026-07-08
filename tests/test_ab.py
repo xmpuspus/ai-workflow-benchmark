@@ -377,3 +377,42 @@ class TestABPreflight:
         # Under 5 pairs the sign test cannot run; the verdict must say so
         # instead of claiming "no significant difference".
         assert "Need 5+" in result.output
+
+
+class TestBWorseSignificant:
+    def test_b_worse_names_a_as_winner_in_message(self):
+        tasks = [f"BF-00{i}" for i in range(1, 7)]
+        results_a = [_result(t, "toolx", 90) for t in tasks]
+        results_b = [_result(t, "toolx", 50) for t in tasks]
+        report = build_ab_report(results_a, results_b, "cfgA", "cfgB")
+        assert report.mean_delta < 0
+        assert report.significant is True
+        # The winner/loser swap must name config A as the higher scorer.
+        assert report.message.startswith("cfgA scores higher")
+
+    def test_cli_verdict_says_config_b_hurts(self, monkeypatch, tmp_path, sample_task):
+        import dataclasses as dc
+
+        from awb.commands import ab_cmd
+
+        tasks = [dc.replace(sample_task, id=f"BF-00{i}") for i in range(1, 7)]
+        monkeypatch.setattr(
+            "awb.adapters.registry.get_adapter", lambda name: _SupportedFakeAdapter()
+        )
+        monkeypatch.setattr("awb.core.task_loader.load_all_tasks", lambda category=None: tasks)
+
+        def _fake_run_config(tool, adapter, task_list, run_id, timeout, runs_dir):
+            score = 90 if run_id.endswith("_ab_a") else 50
+            return [_result(t.id, tool, score) for t in task_list]
+
+        monkeypatch.setattr(ab_cmd, "_run_config", _fake_run_config)
+        config_a = tmp_path / "a"
+        config_b = tmp_path / "b"
+        config_a.mkdir()
+        config_b.mkdir()
+        result = CliRunner().invoke(
+            ab_cmd.ab,
+            ["fake-supported", "--config-a", str(config_a), "--config-b", str(config_b)],
+        )
+        assert result.exit_code == 0, result.output
+        assert "config B hurts relative to config A" in result.output

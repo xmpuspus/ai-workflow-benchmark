@@ -103,3 +103,14 @@ def test_get_config_hash_counts_hooks_agents_skills(tmp_path):
     adapter_a = ClaudeCodeCustomAdapter(config_dir=dir_a)
     adapter_b = ClaudeCodeCustomAdapter(config_dir=dir_b)
     assert adapter_a.get_config_hash() != adapter_b.get_config_hash()
+
+
+def test_get_version_counts_from_override_dir(tmp_path):
+    from awb.adapters.claude_code import ClaudeCodeCustomAdapter
+
+    (tmp_path / "hooks").mkdir()
+    (tmp_path / "hooks" / "one.py").write_text("x = 1\n")
+    adapter = ClaudeCodeCustomAdapter(config_dir=tmp_path)
+    version = adapter.get_version()
+    # Provenance must describe the overridden config dir, not ~/.claude.
+    assert "1 hooks" in version

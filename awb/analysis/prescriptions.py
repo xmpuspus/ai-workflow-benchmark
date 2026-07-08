@@ -275,14 +275,21 @@ def _capability_prescriptions(
         if cap_score.score >= threshold:
             continue
 
-        task_scores = _capability_task_scores(results, task_defs, cap_name)
+        # Evidence and severity mirror the rubric path: only the tasks that
+        # actually scored below threshold, and severity = how many, so the
+        # two prescription types sort on one comparable unit.
+        low = [
+            (tid, sc)
+            for tid, sc in _capability_task_scores(results, task_defs, cap_name)
+            if sc < threshold
+        ]
         prescriptions.append(
             Prescription(
                 id=spec["id"],
                 trigger=f"capability:{cap_name}",
-                evidence=[f"{tid}: scored {sc}" for tid, sc in task_scores],
-                affected_tasks=[tid for tid, _ in task_scores],
-                severity=round(threshold - cap_score.score),
+                evidence=[f"{tid}: scored {sc}" for tid, sc in low],
+                affected_tasks=[tid for tid, _ in low],
+                severity=len(low),
                 snippet=spec["snippet"],
                 rationale=spec["rationale"],
             )
