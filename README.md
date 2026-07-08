@@ -31,8 +31,8 @@ AWB's distinct contribution is twofold: (1) a paired **vanilla-vs-custom** adapt
 
 ## What's New in v1.4.0
 
-- **Trace grading actually grades now.** The runner used to emit only token spans, so all four trace rubrics scored a vacuous 100 on every run. It now translates Claude Code's nested `tool_use` blocks into `FILE_EDIT` / read / `SHELL_COMMAND` spans and correlates Bash exit codes — producing real, discriminating scores (the published baseline's `no_out_of_scope_edits` ranges 17-100 across the 8 tasks).
-- **Baselines carry the trust columns**: per-run `trace_grade` and a submission-level `readiness` + `trace_summary` block, so the published baseline showcases both flagship trust features. A span-less trace reports `null`, never a fake 100.
+- **Trace grading actually grades now.** The runner used to emit only token spans, so all four trace rubrics scored a vacuous 100 on every run. It now translates Claude Code's nested `tool_use` blocks into `FILE_EDIT` / read / `SHELL_COMMAND` spans and correlates Bash exit codes, producing real, discriminating scores (the published baseline's `no_out_of_scope_edits` ranges 17-100 across the 8 tasks).
+- **Baselines carry the trust columns**: per-run `trace_grade` and a submission-level `readiness` + `trace_summary` block, so the published baseline shows both trust features working. A span-less trace reports `null`, never a fake 100.
 - **`-j N` works on its own.** `-j>1` enables parallel mode (it used to be a silent no-op without `--parallel`); a crashed parallel task is now recorded as a FAIL with a traceback instead of vanishing from results.
 - **Aider is a real adapter** (`is_stub = False`), gated on the binary being installed.
 - **Exact-pinned runtime dependencies** for reproducible installs, plus invariant guard tests so the README lead, install pin, and baseline reference can't silently drift.
@@ -206,7 +206,7 @@ Both use the same model, same API, same task prompts. The only difference is whe
 
 ## Workflow Lift Score
 
-When `awb run` executes both vanilla and custom (the default), it produces a **Workflow Lift** — a single number measuring how much your workflow configuration improves over the baseline:
+When `awb run` executes both vanilla and custom (the default), it produces a **Workflow Lift**, a single number measuring how much your workflow configuration improves over the baseline:
 
 ```
 Workflow Lift: +4.2 pts  (p=0.031, significant)
@@ -228,9 +228,39 @@ Workflow Lift: +4.2 pts  (p=0.031, significant)
 
 The lift is computed per-task (configured score minus vanilla score), averaged across all tasks, and tested for statistical significance. Capability-level breakdowns show where your workflow configuration actually helps vs. adds overhead.
 
+## Benchmark Your Own Setup
+
+The 100 public tasks calibrate the instrument. The point of the instrument is your own stack: your repos, your CLAUDE.md, your hooks. Four commands (new in v1.5) close that loop:
+
+```bash
+# 1. Mine private tasks from your own merged PRs. No contamination:
+#    nobody trained on your repo's future.
+awb task from-pr https://github.com/you/repo/pull/123 --out ./tasks
+
+# 2. Run them.
+awb run claude-code-custom --tasks-dir ./tasks
+
+# 3. Changed your CLAUDE.md? Measure it: same adapter, two config dirs,
+#    paired sign test.
+awb ab claude-code-custom --config-a ~/.claude --config-b ./candidate-config
+
+# 4. Turn failures into config fixes: rubric failures and weak capabilities
+#    become ready-to-paste CLAUDE.md snippets.
+awb gap results/runs/<run_dir>/ --prescribe
+
+# 5. Watch for silent regressions (models and harnesses update weekly).
+#    Exit code 1 on drift, so it slots straight into cron or CI.
+awb drift results/runs/<new_run>/ --baseline results/baselines/<ref>.json
+
+# 6. Know what a correct change costs before you standardize on a config.
+awb cost results/runs/<run_dir>/
+```
+
+`from-pr` pins the pre-merge commit, overlays the PR's test files onto the old tree (tests exist, implementation does not), and writes a schema-valid task YAML with provenance stamped `real_pr`. One caveat: the test-file overlay resolves objects through AWB's local mirror cache, so if the mirror predates the PR merge, refresh it with `awb warmup --clear`.
+
 ## CLI Reference
 
-### `awb run` — Run benchmark tasks
+### `awb run` - Run benchmark tasks
 
 ```bash
 awb run                            # all tools, all tasks, 3 runs (vanilla vs custom comparison)
@@ -265,7 +295,7 @@ AWB v1.1 ships four execution modes tuned for different evaluation scenarios:
 
 **`--use-uv`** (rewrites `pip install` → `uv pip install` for 10-30x faster installs):
 
-### `awb warmup` — Pre-build workspace templates
+### `awb warmup` - Pre-build workspace templates
 
 ```bash
 awb warmup              # build templates for all 63 unique (repo, commit, setup) combos
@@ -276,37 +306,70 @@ awb warmup --use-uv     # use uv for faster initial builds
 
 Workspace templates are cached at `~/.cache/awb/templates/`. First build takes ~5 min; subsequent `awb run` invocations copy templates in ~2s instead of running `pip install` from scratch. Cuts ~55 min off a full benchmark run with 74 FastAPI tasks.
 
-### `awb gap` — Capability gap analysis
+### `awb gap` - Capability gap analysis
 
-Analyzes results to produce a capability radar, failure classification, systematic patterns, and ranked improvement suggestions.
+Analyzes results to produce a capability radar, failure classification, systematic patterns, and ranked improvement suggestions. Add `--prescribe` to turn trace-rubric failures and weak capabilities into concrete prescriptions: each one names the trigger (for example `trace:no_out_of_scope_edits`), the tasks it fired on, and a ready-to-paste CLAUDE.md snippet.
 
-### `awb compare` — Compare two runs
+### `awb task from-pr` - Mine a private task from a merged PR
+
+```bash
+awb task from-pr <pr_url> --out ./tasks [--category bug-fix] [--difficulty medium] \
+  [--test-command "python -m pytest"] [--dry-run]
+```
+
+Fetches the PR via the `gh` CLI, pins the pre-merge SHA, splits changed files into tests vs source, and generates a task YAML whose setup overlays the PR's test files onto the pre-merge tree. The generated file is validated against the schema (partial credit sums to 100) before it is written. Run private tasks with `awb run --tasks-dir ./tasks`.
+
+### `awb ab` - Paired config A/B test
+
+```bash
+awb ab claude-code-custom --config-a <dir> --config-b <dir> [--task BF-001] [--category bug-fix]
+```
+
+Runs the same adapter over the same tasks twice, once per config dir (via `CLAUDE_CONFIG_DIR` for Claude Code), then reports per-task deltas, mean lift, and a binomial sign-test p-value. Both config hashes are printed for reproducibility.
+
+### `awb drift` - Alert on regression against a baseline
+
+```bash
+awb drift results/runs/<new_run>/ --baseline <run_dir_or_baseline.json> --threshold 5.0
+```
+
+Compares mean score and per-task scores against a reference (a prior run dir or a published awb/v2 baseline JSON). Exits 1 when the mean drops more than the threshold, 0 otherwise, so a cron job or CI step can alert on silent model or harness regressions. Warns when task-set hashes differ.
+
+### `awb cost` - Cost per solved task
+
+```bash
+awb cost results/runs/<run_dir>/ [<more_run_dirs>...]
+```
+
+Groups results by tool and reports the procurement numbers: total spend, spend per solved task (total spend divided by solves, so failed attempts count), wasted spend on failures, and tokens per solve.
+
+### `awb compare` - Compare two runs
 
 Side-by-side comparison of two benchmark runs with significance testing.
 
-### `awb tools` — List adapters
+### `awb tools` - List adapters
 
 Shows all registered tool adapters and their availability status.
 
-### `awb validate` — Validate task YAMLs
+### `awb validate` - Validate task YAMLs
 
 Checks all 100 task YAML files against the schema, including partial credit sum-to-100 validation.
 
-### `awb info` — Task details
+### `awb info` - Task details
 
 Displays full details for a specific task including repo, capabilities, and partial credit rubric.
 
-### `awb stability` — Score stability report
+### `awb stability` - Score stability report
 
 Per-task score variance across multiple runs. Flags unstable tasks for prompt clarification or tighter verification.
 
-### `awb leaderboard` — Generate HTML leaderboard
+### `awb leaderboard` - Generate HTML leaderboard
 
 Generates a static HTML site with Chart.js radar chart, CSV export, and historical run tracking.
 
 Add `--readiness` to print the **Production Readiness Score** per tool to stdout. The score is a weighted composite of correctness (35%), regression-safety (20%), security (15%), review-burden (10%), maintainability (8%), cost (7%), and speed (5%), all normalized 0-100. Weighted for shipping safety rather than headline accuracy.
 
-### `awb trace grade` — Score behaviors from trace artifacts
+### `awb trace grade` - Score behaviors from trace artifacts
 
 Every benchmark run writes a `<task_id>_<tool>.trace.jsonl` file using OpenTelemetry GenAI semantic conventions (`gen_ai.client.operation`, `gen_ai.tool.use`, `gen_ai.usage.input_tokens`) plus AWB-specific spans for shell commands (`task.shell_command`), file edits (`task.file_edit`), and test runs (`task.test_run`). `awb trace grade <run_dir>` reads each trace and scores four shipping disciplines on a 0-100 scale:
 
@@ -317,11 +380,11 @@ Every benchmark run writes a `<task_id>_<tool>.trace.jsonl` file using OpenTelem
 | `no_out_of_scope_edits` | Did edits stay within `files_to_examine` from the task spec? |
 | `no_repeated_failing_command_loop` | Did the tool retry the same failing shell command 2+ times? |
 
-### `awb calibrate-difficulty` — Recalibrate difficulty labels
+### `awb calibrate-difficulty` - Recalibrate difficulty labels
 
 Recalibrates task difficulty labels from empirical pass rates. Use `--apply` to write changes back to task YAMLs.
 
-### `awb calibrate-timeouts` — Tighten timeouts
+### `awb calibrate-timeouts` - Tighten timeouts
 
 Recomputes task timeouts from empirical p95 wall-clock data. Use `--apply` to write changes.
 
@@ -420,11 +483,11 @@ class MyToolAdapter(ToolAdapter):
     def get_config_hash(self) -> str:
         ...
 
-    # Optional — implement to enable pre-flight auth checks
+    # Optional - implement to enable pre-flight auth checks
     def supports_auth_check(self) -> bool: ...
     def check_auth(self) -> tuple[bool, str]: ...
 
-    # Optional — implement to enable streaming metrics
+    # Optional - implement to enable streaming metrics
     def supports_streaming(self) -> bool: ...
     def get_model_pricing(self) -> dict[str, float]: ...
 ```
@@ -442,7 +505,7 @@ awb submit my-results.json                        # validate locally
 awb compare-submissions a.json b.json             # compare with significance testing
 ```
 
-The format captures tool version, model, hardware class, and per-task run results. Hardware classes (e.g., `apple_m5_24gb`, `linux_x86_16gb`) enable fair speed comparisons — only compared within the same tier.
+The format captures tool version, model, hardware class, and per-task run results. Hardware classes (e.g., `apple_m5_24gb`, `linux_x86_16gb`) enable fair speed comparisons: speeds are only compared within the same tier.
 
 ## Statistical Framework
 
@@ -459,20 +522,20 @@ The format captures tool version, model, hardware class, and per-task run result
 
 Performance and token optimization release. 33-50% faster full runs, ~97% cheaper quick evaluations.
 
-- **Workspace template cache** — ~55 min saved on full runs (74 FastAPI tasks no longer re-run pip install)
-- **`awb warmup`** — pre-build all unique workspace templates in parallel
-- **`--use-uv`** — 10-30x faster pip installs via uv
-- **`--progressive`** — easy → medium → hard execution, stops early if weak tool (50-80% token savings)
-- **`--fast-check`** — 8 representative tasks, 1 run, ~15 min, ~$4 (97% cheaper than full suite)
-- **Token budget enforcement** — `max_input_tokens`/`max_output_tokens` in task constraints, streaming kill switch
-- **Streaming token monitor** — Claude Code adapter parses stream events as they arrive
-- **Parallel partial credit** — independent grep/file checks run via asyncio.gather; pytest stays sequential
-- **Adaptive timeouts** — runs 2+ tighten timeout to `min(original, 2x run1_actual)`
-- **Richer RunCost** — cache_read, cache_creation, thinking token fields
-- **Token efficiency in scoring** — efficiency dimension blends iterations + tokens-per-iteration
-- **Two new weight profiles** — `token_efficient` and `rate_limited` for cost-sensitive evaluation
-- **Token-aware gap analysis** — cost-per-point outliers, cache hit rate patterns, token burn detection
-- **JSONL results** — additive output format alongside per-file JSON for fast batch loading
+- **Workspace template cache** - ~55 min saved on full runs (74 FastAPI tasks no longer re-run pip install)
+- **`awb warmup`** - pre-build all unique workspace templates in parallel
+- **`--use-uv`** - 10-30x faster pip installs via uv
+- **`--progressive`** - easy → medium → hard execution, stops early if weak tool (50-80% token savings)
+- **`--fast-check`** - 8 representative tasks, 1 run, ~15 min, ~$4 (97% cheaper than full suite)
+- **Token budget enforcement** - `max_input_tokens`/`max_output_tokens` in task constraints, streaming kill switch
+- **Streaming token monitor** - Claude Code adapter parses stream events as they arrive
+- **Parallel partial credit** - independent grep/file checks run via asyncio.gather; pytest stays sequential
+- **Adaptive timeouts** - runs 2+ tighten timeout to `min(original, 2x run1_actual)`
+- **Richer RunCost** - cache_read, cache_creation, thinking token fields
+- **Token efficiency in scoring** - efficiency dimension blends iterations + tokens-per-iteration
+- **Two new weight profiles** - `token_efficient` and `rate_limited` for cost-sensitive evaluation
+- **Token-aware gap analysis** - cost-per-point outliers, cache hit rate patterns, token burn detection
+- **JSONL results** - additive output format alongside per-file JSON for fast batch loading
 - **184 tests** (up from 135)
 
 ### 1.0.9 (2026-04-04)
@@ -514,10 +577,10 @@ See [CHANGELOG.md](CHANGELOG.md) for the full history (v1.0.0, v0.5.x, v0.4.x, v
 
 ## Links
 
-- [Methodology](METHODOLOGY.md) — Fair comparison principles, metric definitions, related work, known limitations
-- [Architecture](ARCHITECTURE.md) — Module graph, data models, pipeline diagrams
-- [Contributing](CONTRIBUTING.md) — Adding tasks, tools, and submitting results
-- [PyPI](https://pypi.org/project/awb/) — `pip install awb`
+- [Methodology](METHODOLOGY.md) - Fair comparison principles, metric definitions, related work, known limitations
+- [Architecture](ARCHITECTURE.md) - Module graph, data models, pipeline diagrams
+- [Contributing](CONTRIBUTING.md) - Adding tasks, tools, and submitting results
+- [PyPI](https://pypi.org/project/awb/) - `pip install awb`
 
 ## Citing AWB
 

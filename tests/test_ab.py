@@ -1,7 +1,7 @@
-"""Tests for `awb ab` — paired config A/B testing (awb/scoring/ab.py, awb/commands/ab_cmd.py).
+"""Tests for `awb ab` - paired config A/B testing (awb/scoring/ab.py, awb/commands/ab_cmd.py).
 
 FakeAdapter follows the pattern in tests/test_runner_parallelism.py's
-_FakeAdapter and tests/conftest.py's FakeAdapter — no real Claude Code calls,
+_FakeAdapter and tests/conftest.py's FakeAdapter - no real Claude Code calls,
 no network.
 """
 
@@ -141,7 +141,7 @@ class TestBuildABReport:
 
 
 class _UnsupportedFakeAdapter(ToolAdapter):
-    """Mirrors a config-dir-less adapter — does not opt into supports_config_dir."""
+    """Mirrors a config-dir-less adapter - does not opt into supports_config_dir."""
 
     name = "fake-unsupported"
     display_name = "Fake Unsupported"
@@ -200,7 +200,7 @@ class TestABCommandErrors:
 
 
 class _SupportedFakeAdapter(ToolAdapter):
-    """Config-dir-aware fake — records the config_dir it was built with."""
+    """Config-dir-aware fake - records the config_dir it was built with."""
 
     name = "fake-supported"
     display_name = "Fake Supported"
@@ -222,7 +222,7 @@ class _SupportedFakeAdapter(ToolAdapter):
 class TestABCommandHappyPath:
     def test_cli_wires_two_configs_into_report(self, monkeypatch, tmp_path, sample_task):
         """Full CLI wiring, with `_run_config` faked out so no BenchmarkRunner /
-        RepoManager / subprocess ever runs — zero network, zero real tool calls.
+        RepoManager / subprocess ever runs - zero network, zero real tool calls.
         """
         from awb.commands import ab_cmd
 
@@ -266,7 +266,7 @@ class TestABCommandHappyPath:
         assert data["n_tasks"] == 1
         # A single shared task is below compare_tools_paired's n>=5
         # significance floor, so mean_delta is forced to 0.0 even though the
-        # per-task delta below is real — same convention as workflow_lift.py.
+        # per-task delta below is real - same convention as workflow_lift.py.
         assert data["mean_delta"] == pytest.approx(0.0, abs=1e-9)
         assert data["per_task"][0]["task_id"] == sample_task.id
         assert data["per_task"][0]["delta"] == pytest.approx(-30.0)

@@ -1,4 +1,4 @@
-"""drift command — regression watch between a fresh run and a reference baseline."""
+"""drift command - regression watch between a fresh run and a reference baseline."""
 
 from __future__ import annotations
 
@@ -49,7 +49,7 @@ def drift(run_dir: str, baseline_path: str, threshold: float, fmt: str):
 
     Exit code contract: exits 1 when the composite has drifted past --threshold
     (in both --format text and --format json), exits 0 otherwise. Intended for
-    cron/CI regression watch — models and harnesses update silently.
+    cron/CI regression watch - models and harnesses update silently.
     """
     current = load_reference(run_dir)
     reference = load_reference(baseline_path)
@@ -77,7 +77,7 @@ def drift(run_dir: str, baseline_path: str, threshold: float, fmt: str):
 
     if report.task_set_hash_mismatch:
         console.print(
-            f"[{WARN}]Task set hash mismatch between current run and reference — "
+            f"[{WARN}]Task set hash mismatch between current run and reference - "
             f"the task set may have changed since the reference was recorded[/{WARN}]"
         )
     if report.new_tasks:

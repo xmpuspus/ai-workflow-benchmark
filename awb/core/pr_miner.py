@@ -3,7 +3,7 @@
 Pins the pre-merge commit as the task's repo.commit, then generates a
 setup_commands entry that overlays the PR's own test files onto that
 pre-merge workspace. Talks to GitHub exclusively through the `gh` CLI so no
-new runtime dependency (token handling, HTTP client) is needed — `gh auth`
+new runtime dependency (token handling, HTTP client) is needed - `gh auth`
 is assumed to already be configured on the machine running this.
 """
 
@@ -67,7 +67,7 @@ def _run_gh(*args: str, timeout: float = 30.0) -> str:
         result = subprocess.run(["gh", *args], capture_output=True, text=True, timeout=timeout)
     except FileNotFoundError as exc:
         raise PrMinerError(
-            "gh CLI not found — install and authenticate the GitHub CLI (gh auth login)"
+            "gh CLI not found - install and authenticate the GitHub CLI (gh auth login)"
         ) from exc
     except subprocess.TimeoutExpired as exc:
         raise PrMinerError(f"gh {' '.join(args)} timed out") from exc
@@ -154,7 +154,7 @@ def build_test_overlay_command(merge_commit_sha: str, test_paths: list[str]) -> 
     # The workspace's "origin" remote is the local bare-mirror cache
     # (RepoManager.prepare clones --local from it), not the GitHub URL, so
     # this fetch only pulls in the merge commit if the mirror itself already
-    # has it — true whenever the mirror was cloned/refreshed after the PR
+    # has it - true whenever the mirror was cloned/refreshed after the PR
     # merged. It's a best-effort safety net for a stale mirror, not a
     # guarantee; `awb warmup --clear` forces a fresh mirror if this misses.
     fetch = f"git fetch origin {merge_commit_sha} || true"
@@ -217,7 +217,7 @@ def mine_task_from_pr(
     pr = fetch_pr_metadata(owner, repo, number)
 
     if not pr.get("merged"):
-        raise PrMinerError(f"PR #{number} is not merged — only merged PRs can become tasks")
+        raise PrMinerError(f"PR #{number} is not merged - only merged PRs can become tasks")
 
     merge_commit_sha = pr.get("merge_commit_sha")
     if not merge_commit_sha:

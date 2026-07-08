@@ -1,8 +1,8 @@
-"""ab command — paired config A/B testing for the same adapter.
+"""ab command - paired config A/B testing for the same adapter.
 
 Runs one adapter twice over the same tasks, once per config directory (e.g.
 two CLAUDE.md/settings setups), then reports per-task deltas and a paired
-sign test. Answers "I changed my CLAUDE.md — did it help?".
+sign test. Answers "I changed my CLAUDE.md - did it help?".
 """
 
 from __future__ import annotations
@@ -52,7 +52,7 @@ def _run_config(tool: str, adapter, tasks, run_id: str, timeout, runs_dir: Path)
     runner = BenchmarkRunner(tool=tool, tasks=tasks, runs=1, timeout_override=timeout)
     # Inject the config-pinned adapter instance the runner would otherwise
     # build itself from the bare tool name (same override pattern the test
-    # suite already uses — see tests/test_runner_trace.py).
+    # suite already uses - see tests/test_runner_trace.py).
     runner._adapter = adapter
     runner.recorder = ResultRecorder(results_dir=runs_dir)
     runner._run_id = run_id

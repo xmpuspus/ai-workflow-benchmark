@@ -1,4 +1,4 @@
-"""task command group — mine private benchmark tasks from merged PRs."""
+"""task command group - mine private benchmark tasks from merged PRs."""
 
 from __future__ import annotations
 
@@ -147,7 +147,7 @@ def from_pr(
         if fmt == "json":
             emit_json({"task": mined.task, "written_path": None})
         else:
-            console.print(f"[{INFO}]Dry run — nothing written[/{INFO}]\n")
+            console.print(f"[{INFO}]Dry run - nothing written[/{INFO}]\n")
             console.print(yaml_text)
         return
 

@@ -1,4 +1,4 @@
-"""Drift detection — compare a fresh run against a reference and flag regressions.
+"""Drift detection - compare a fresh run against a reference and flag regressions.
 
 The composite used here is a lightweight per-task mean score:
     mean(partial_credit_score / partial_credit_max * 100)
@@ -126,7 +126,7 @@ def compute_drift(
 ) -> DriftReport:
     """Diff two ReferenceScores. Drifted when mean_current drops more than threshold.
 
-    `regressions` lists only tasks whose score fell (delta < 0), worst first —
+    `regressions` lists only tasks whose score fell (delta < 0), worst first -
     the tasks worth looking at when the composite has drifted.
     """
     common = sorted(set(current.per_task) & set(reference.per_task))

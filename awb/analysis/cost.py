@@ -1,4 +1,4 @@
-"""Cost-per-solved-task report — dollars spent per correct change, grouped by tool."""
+"""Cost-per-solved-task report - dollars spent per correct change, grouped by tool."""
 
 from __future__ import annotations
 
@@ -23,7 +23,7 @@ def build_cost_report(results) -> list[CostReport]:
     """Group RunResults by tool and compute cost-per-solved-task figures.
 
     cost_per_solved and tokens_per_solved are None when a tool solved zero
-    tasks — never divide by zero. Sorted cheapest-per-solved first, with
+    tasks - never divide by zero. Sorted cheapest-per-solved first, with
     None (nothing solved) sorting last.
     """
     by_tool: dict[str, list] = defaultdict(list)

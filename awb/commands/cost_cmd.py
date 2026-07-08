@@ -1,4 +1,4 @@
-"""cost command — cost-per-solved-task report, grouped by tool."""
+"""cost command - cost-per-solved-task report, grouped by tool."""
 
 from __future__ import annotations
 
@@ -52,7 +52,7 @@ def cost(run_dirs: tuple[str, ...], fmt: str):
         )
     else:
         console.print(
-            f"[{WARN}]No tool solved any task — no cost-per-solved figure available[/{WARN}]"
+            f"[{WARN}]No tool solved any task - no cost-per-solved figure available[/{WARN}]"
         )
 
     table = Table(title="Cost per Tool", header_style="bold")

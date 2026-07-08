@@ -2,18 +2,18 @@
 
 ## Project Structure
 
-- `awb/` — Main package
-- `awb/commands/` — CLI command modules (run, analyze, calibrate, leaderboard, migrate, submit, validate, workflow, trace). Shared visual helpers live in `awb/commands/_shared.py` (color constants, score_style, bar, summary_table, headline_panel, emit_json).
-- `awb/tasks/` — Task YAML definitions (100 tasks across 8 categories). Every task carries `provenance`, `contamination_risk`, `label` from the v1.2 schema; backfill via `scripts/backfill_provenance.py`.
-- `awb/scoring/` — Sigmoid normalization, composite scoring, capability profiles, stability metrics, statistics, integrity checks, readiness composite, task-set hash.
-- `awb/analysis/` — Gap analysis engine, workflow improvement suggestions, difficulty/timeout calibrators.
-- `awb/trace/` — OpenTelemetry-aligned `.trace.jsonl` artifact + the 4-rubric deterministic grader for `awb trace grade`.
-- `awb/submission/` — External submission format and cross-submission comparison.
-- `awb/adapters/` — Tool adapters. Stub adapters set `is_stub = True` (cursor, aider, windsurf, copilot) so the runner fails fast at startup. Real adapters using `asyncio.Event` must name their `create_task` instances and cancel them in `finally` (see claude_code.py for the pattern).
-- `demos/` — `hero.tape` is the vhs recipe that produces `hero.gif`. Re-record on user-facing CLI changes; do NOT hand-paint GIFs.
-- `results/baselines/` — Frozen per-release baselines published via the GitHub Pages workflow at `.github/workflows/leaderboard.yml`. Schema: `spec_version: awb/v2` plus `submission` + `results` blocks (see `results/baselines/README.md`).
-- `scripts/` — `backfill_provenance.py` stamps provenance on every task YAML; `publish.sh` + `test_pypi_install.sh` are the release helpers.
-- `tests/` — pytest suite (246 tests).
+- `awb/` - Main package
+- `awb/commands/` - CLI command modules (run, analyze, calibrate, leaderboard, migrate, submit, validate, workflow, trace, task_cmd, ab_cmd, drift_cmd, cost_cmd). Shared visual helpers live in `awb/commands/_shared.py` (color constants, score_style, bar, summary_table, headline_panel, emit_json).
+- `awb/tasks/` - Task YAML definitions (100 tasks across 8 categories). Every task carries `provenance`, `contamination_risk`, `label` from the v1.2 schema; backfill via `scripts/backfill_provenance.py`.
+- `awb/scoring/` - Sigmoid normalization, composite scoring, capability profiles, stability metrics, statistics, integrity checks, readiness composite, task-set hash, paired config A/B report (`ab.py`).
+- `awb/analysis/` - Gap analysis engine, workflow improvement suggestions, prescriptions (rubric/capability failures to CLAUDE.md snippets), drift detection, cost-per-solved reports, difficulty/timeout calibrators.
+- `awb/trace/` - OpenTelemetry-aligned `.trace.jsonl` artifact + the 4-rubric deterministic grader for `awb trace grade`.
+- `awb/submission/` - External submission format and cross-submission comparison.
+- `awb/adapters/` - Tool adapters. Stub adapters set `is_stub = True` (cursor, aider, windsurf, copilot) so the runner fails fast at startup. Real adapters using `asyncio.Event` must name their `create_task` instances and cancel them in `finally` (see claude_code.py for the pattern).
+- `demos/` - `hero.tape` is the vhs recipe that produces `hero.gif`. Re-record on user-facing CLI changes; do NOT hand-paint GIFs.
+- `results/baselines/` - Frozen per-release baselines published via the GitHub Pages workflow at `.github/workflows/leaderboard.yml`. Schema: `spec_version: awb/v2` plus `submission` + `results` blocks (see `results/baselines/README.md`).
+- `scripts/` - `backfill_provenance.py` stamps provenance on every task YAML; `publish.sh` + `test_pypi_install.sh` are the release helpers.
+- `tests/` - pytest suite (392 tests).
 
 ## Development
 
@@ -32,7 +32,7 @@ pip install -e ".[stats]"
 ## Conventions
 
 - Python 3.11+, ruff for linting (100-char line length)
-- Dataclasses for data structures — not Pydantic (minimal dependencies by design)
+- Dataclasses for data structures - not Pydantic (minimal dependencies by design)
 - Click for CLI, Rich for terminal output
 - Tasks use real OSS repos at pinned commit SHAs
 - All partial credit criteria must sum to 100 points
@@ -70,10 +70,18 @@ Valid capabilities: `code_comprehension`, `bug_diagnosis`, `multi_file_reasoning
 4. Run `awb validate` before opening a PR
 
 CLI commands:
-- `awb stability <run_dirs>...` — per-task score stability report
-- `awb calibrate-difficulty <run_dirs>... [--apply]` — recalibrate difficulty from empirical pass rates
-- `awb calibrate-timeouts <run_dirs>... [--apply]` — tighten timeouts from empirical p95 data
-- `awb migrate-results <old_dir>` — convert v0.5.x result JSON to v1.0 format
+- `awb stability <run_dirs>...` - per-task score stability report
+- `awb calibrate-difficulty <run_dirs>... [--apply]` - recalibrate difficulty from empirical pass rates
+- `awb calibrate-timeouts <run_dirs>... [--apply]` - tighten timeouts from empirical p95 data
+- `awb migrate-results <old_dir>` - convert v0.5.x result JSON to v1.0 format
+
+## Harness Tuning Commands (added v1.5)
+
+- `awb task from-pr <pr_url> --out ./tasks` - mine a private task from a merged GitHub PR (gh CLI required). Pins the pre-merge SHA, overlays the PR's test files via setup_commands, validates against the schema before writing. Private tasks run via `awb run --tasks-dir ./tasks`.
+- `awb ab <tool> --config-a <dir> --config-b <dir>` - same adapter, two config dirs (CLAUDE_CONFIG_DIR for claude-code-custom), paired sign test via `compare_tools_paired`. Adapters opt in with `supports_config_dir = True`.
+- `awb drift <run_dir> --baseline <ref>` - reference is a run dir or an awb/v2 baseline JSON. Exit code contract: 1 on drift beyond `--threshold` (default 5.0), 0 otherwise; keep that stable, cron/CI depends on it.
+- `awb cost <run_dirs>...` - cost per solved task; divides total spend (failed attempts included) by solves. `cost_per_solved` is None when nothing solved, never a division crash.
+- `awb gap <run_dir> --prescribe` - appends prescriptions from `awb/analysis/prescriptions.py`; a rubric fires at score < 60 on 2+ tasks. Without the flag, gap output must stay byte-identical.
 
 ## Adding an Adapter
 

@@ -7,12 +7,16 @@ import logging
 import click
 
 from awb import __version__
+from awb.commands.ab_cmd import ab
 from awb.commands.analyze import compare, gap, stability
 from awb.commands.calibrate import calibrate_difficulty_cmd, calibrate_timeouts_cmd
+from awb.commands.cost_cmd import cost
+from awb.commands.drift_cmd import drift
 from awb.commands.leaderboard_cmd import leaderboard
 from awb.commands.migrate import migrate_results
 from awb.commands.run import run
 from awb.commands.submit import compare_submissions_cmd, export, submit
+from awb.commands.task_cmd import task
 from awb.commands.trace_cmd import trace
 from awb.commands.validate import info, quickstart, tools, validate
 from awb.commands.warmup import warmup
@@ -46,3 +50,7 @@ cli.add_command(workflow)
 cli.add_command(migrate_results)
 cli.add_command(warmup)
 cli.add_command(trace)
+cli.add_command(task)
+cli.add_command(ab)
+cli.add_command(drift)
+cli.add_command(cost)

@@ -1,6 +1,6 @@
-"""Config A/B report — pairs same-adapter runs across two config directories.
+"""Config A/B report - pairs same-adapter runs across two config directories.
 
-Answers "I changed my CLAUDE.md — did it help?" by running the same tool twice
+Answers "I changed my CLAUDE.md - did it help?" by running the same tool twice
 (once per config dir) over the same tasks, then pairing per-task scores and
 running the existing paired sign test.
 """

@@ -186,7 +186,7 @@ def _grade_traces(
 
     Returns (rubric_scores, n_graded, n_missing). A result counts as missing
     when it has no recorded trace, the trace file is absent, or the trace
-    carries no gradeable spans (grade_trace_or_none returns None) — never
+    carries no gradeable spans (grade_trace_or_none returns None) - never
     faked as a passing score.
     """
     rubric_scores: dict[str, list[tuple[str, int]]] = defaultdict(list)
