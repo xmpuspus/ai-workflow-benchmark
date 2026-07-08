@@ -10,9 +10,9 @@
     <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-green" alt="License"></a>
   </p>
   <br/>
-  <img src="demos/hero.gif" alt="awb run, awb leaderboard --readiness, awb gap output" width="820"/>
+  <img src="demos/hero.gif" alt="awb tools, awb validate, awb gap, awb cost, awb leaderboard --readiness output" width="820"/>
   <br/>
-  <sub>v1.4.0: trace grading that actually grades, baselines with trust columns, real <code>-j</code> parallelism, and a documented security boundary.</sub>
+  <sub>v1.5.0: benchmark your own setup - mine private tasks from your merged PRs, A/B test your CLAUDE.md, catch silent regressions, and price every solved task.</sub>
 </div>
 
 ---
@@ -29,16 +29,17 @@ Related work measures complementary axes. [HAL](https://arxiv.org/abs/2510.11977
 
 AWB's distinct contribution is twofold: (1) a paired **vanilla-vs-custom** adapter pair that isolates the workflow-configuration delta for the same model, surfaced as a single Workflow Lift score with a sign-test p-value; (2) **deterministic** trace-grading rubrics (read-tests-before-edit, ran-verification-after-change, no-out-of-scope-edits, no-repeated-failing-loop) computed from OpenTelemetry-aligned `.trace.jsonl` artifacts, not LLM judges. See [METHODOLOGY.md#related-work](METHODOLOGY.md#related-work) for citation details.
 
-## What's New in v1.4.0
+## What's New in v1.5.0
 
-- **Trace grading actually grades now.** The runner used to emit only token spans, so all four trace rubrics scored a vacuous 100 on every run. It now translates Claude Code's nested `tool_use` blocks into `FILE_EDIT` / read / `SHELL_COMMAND` spans and correlates Bash exit codes, producing real, discriminating scores (the published baseline's `no_out_of_scope_edits` ranges 17-100 across the 8 tasks).
-- **Baselines carry the trust columns**: per-run `trace_grade` and a submission-level `readiness` + `trace_summary` block, so the published baseline shows both trust features working. A span-less trace reports `null`, never a fake 100.
-- **`-j N` works on its own.** `-j>1` enables parallel mode (it used to be a silent no-op without `--parallel`); a crashed parallel task is now recorded as a FAIL with a traceback instead of vanishing from results.
-- **Aider is a real adapter** (`is_stub = False`), gated on the binary being installed.
-- **Exact-pinned runtime dependencies** for reproducible installs, plus invariant guard tests so the README lead, install pin, and baseline reference can't silently drift.
-- **Security posture documented** in [docs/SECURITY.md](docs/SECURITY.md): the shell-execution trust boundary and the per-task Docker isolation planned for safe community submissions.
+The harness-tuning release: the instrument now points at your own stack, not just the public task set. See [Benchmark Your Own Setup](#benchmark-your-own-setup) for the full loop.
 
-Carried over from v1.2.0-v1.3.0: public GitHub Pages leaderboard, task-set hash on every result, OpenTelemetry-aligned `.trace.jsonl` artifacts, `awb trace grade`, the Production Readiness Score, strict result schema v2, and reliability + provenance hardening.
+- **`awb task from-pr <pr_url>`** mines a private benchmark task from a merged GitHub PR: pre-merge SHA pinned, the PR's test files overlaid onto the old tree, provenance stamped `real_pr`. Run private sets with **`awb run --tasks-dir`**; the task-set hash now reflects the directory actually loaded.
+- **`awb ab --config-a <dir> --config-b <dir>`** answers "did my CLAUDE.md change help?": same adapter, two config dirs, paired sign test, per-arm config hashes recorded.
+- **`awb drift`** compares a fresh run against a prior run or published baseline and exits 1 past the threshold, built for cron/CI regression watch.
+- **`awb cost`** reports dollars per solved task (failed-attempt spend included), wasted spend, and tokens per solve.
+- **`awb gap --prescribe`** turns trace-rubric failures and weak capabilities into ready-to-paste CLAUDE.md snippets with task-level evidence.
+
+Carried over from v1.2.0-v1.4.0: real deterministic trace grading, baselines with trust columns, public GitHub Pages leaderboard, task-set hash on every result, the Production Readiness Score, strict result schema v2, exact-pinned dependencies, and the documented security boundary.
 
 ## Quick Start
 
@@ -58,7 +59,7 @@ awb leaderboard --readiness --explain                 # Production Readiness Sco
 Run this end-to-end against the published v1.4.0 fast-check baseline. Should finish in ~15 minutes for ~$4 of API spend and produce a tweetable Workflow Lift number plus a capability profile.
 
 ```bash
-pip install awb==1.4.0
+pip install awb==1.5.0
 awb quickstart                                       # 1. verify environment
 awb warmup --use-uv                                  # 2. pre-build templates
 awb run --fast-check claude-code-custom              # 3. ~15 min, ~$4, real run
@@ -519,6 +520,14 @@ The format captures tool version, model, hardware class, and per-task run result
 
 ## Changelog
 
+### 1.5.0 (2026-07-08)
+
+Harness tuning: `awb task from-pr` + `awb run --tasks-dir` (private tasks from merged PRs), `awb ab` (paired config A/B via CLAUDE_CONFIG_DIR), `awb drift` (baseline regression alerts with an exit-code contract), `awb cost` (cost per solved task), `awb gap --prescribe` (config prescriptions from rubric failures). Task-set hash now derives from the loaded tasks directory; `--resume` with `--tasks-dir` is refused to prevent cross-set contamination; Rich markup disabled on all prints carrying PR-derived text.
+
+### 1.4.0 (2026-05-30)
+
+Real trace grading (tool_use blocks translated to FILE_EDIT/SHELL_COMMAND spans; span-less traces report null, never a fake 100), baselines with per-run trace_grade and readiness columns, `-j N` enables parallel mode on its own, Aider became a real adapter, exact-pinned runtime dependencies with freshness guard tests, security posture documented in docs/SECURITY.md.
+
 ### 1.1.0 (2026-04-07)
 
 Performance and token optimization release. 33-50% faster full runs, ~97% cheaper quick evaluations.
@@ -591,7 +600,7 @@ If you use AWB in research, cite it via Zenodo. The concept DOI [`10.5281/zenodo
 @software{puspus_awb_2026,
   author    = {Puspus, Xavier},
   title     = {{AWB: AI Workflow Benchmark}},
-  version   = {1.4.0},
+  version   = {1.5.0},
   year      = {2026},
   month     = may,
   publisher = {Zenodo},
