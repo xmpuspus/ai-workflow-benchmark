@@ -53,7 +53,7 @@ def pr_responses():
             "sha": MERGE_SHA,
             "parents": [{"sha": PREMERGE_SHA}],
         },
-        "repos/acme/widgets/pulls/42/files": [
+        "repos/acme/widgets/pulls/42/files?per_page=100": [
             {"filename": "src/ratelimit/bucket.py"},
             {"filename": "src/ratelimit/__init__.py"},
             {"filename": "tests/test_bucket.py"},
@@ -245,7 +245,9 @@ class TestOverlayGithubFallback:
 
 class TestSourceOnlyPr:
     def test_mining_pr_with_no_test_files(self, monkeypatch, pr_responses):
-        pr_responses["repos/acme/widgets/pulls/42/files"] = [{"filename": "src/app.py"}]
+        pr_responses["repos/acme/widgets/pulls/42/files?per_page=100"] = [
+            {"filename": "src/app.py"}
+        ]
         monkeypatch.setattr("subprocess.run", _fake_gh_run(pr_responses))
         mined = mine_task_from_pr("https://github.com/acme/widgets/pull/42")
         assert mined.test_files == []
@@ -256,3 +258,21 @@ class TestSourceOnlyPr:
         assert pts == 100
         touched = mined.task["verification"]["partial_credit"][-1]["check"]
         assert "src" in touched
+
+
+def test_files_fetch_uses_query_param_not_gh_field(monkeypatch, pr_responses):
+    # gh api switches GET to POST when -F/-f fields are present and GitHub
+    # 404s a POST on the files endpoint; per_page must ride the query string.
+    seen = []
+
+    def _spy(cmd, capture_output=True, text=True, timeout=30.0):
+        seen.append(cmd)
+        return _fake_gh_run(pr_responses)(cmd, capture_output, text, timeout)
+
+    monkeypatch.setattr("subprocess.run", _spy)
+    mine_task_from_pr("https://github.com/acme/widgets/pull/42")
+    files_calls = [c for c in seen if any("pulls/42/files" in a for a in c)]
+    assert files_calls, "files endpoint never called"
+    for call in files_calls:
+        assert "-F" not in call and "-f" not in call
+        assert any(a.endswith("files?per_page=100") for a in call)

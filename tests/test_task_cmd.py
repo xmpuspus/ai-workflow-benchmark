@@ -45,7 +45,7 @@ def pr_responses():
             "sha": MERGE_SHA,
             "parents": [{"sha": PREMERGE_SHA}],
         },
-        "repos/acme/widgets/pulls/42/files": [
+        "repos/acme/widgets/pulls/42/files?per_page=100": [
             {"filename": "src/ratelimit/bucket.py"},
             {"filename": "tests/test_bucket.py"},
         ],

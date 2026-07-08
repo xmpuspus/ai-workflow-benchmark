@@ -29,8 +29,9 @@ Related work measures complementary axes. [HAL](https://arxiv.org/abs/2510.11977
 
 AWB's distinct contribution is twofold: (1) a paired **vanilla-vs-custom** adapter pair that isolates the workflow-configuration delta for the same model, surfaced as a single Workflow Lift score with a sign-test p-value; (2) **deterministic** trace-grading rubrics (read-tests-before-edit, ran-verification-after-change, no-out-of-scope-edits, no-repeated-failing-loop) computed from OpenTelemetry-aligned `.trace.jsonl` artifacts, not LLM judges. See [METHODOLOGY.md#related-work](METHODOLOGY.md#related-work) for citation details.
 
-## What's New in v1.5.2
+## What's New in v1.5.3
 
+- **`awb task from-pr` fetches PR files correctly.** The files call passed per_page as a gh -F field, which silently turns the GET into a POST that GitHub 404s, so mining failed on every real PR. per_page now rides the query string; caught by the live fresh-venv smoke against a real merged PR.
 - **`awb submit` accepts the trust columns.** The v1.4.0 baselines added `readiness`, `trace_summary`, and per-run `trace_grade` blocks, but the submission schema still rejected them, so validating an `awb export` (or the published baseline itself) failed. Both schema copies now define the blocks, with a guard test keeping them in sync. `trace_summary: null` (zero graded traces) validates too.
 
 The rest of the 1.5 line - the harness-tuning release: the instrument now points at your own stack, not just the public task set. See [Benchmark Your Own Setup](#benchmark-your-own-setup) for the full loop.
@@ -61,7 +62,7 @@ awb leaderboard --readiness --explain                 # Production Readiness Sco
 Run this end-to-end against the published v1.4.0 fast-check baseline. Should finish in ~15 minutes for ~$4 of API spend and produce a tweetable Workflow Lift number plus a capability profile.
 
 ```bash
-pip install awb==1.5.2
+pip install awb==1.5.3
 awb quickstart                                       # 1. verify environment
 awb warmup --use-uv                                  # 2. pre-build templates
 awb run --fast-check claude-code-custom              # 3. ~15 min, ~$4, real run
@@ -522,6 +523,10 @@ The format captures tool version, model, hardware class, and per-task run result
 
 ## Changelog
 
+### 1.5.3 (2026-07-08)
+
+`awb task from-pr` files fetch fixed: gh api -F fields switch GET to POST and GitHub 404s the files endpoint; per_page moved into the query string. Found by running the published wheel against a real merged PR.
+
 ### 1.5.2 (2026-07-08)
 
 Submission schema also accepts trace_summary: null, which exports write when zero traces were graded. Caught by the same fresh-venv smoke that caught 1.5.1's gap.
@@ -610,7 +615,7 @@ If you use AWB in research, cite it via Zenodo. The concept DOI [`10.5281/zenodo
 @software{puspus_awb_2026,
   author    = {Puspus, Xavier},
   title     = {{AWB: AI Workflow Benchmark}},
-  version   = {1.5.2},
+  version   = {1.5.3},
   year      = {2026},
   month     = may,
   publisher = {Zenodo},

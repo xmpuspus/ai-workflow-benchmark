@@ -89,10 +89,11 @@ def fetch_pr_metadata(owner: str, repo: str, number: int) -> dict:
 
 
 def fetch_pr_files(owner: str, repo: str, number: int) -> list[dict]:
-    # 100 is the GitHub API's max per_page for this endpoint; larger PRs only
-    # get their first 100 changed files considered (rare in practice for
-    # tasks we'd want to turn into a benchmark item anyway).
-    return _gh_api_json(f"repos/{owner}/{repo}/pulls/{number}/files", ["-F", "per_page=100"])
+    # per_page as a query param, never a -F field: gh api silently switches
+    # to POST when -F/-f fields are present, and GitHub 404s a POST here.
+    # 100 is the endpoint's max; larger PRs only get their first 100 changed
+    # files considered (rare for PRs worth turning into a benchmark task).
+    return _gh_api_json(f"repos/{owner}/{repo}/pulls/{number}/files?per_page=100")
 
 
 def resolve_premerge_sha(owner: str, repo: str, merge_commit_sha: str) -> str:
