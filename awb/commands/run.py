@@ -33,12 +33,13 @@ def _run_both(
     resume=False,
     concurrency=3,
     adaptive=False,
+    tasks_dir=None,
 ):
     """Run vanilla and custom back-to-back then show a comparison."""
     from awb.core.runner import BenchmarkRunner
     from awb.core.task_loader import load_all_tasks
 
-    tasks = load_all_tasks(category=category)
+    tasks = load_all_tasks(tasks_dir=tasks_dir, category=category)
     if task_id:
         tasks = [t for t in tasks if t.id == task_id]
         if not tasks:
@@ -124,7 +125,7 @@ def _run_both(
     from awb.core.task_loader import load_all_tasks
     from awb.scoring.workflow_lift import compute_workflow_lift
 
-    all_tasks = load_all_tasks()
+    all_tasks = load_all_tasks(tasks_dir=tasks_dir)
     task_defs = {t.id: t for t in all_tasks}
     report = compute_workflow_lift(vanilla_results, custom_results, task_defs)
 
@@ -201,6 +202,11 @@ def _run_both(
 @click.option("--fast-check", is_flag=True, help="Run 8 representative tasks for quick signal")
 @click.option("--use-uv", is_flag=True, help="Use uv instead of pip for faster installs")
 @click.option("--yes", "-y", is_flag=True, help="Skip confirmation prompt")
+@click.option(
+    "--tasks-dir",
+    type=click.Path(exists=True),
+    help="Load tasks from a custom directory (e.g. private tasks) instead of the packaged ones",
+)
 def run(
     tool: str | None,
     workflow: str | None,
@@ -219,10 +225,13 @@ def run(
     fast_check: bool,
     use_uv: bool,
     yes: bool,
+    tasks_dir: str | None,
 ):
     """Run benchmark tasks through a tool adapter."""
     from awb.core.runner import BenchmarkRunner
     from awb.core.task_loader import load_all_tasks
+
+    tasks_dir_path = Path(tasks_dir) if tasks_dir else None
 
     # Resolve tool from workflow or direct argument
     workflow_info = None
@@ -255,10 +264,11 @@ def run(
             resume=resume,
             concurrency=concurrency,
             adaptive=adaptive,
+            tasks_dir=tasks_dir_path,
         )
         return
 
-    tasks = load_all_tasks(category=category)
+    tasks = load_all_tasks(tasks_dir=tasks_dir_path, category=category)
     if task_id:
         tasks = [t for t in tasks if t.id == task_id]
         if not tasks:
