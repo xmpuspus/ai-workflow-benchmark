@@ -35,9 +35,11 @@ def build_cost_report(results) -> list[CostReport]:
         n_tasks = len(rs)
         solved = [r for r in rs if r.outcome.success]
         n_solved = len(solved)
-        total_cost = sum(r.cost.estimated_cost_usd for r in rs)
-        wasted_cost = sum(r.cost.estimated_cost_usd for r in rs if not r.outcome.success)
-        total_tokens = sum(r.cost.input_tokens + r.cost.output_tokens for r in rs)
+        # `or 0`: deserialized results can carry present-but-null cost fields
+        # (dict.get returns the None, not the default).
+        total_cost = sum(r.cost.estimated_cost_usd or 0.0 for r in rs)
+        wasted_cost = sum(r.cost.estimated_cost_usd or 0.0 for r in rs if not r.outcome.success)
+        total_tokens = sum((r.cost.input_tokens or 0) + (r.cost.output_tokens or 0) for r in rs)
         cost_per_task = total_cost / n_tasks if n_tasks else 0.0
         cost_per_solved = (total_cost / n_solved) if n_solved else None
         tokens_per_solved = (total_tokens / n_solved) if n_solved else None

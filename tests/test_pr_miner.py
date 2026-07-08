@@ -214,3 +214,30 @@ class TestMineTaskFromPr:
         )
         assert mined.task["repo"]["setup_commands"][0] == "pip install -e .[dev]"
         assert "git checkout" in mined.task["repo"]["setup_commands"][1]
+
+
+class TestOverlayGithubFallback:
+    def test_overlay_falls_back_to_github_url(self):
+        from awb.core.pr_miner import build_test_overlay_command
+
+        cmd = build_test_overlay_command(
+            MERGE_SHA, ["tests/test_x.py"], repo_url="https://github.com/o/r"
+        )
+        expected = (
+            f"git fetch origin {MERGE_SHA} || git fetch https://github.com/o/r {MERGE_SHA} || true"
+        )
+        assert expected in cmd
+        assert cmd.endswith(f"git checkout {MERGE_SHA} -- tests/test_x.py")
+
+    def test_overlay_without_repo_url_fetches_origin_only(self):
+        from awb.core.pr_miner import build_test_overlay_command
+
+        cmd = build_test_overlay_command(MERGE_SHA, ["tests/test_x.py"])
+        assert "github.com" not in cmd
+        assert f"git fetch origin {MERGE_SHA} || true" in cmd
+
+    def test_mined_task_overlay_carries_github_fallback(self, monkeypatch, pr_responses):
+        monkeypatch.setattr("subprocess.run", _fake_gh_run(pr_responses))
+        mined = mine_task_from_pr("https://github.com/acme/widgets/pull/42")
+        overlay = mined.task["repo"]["setup_commands"][-1]
+        assert "git fetch https://github.com/acme/widgets" in overlay

@@ -149,15 +149,21 @@ def _normalize_title(raw_title: str) -> str:
     return title
 
 
-def build_test_overlay_command(merge_commit_sha: str, test_paths: list[str]) -> str:
+def build_test_overlay_command(
+    merge_commit_sha: str, test_paths: list[str], repo_url: str = ""
+) -> str:
     quoted = " ".join(shlex.quote(p) for p in test_paths)
     # The workspace's "origin" remote is the local bare-mirror cache
     # (RepoManager.prepare clones --local from it), not the GitHub URL, so
-    # this fetch only pulls in the merge commit if the mirror itself already
-    # has it - true whenever the mirror was cloned/refreshed after the PR
-    # merged. It's a best-effort safety net for a stale mirror, not a
-    # guarantee; `awb warmup --clear` forces a fresh mirror if this misses.
-    fetch = f"git fetch origin {merge_commit_sha} || true"
+    # the first fetch only finds the merge commit if the mirror was
+    # refreshed after the PR merged. Fall back to fetching the SHA straight
+    # from GitHub. If both fetches miss, the strict checkout fails the
+    # provision loudly; a silent miss would score the tool against a
+    # workspace missing its verification tests.
+    fetches = [f"git fetch origin {merge_commit_sha}"]
+    if repo_url:
+        fetches.append(f"git fetch {shlex.quote(repo_url)} {merge_commit_sha}")
+    fetch = " || ".join(fetches) + " || true"
     checkout = f"git checkout {merge_commit_sha} -- {quoted}"
     return f"{fetch} && {checkout}"
 
@@ -232,7 +238,11 @@ def mine_task_from_pr(
     languages = infer_languages(paths)
     setup_commands = list(extra_setup_commands or [])
     if test_files:
-        setup_commands.append(build_test_overlay_command(merge_commit_sha, test_files))
+        setup_commands.append(
+            build_test_overlay_command(
+                merge_commit_sha, test_files, repo_url=f"https://github.com/{owner}/{repo}"
+            )
+        )
 
     scoped_test_command = build_test_command(test_command, test_files)
     now = dt.datetime.now(dt.UTC).isoformat()

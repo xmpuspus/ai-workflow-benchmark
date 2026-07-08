@@ -304,3 +304,76 @@ class TestABCommandHappyPath:
         )
 
         assert result.exit_code != 0
+
+
+class _ConfigBBrokenAdapter(_SupportedFakeAdapter):
+    """Available for config A but not for a config dir named 'bad'."""
+
+    name = "fake-b-broken"
+
+    def check_available(self) -> bool:
+        return not str(self.config_dir).endswith("bad")
+
+
+class TestABPreflight:
+    def test_config_b_unavailable_fails_before_any_run(self, monkeypatch, tmp_path, sample_task):
+        from awb.commands import ab_cmd
+
+        monkeypatch.setattr(
+            "awb.adapters.registry.get_adapter", lambda name: _ConfigBBrokenAdapter()
+        )
+        monkeypatch.setattr(
+            "awb.core.task_loader.load_all_tasks", lambda category=None: [sample_task]
+        )
+
+        def _must_not_run(*args, **kwargs):
+            raise AssertionError("config A ran despite config B being unavailable")
+
+        monkeypatch.setattr(ab_cmd, "_run_config", _must_not_run)
+
+        config_a = tmp_path / "a"
+        config_b = tmp_path / "bad"
+        config_a.mkdir()
+        config_b.mkdir()
+
+        cli_runner = CliRunner()
+        result = cli_runner.invoke(
+            ab_cmd.ab,
+            ["fake-b-broken", "--config-a", str(config_a), "--config-b", str(config_b)],
+        )
+        assert result.exit_code == 1
+        assert "config B" in result.output
+
+    def test_small_sample_verdict_names_the_sign_test_floor(
+        self, monkeypatch, tmp_path, sample_task
+    ):
+        import dataclasses as dc
+
+        from awb.commands import ab_cmd
+
+        tasks = [dc.replace(sample_task, id=f"BF-00{i}") for i in (1, 2, 3)]
+        monkeypatch.setattr(
+            "awb.adapters.registry.get_adapter", lambda name: _SupportedFakeAdapter()
+        )
+        monkeypatch.setattr("awb.core.task_loader.load_all_tasks", lambda category=None: tasks)
+
+        def _fake_run_config(tool, adapter, task_list, run_id, timeout, runs_dir):
+            score = 90 if run_id.endswith("_ab_a") else 60
+            return [_result(t.id, tool, score) for t in task_list]
+
+        monkeypatch.setattr(ab_cmd, "_run_config", _fake_run_config)
+
+        config_a = tmp_path / "a"
+        config_b = tmp_path / "b"
+        config_a.mkdir()
+        config_b.mkdir()
+
+        cli_runner = CliRunner()
+        result = cli_runner.invoke(
+            ab_cmd.ab,
+            ["fake-supported", "--config-a", str(config_a), "--config-b", str(config_b)],
+        )
+        assert result.exit_code == 0, result.output
+        # Under 5 pairs the sign test cannot run; the verdict must say so
+        # instead of claiming "no significant difference".
+        assert "Need 5+" in result.output

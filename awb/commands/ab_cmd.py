@@ -66,6 +66,10 @@ def _render(report) -> None:
 
     if report.n_tasks == 0:
         verdict = "no shared tasks between the two configs"
+    elif report.p_value is None:
+        # The sign test needs 5+ pairs; "no significant difference" would
+        # misread as a tested null result.
+        verdict = report.message
     elif not report.significant:
         verdict = "no significant difference"
     elif report.mean_delta > 0:
@@ -179,9 +183,12 @@ def ab(
     adapter_a = adapter_cls(config_dir=Path(config_a))
     adapter_b = adapter_cls(config_dir=Path(config_b))
 
-    if not adapter_a.check_available():
-        console.print(f"[{BAD}]Adapter '{tool}' is not available in this environment[/{BAD}]")
-        sys.exit(1)
+    # Check both up front: a broken config B discovered only after the full
+    # config A pass wastes the entire A run.
+    for label, adapter in (("A", adapter_a), ("B", adapter_b)):
+        if not adapter.check_available():
+            console.print(f"[{BAD}]Adapter '{tool}' is not available for config {label}[/{BAD}]")
+            sys.exit(1)
 
     ts = datetime.now(UTC).strftime("%Y-%m-%d_%H%M%S")
     runs_dir_path = Path(runs_dir)

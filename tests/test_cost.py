@@ -206,3 +206,20 @@ class TestCostCommand:
         assert result.exit_code == 0
         payload = json.loads(result.output)
         assert payload[0]["n_tasks"] == 2
+
+
+def test_build_cost_report_tolerates_none_cost_fields():
+    # Deserialized JSON can carry present-but-null cost fields; the report
+    # must treat them as zero, not crash on None arithmetic.
+    results = [
+        _make_result(
+            "BF-001", "toolx", success=True, cost_usd=None, input_tokens=None, output_tokens=None
+        ),
+        _make_result("BF-002", "toolx", success=False, cost_usd=2.0),
+    ]
+    reports = build_cost_report(results)
+    assert len(reports) == 1
+    r = reports[0]
+    assert r.total_cost_usd == 2.0
+    assert r.wasted_cost_usd == 2.0
+    assert r.cost_per_solved == 2.0
