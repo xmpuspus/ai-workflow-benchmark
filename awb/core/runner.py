@@ -74,6 +74,7 @@ class BenchmarkRunner:
         adaptive: bool = False,
         progressive: bool = False,
         use_uv: bool = False,
+        tasks_dir: Path | None = None,
     ) -> None:
         self.tool = tool
         self.tasks = tasks
@@ -91,7 +92,10 @@ class BenchmarkRunner:
         self._adapter = _get_adapter(tool)
         self._run1_times: dict[str, float] = {}  # task_id -> wall clock from run 1
         # Compute once per runner so every saved result pins the same task set.
-        self._task_set_hash = compute_task_set_hash(Path(str(TASKS_DIR)))
+        # Hash the directory the tasks were actually loaded from: a private
+        # --tasks-dir run stamped with the public hash would defeat drift's
+        # task_set_hash_mismatch guard exactly when it matters.
+        self._task_set_hash = compute_task_set_hash(Path(str(tasks_dir or TASKS_DIR)))
 
         # Resume: try to find an incomplete run for this tool
         if self.resume:

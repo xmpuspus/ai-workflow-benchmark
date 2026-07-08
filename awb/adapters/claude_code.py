@@ -255,12 +255,22 @@ class ClaudeCodeCustomAdapter(ClaudeCodeVanillaAdapter):
 
     name = "claude-code-custom"
     display_name = "Claude Code (Custom)"
+    supports_config_dir = True
+
+    def __init__(self, config_dir: Path | str | None = None) -> None:
+        # None preserves the default behavior (user's real ~/.claude). Set
+        # for `awb ab` to point the CLI at an alternate config directory.
+        self.config_dir = Path(config_dir) if config_dir is not None else None
 
     def _get_env(self) -> dict[str, str]:
         """Use default config with benchmark mode to skip non-essential hooks."""
         env = dict(os.environ)
         env["AWB_BENCHMARK"] = "1"
-        return self._clean_env(env)
+        keep: set[str] = set()
+        if self.config_dir is not None:
+            env["CLAUDE_CONFIG_DIR"] = str(self.config_dir)
+            keep.add("CLAUDE_CONFIG_DIR")
+        return self._clean_env(env, keep=keep)
 
     def _get_cmd(self, prompt: str, max_turns: int) -> list[str]:
         """Custom uses full config — no --bare flag."""
@@ -278,7 +288,7 @@ class ClaudeCodeCustomAdapter(ClaudeCodeVanillaAdapter):
 
     def get_config_hash(self) -> str:
         """Hash key config files for reproducibility."""
-        config_dir = Path.home() / ".claude"
+        config_dir = self.config_dir or (Path.home() / ".claude")
         hasher = hashlib.sha256()
 
         # Hash settings.json
@@ -301,7 +311,9 @@ class ClaudeCodeCustomAdapter(ClaudeCodeVanillaAdapter):
     def get_version(self) -> str:
         """Return claude version plus config summary."""
         base = super().get_version()
-        config_dir = Path.home() / ".claude"
+        # Mirror get_config_hash: an A/B run must record the overridden
+        # config dir in its provenance, not the user's live ~/.claude.
+        config_dir = self.config_dir or (Path.home() / ".claude")
 
         parts = [base]
         for subdir in ["hooks", "agents", "skills"]:
