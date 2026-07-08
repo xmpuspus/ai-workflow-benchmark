@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 
+import dataclasses
 import sys
 from pathlib import Path
 
 import click
+from rich.panel import Panel
 from rich.table import Table
 
 from awb.commands._shared import (
@@ -143,7 +145,13 @@ def compare(run_dir_1: str, run_dir_2: str, fmt: str):
     default="text",
     help="Output format. 'json' emits the GapReport as a JSON document on stdout.",
 )
-def gap(run_dir: str, fmt: str):
+@click.option(
+    "--prescribe",
+    is_flag=True,
+    default=False,
+    help="Add concrete CLAUDE.md config fixes for sustained rubric/capability gaps.",
+)
+def gap(run_dir: str, fmt: str, prescribe: bool):
     """Analyze capability gaps and suggest workflow improvements."""
     from awb.analysis.gap_analysis import generate_gap_report
     from awb.core.results import ResultRecorder
@@ -159,8 +167,19 @@ def gap(run_dir: str, fmt: str):
     task_defs = {t.id: t for t in all_tasks}
     report = generate_gap_report(results, task_defs)
 
+    presc_report = None
+    if prescribe:
+        from awb.analysis.prescriptions import build_prescriptions
+
+        presc_report = build_prescriptions(results, task_defs, Path(run_dir))
+
     if fmt == "json":
-        emit_json(report)
+        if presc_report is not None:
+            payload = dataclasses.asdict(report)
+            payload["prescriptions"] = presc_report
+            emit_json(payload)
+        else:
+            emit_json(report)
         return
 
     overall_style = score_style(report.overall_score)
@@ -204,6 +223,22 @@ def gap(run_dir: str, fmt: str):
         console.print("\n[bold]Top Suggestions[/bold]")
         for i, action in enumerate(report.top_improvement_actions, 1):
             console.print(f"  {i}. {action}")
+
+    if presc_report is not None:
+        console.print(f"\n[bold]Prescriptions ({len(presc_report.prescriptions)})[/bold]")
+        console.print(
+            f"[{MUTED}]traces graded: {presc_report.n_traces_graded}, "
+            f"missing: {presc_report.n_traces_missing}[/{MUTED}]"
+        )
+        if not presc_report.prescriptions:
+            console.print(f"[{MUTED}]No sustained gaps found (need >= 2 low tasks).[/{MUTED}]")
+        for p in presc_report.prescriptions:
+            console.print(
+                f"\n  [{BAD}]{p.trigger}[/{BAD}]  severity={p.severity}  "
+                f"tasks={', '.join(p.affected_tasks)}"
+            )
+            console.print(f"    {p.rationale}")
+            console.print(Panel(p.snippet.rstrip("\n"), title=p.id, border_style=INFO))
 
 
 @click.command()
