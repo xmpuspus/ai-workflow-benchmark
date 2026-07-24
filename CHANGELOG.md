@@ -1,5 +1,33 @@
 # Changelog
 
+## 1.6.2 (2026-07-24)
+
+### Added
+
+- **`awb checkup --from-run <run_dir>`**: re-grade a saved run through the full
+  harness design report. Zero adapter calls, zero spend, no `--yes` needed in
+  JSON mode: rubric changes, task-scope fixes, and harness-file edits
+  re-measure for free against recorded traces. Probe once, re-grade as often
+  as you like; this is the primitive that makes iterative harness tuning cheap
+  (it was hand-scripted twice against real runs before becoming a flag).
+- **demos/checkup.gif**: the checkup flow recorded live (free static audit,
+  then the full report rendered from a saved run), embedded in the README.
+
+### Fixed
+
+- **Four tasks punished their own graded deliverables as out-of-scope
+  edits.** FA-001 awards points for "Health router registered in app/main.py"
+  and then deducted scope points for editing app/main.py; MF-001 graded the
+  cache module it penalized; RF-001 the service tests; DB-001 the
+  module-level-state fix site. `files_to_examine` now includes each task's own
+  graded write-paths, justified line-by-line against the task's criteria;
+  reference files a task should read but never modify (FA-001's
+  routes/status.py) deliberately stay out of scope. On recorded real-harness
+  runs the scope pillar moved from 77 to 96.4 under the corrected oracle.
+  `files_to_examine` never reaches the agent prompt, so task difficulty is
+  unchanged; the task-set hash changes, so drift against pre-fix baselines
+  warns by design.
+
 ## 1.6.1 (2026-07-24)
 
 Patch release: three defects found running checkup against a real harness the

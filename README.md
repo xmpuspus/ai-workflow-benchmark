@@ -29,13 +29,16 @@ Related work measures complementary axes. [HAL](https://arxiv.org/abs/2510.11977
 
 AWB's distinct contribution is twofold: (1) a paired **vanilla-vs-custom** adapter pair that isolates the workflow-configuration delta for the same model, surfaced as a single Workflow Lift score with a sign-test p-value; (2) **deterministic** trace-grading rubrics (read-tests-before-edit, ran-verification-after-change, no-out-of-scope-edits, no-repeated-failing-loop) computed from OpenTelemetry-aligned `.trace.jsonl` artifacts, not LLM judges. See [METHODOLOGY.md#related-work](METHODOLOGY.md#related-work) for citation details.
 
-## What's New in v1.6.1
+## What's New in v1.6.2
 
-Three fixes from running checkup against a real harness the day 1.6.0 shipped:
+<img src="demos/checkup.gif" alt="awb checkup --static-only extracting promises from a CLAUDE.md, then awb checkup --from-run rendering the full harness design report from a saved run" width="820"/>
 
-- **`awb checkup` now passes its auth preflight on Keychain-authed Macs.** The default `--config-dir ~/.claude` set `CLAUDE_CONFIG_DIR`, which switches Claude Code to file-based credential lookup and misses the macOS Keychain, so a fully logged-in machine read as "Not logged in". The override now applies only when the directory differs from the default.
-- **The stream reader survives JSON lines over 64KB** (a real probe crashed the reader task mid-run and starved the trace of events); the pipe limit is now 10MB with oversized lines skipped, not fatal.
-- The auth failure message names the two non-obvious causes and quotes the CLI's actual output, and promise extraction recognizes the "Read tests before code" phrasing.
+The full checkup flow, recorded against real probe data: the free static audit extracts the testable promises a CLAUDE.md makes, and `--from-run` renders the full report (pillar scores, the rule-integrity table, ranked fixes) from an already-recorded run in about a second.
+
+- **`awb checkup --from-run <run_dir>`** re-grades a saved run through the full report: zero adapter calls, zero spend. Edit your harness, fix a task scope, or update a rubric, then re-measure against recorded traces for free instead of paying for a fresh probe. This is the primitive that makes iterative harness tuning cheap: probe once, re-grade as often as you like.
+- **Four tasks no longer punish their own graded deliverables as scope violations.** FA-001 awarded points for registering a health router in `app/main.py` and then deducted scope points for editing `app/main.py`; MF-001 graded the cache module it penalized, RF-001 the service tests, DB-001 the module-state fix site. Their `files_to_examine` now include each task's own graded write-paths, while reference files a task should read but not modify stay out of scope on purpose. On recorded real-harness runs the scope pillar moved from 77 to 96.4 under the corrected oracle, with the one genuine violation (modifying the convention file) still penalized.
+
+From v1.6.1: the Keychain auth preflight fix (`CLAUDE_CONFIG_DIR` pointing at the default no longer breaks login detection), a 10MB stream-reader limit (JSON lines over 64KB no longer kill the trace), honest auth diagnostics, and the "Read tests before code" extractor phrasing.
 
 The 1.6.0 feature set:
 
@@ -56,6 +59,7 @@ awb quickstart                                        # verify your setup
 awb checkup --static-only                             # instant free audit of your CLAUDE.md + hooks
 awb warmup --fast-check                               # warm the 8 probe repos (one-time)
 awb checkup                                           # static audit + 8-task probe + rule integrity
+awb checkup --from-run results/runs/<run_dir>         # re-grade a saved probe for free
 awb run --progressive --adaptive claude-code-custom   # full suite with early exit + smart re-runs
 awb gap                                               # capability gaps (defaults to your last run)
 awb leaderboard --readiness --explain                 # Production Readiness Score per tool
@@ -66,7 +70,7 @@ awb leaderboard --readiness --explain                 # Production Readiness Sco
 Run this end-to-end against the published v1.4.0 fast-check baseline. Should finish in ~15 minutes for ~$4 of API spend and produce a tweetable Workflow Lift number plus a capability profile.
 
 ```bash
-pip install awb==1.6.1
+pip install awb==1.6.2
 awb quickstart                                       # 1. verify environment
 awb warmup --use-uv                                  # 2. pre-build templates
 awb run --fast-check claude-code-custom              # 3. ~15 min, ~$4, real run
@@ -76,7 +80,7 @@ awb trace grade results/runs/<run_id>/               # 5. behavior rubric scores
 
 Compare against the published baseline at `results/baselines/claude-code-custom-1.4.0-fast-check.json`. Same `task_set_hash` means your numbers are directly comparable.
 
-**New in v1.1.0:** `awb warmup` caches workspaces for 10-30x faster setup. `--fast-check` gives a quick signal in 15 min for ~$4. `--progressive` stops early on weak tools. `--use-uv` swaps pip for uv. See [Execution Modes](#execution-modes) below.
+Speed levers: `awb warmup` caches workspaces for 10-30x faster setup, `--fast-check` gives a quick signal, `--progressive` stops early on weak tools, `--use-uv` swaps pip for uv, and `checkup --from-run` re-grades saved runs for free. See [Execution Modes](#execution-modes) below.
 
 ## How It Works
 
@@ -238,30 +242,39 @@ The lift is computed per-task (configured score minus vanilla score), averaged a
 
 ## Benchmark Your Own Setup
 
-The 100 public tasks calibrate the instrument. The point of the instrument is your own stack: your repos, your CLAUDE.md, your hooks. Four commands (new in v1.5) close that loop:
+The 100 public tasks calibrate the instrument. The point of the instrument is your own stack: your repos, your CLAUDE.md, your hooks. The tuning loop, in the order it actually runs:
 
 ```bash
-# 1. Mine private tasks from your own merged PRs. No contamination:
-#    nobody trained on your repo's future.
-awb task from-pr https://github.com/you/repo/pull/123 --out ./tasks
+# 1. Free static audit: what does your harness promise, and does its
+#    structure hold up (hooks resolve, settings parse, docs match repo)?
+awb checkup --static-only
 
-# 2. Run them.
+# 2. One paid probe: 8 real tasks through your full harness. The report
+#    says which of your stated rules HELD, BROKE, or went UNTESTED.
+awb checkup
+
+# 3. Fix ONE thing (the report ranks fixes by estimated impact; a broken
+#    prose rule usually becomes a hook). Then re-grade the SAME run for
+#    free to re-measure anything that does not need new behavior:
+awb checkup --from-run results/runs/<run_dir>
+
+# 4. Turn rubric failures and weak capabilities into ready-to-paste
+#    CLAUDE.md snippets with task-level evidence.
+awb gap --prescribe
+
+# 5. Mine private tasks from your own merged PRs so the probe measures
+#    YOUR work distribution. No contamination: nobody trained on your
+#    repo's future.
+awb task from-pr https://github.com/you/repo/pull/123 --out ./tasks
 awb run claude-code-custom --tasks-dir ./tasks
 
-# 3. Changed your CLAUDE.md? Measure it: same adapter, two config dirs,
-#    paired sign test.
+# 6. Prove a config change helped: same adapter, two config dirs,
+#    paired sign test. Vibes do not survive this step.
 awb ab claude-code-custom --config-a ~/.claude --config-b ./candidate-config
 
-# 4. Turn failures into config fixes: rubric failures and weak capabilities
-#    become ready-to-paste CLAUDE.md snippets.
-awb gap results/runs/<run_dir>/ --prescribe
-
-# 5. Watch for silent regressions (models and harnesses update weekly).
-#    Exit code 1 on drift, so it slots straight into cron or CI.
-#    Point it at a single run directory (one _runN dir per benchmark pass).
+# 7. Keep it won: exit code 1 on drift, built for cron/CI, plus dollars
+#    per solved task before you standardize on a config.
 awb drift results/runs/<run_id>_run1/ --baseline results/baselines/<ref>.json
-
-# 6. Know what a correct change costs before you standardize on a config.
 awb cost results/runs/<run_dir>/
 ```
 
@@ -317,6 +330,7 @@ awb checkup --config-dir ~/.claude            # which harness to grade (default 
 awb checkup --repo-dir .                      # repo whose CLAUDE.md/AGENTS.md also count
 awb checkup --paired                          # add the vanilla arm, report Workflow Lift
 awb checkup --format json --yes               # machine output (needs --yes, no prompt)
+awb checkup --from-run results/runs/<dir>     # full report from a saved run: free, instant
 ```
 
 Stage 0 parses the harness files with zero model calls: structural checks (hooks resolve, settings.json valid, documented commands match the repo) plus extraction of testable promises across 8 rule patterns, each tagged hook-enforced or prose-only. Stage 1 runs the fast-check probe in parallel and grades traces on the 6 deterministic rubrics. The report leads with a verdict sentence, pillar scores, and the rule-integrity table (HELD / BROKEN / ENFORCED / UNTESTED per stated rule); broken prose rules get a hook recommendation. Exit codes: 0 clean, 1 findings, 2 tool failure (including a probe that measured nothing). Rules that match no pattern are listed as not checkable, never silently dropped.
