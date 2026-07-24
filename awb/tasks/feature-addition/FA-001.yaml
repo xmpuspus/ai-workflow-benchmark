@@ -67,6 +67,11 @@ issue:
     - "fastapi/routing.py"
     - "fastapi/testclient.py"
     - "tests/"
+    # Two criteria require these writes: "Health router registered in app/main.py"
+    # and the router-pattern deliverable routes/health.py. routes/status.py stays
+    # OUT of scope on purpose: it is the convention to read, not to modify.
+    - "app/main.py"
+    - "routes/health.py"
 
 verification:
   test_commands:

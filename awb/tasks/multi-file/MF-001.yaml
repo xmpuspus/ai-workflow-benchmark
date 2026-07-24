@@ -48,6 +48,9 @@ issue:
     - "httpx/_client.py"
     - "httpx/_models.py"
     - "tests/"
+    # "Cache module created" is the 20-point criterion; the conventional path for
+    # it is httpx/_cache.py. A differently named module will still flag: revisit then.
+    - "httpx/_cache.py"
 
 verification:
   test_commands:

@@ -49,6 +49,9 @@ issue:
     - "fastapi/routing.py"
     - "fastapi/exceptions.py"
     - "examples/"
+    # "Service tests work without FastAPI infrastructure" is a graded criterion;
+    # writing those tests must not count as an out-of-scope edit.
+    - "tests/"
 
 verification:
   test_commands:

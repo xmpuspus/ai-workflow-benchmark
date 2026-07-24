@@ -42,6 +42,9 @@ issue:
   files_to_examine:
     - "tests/"
     - "app/store.py"
+    # The graded fix (shared module-level state + reset mechanism) lives at
+    # the package import site; edits there are the deliverable, not scope creep.
+    - "app/__init__.py"
 
 verification:
   test_commands:
