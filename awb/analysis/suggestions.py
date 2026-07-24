@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 # Maps (failure_category, capability) to actionable suggestions.
-# Deterministic rules — not LLM-generated — so results are reproducible.
+# Deterministic rules, not LLM-generated, so results are reproducible.
 SUGGESTION_RULES: dict[tuple[str, str], list[str]] = {
     ("partial_completion", "framework_knowledge"): [
         "Add framework-specific patterns to your tool's configuration (e.g., CLAUDE.md)",

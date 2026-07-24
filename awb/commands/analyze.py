@@ -1,4 +1,4 @@
-"""analyze commands — compare, gap, stability."""
+"""analyze commands, compare, gap, stability."""
 
 from __future__ import annotations
 

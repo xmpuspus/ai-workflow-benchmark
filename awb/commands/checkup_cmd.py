@@ -1,4 +1,4 @@
-"""checkup command — stage 0 promise extraction + stage 1 probe + verdict report.
+"""checkup command, stage 0 promise extraction + stage 1 probe + verdict report.
 
 `awb checkup` is the harness-design instrument (design doc:
 docs/superpowers/plans/2026-07-23-awb-v16-harness-design-score.md). Stage 0
@@ -9,7 +9,7 @@ Exit code contract is documented once in awb/commands/_shared.py's module
 docstring; this command returns 0 clean / 1 real finding / 2 tool failure.
 
 awb.harness.promises / awb.harness.integrity are a parallel work package and
-are imported lazily (inside functions) so this module — and its test suite —
+are imported lazily (inside functions) so this module, and its test suite,
 load fine before that package lands.
 """
 
@@ -152,7 +152,7 @@ def _preflight(adapter, label: str) -> str | None:
         if not adapter.check_available():
             return f"Adapter '{label}' is not available in this environment"
     except NotImplementedError:
-        return f"Adapter '{label}' is a stub — not yet implemented"
+        return f"Adapter '{label}' is a stub, not yet implemented"
     if adapter.supports_auth_check():
         ok, msg = adapter.check_auth()
         if not ok:
@@ -207,7 +207,7 @@ def _grade_probe(results, run_dir: Path, task_defs: dict) -> dict[str, list]:
     """Grade every result's trace, bucketed by rubric name.
 
     A result with no trace, an absent trace file, or a span-less trace
-    contributes nothing (never a faked 0 or 100) — mirrors
+    contributes nothing (never a faked 0 or 100), mirrors
     awb/analysis/prescriptions.py's _grade_traces.
     """
     from awb.trace.grader import grade_trace_or_none
@@ -340,7 +340,7 @@ def _hook_snippet(promise) -> str:
 def _escalations(verdicts: list) -> list:
     """Each BROKEN prose rule becomes a prescription: convert it to a hook.
 
-    A BROKEN hook-enforced rule is excluded — it is already a hook, there is
+    A BROKEN hook-enforced rule is excluded, it is already a hook, there is
     nothing to convert. Severity uses the probe-wide BROKEN count (per-rule
     violation counts aren't available from RuleVerdict.evidence, which is
     free-form text) so a harness with several broken promises surfaces them

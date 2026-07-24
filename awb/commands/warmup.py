@@ -1,4 +1,4 @@
-"""warmup command — pre-build workspace templates for faster benchmark runs."""
+"""warmup command, pre-build workspace templates for faster benchmark runs."""
 
 from __future__ import annotations
 
@@ -90,4 +90,4 @@ def warmup(dry_run: bool, clear: bool, use_uv: bool, fast_check: bool) -> None:
                 console.print(f"  [red][FAIL][/red] {key[:8]} ({info['url'].split('/')[-1]}): {e}")
 
     asyncio.run(_build_all())
-    console.print(f"\n[green]Warmup complete — {len(seen)} templates cached[/green]")
+    console.print(f"\n[green]Warmup complete, {len(seen)} templates cached[/green]")

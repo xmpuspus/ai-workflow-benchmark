@@ -1,4 +1,4 @@
-"""Gap analysis engine — explains failures and identifies systematic weaknesses."""
+"""Gap analysis engine, explains failures and identifies systematic weaknesses."""
 
 from __future__ import annotations
 

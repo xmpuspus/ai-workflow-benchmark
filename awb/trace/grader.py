@@ -84,7 +84,7 @@ def _grade_spans(spans: list[dict], files_to_examine: list[str]) -> dict[str, in
 def _has_gradeable_spans(spans: list[dict]) -> bool:
     """True if the trace contains behavior the rubrics can actually grade.
 
-    A trace of only LLM_REQUEST spans (or no spans at all — e.g. a tool that
+    A trace of only LLM_REQUEST spans (or no spans at all, e.g. a tool that
     runs without streaming tool events) carries nothing to grade. Those must
     report as n/a, not as a perfect 100 from the trivial-pass branches.
     """
@@ -250,7 +250,7 @@ def _grade_no_repeated_failing_loop(spans: Iterable[dict]) -> int:
       worst 0 -> 100  (no repeated failing command)
       worst 1 -> 70   (one immediate retry)
       worst 2 -> 35   (loop of 3)
-      worst 3+ -> 0   (loop of 4+ — clear thrashing)
+      worst 3+ -> 0   (loop of 4+, clear thrashing)
     """
     last_cmd = None
     streak = 0

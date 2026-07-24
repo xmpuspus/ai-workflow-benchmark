@@ -1,4 +1,4 @@
-"""run command — executes benchmark tasks through a tool adapter."""
+"""run command, executes benchmark tasks through a tool adapter."""
 
 from __future__ import annotations
 
@@ -424,7 +424,7 @@ def run(
             sys.exit(1)
     except NotImplementedError as exc:
         raise click.UsageError(
-            f"Adapter '{tool}' is a stub — not yet implemented. "
+            f"Adapter '{tool}' is a stub, not yet implemented. "
             f"Run 'awb tools' to see available adapters."
         ) from exc
 
@@ -451,7 +451,7 @@ def run(
     try:
         results = asyncio.run(runner.run_all())
     except KeyboardInterrupt:
-        console.print("\n[yellow]Interrupted — partial results saved[/yellow]")
+        console.print("\n[yellow]Interrupted, partial results saved[/yellow]")
         return
 
     # Summary table

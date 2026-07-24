@@ -1,4 +1,4 @@
-"""Shared CLI utilities — console, result loading, formatters, visual contract.
+"""Shared CLI utilities, console, result loading, formatters, visual contract.
 
 The visual contract (color constants, score_style, summary_table, headline_panel,
 emit_json) is used by every awb subcommand so output looks like one tool, not
@@ -7,16 +7,16 @@ nine different dialects.
 Exit code contract (project-wide, added v1.6): every analysis/probe command
 that can fail meaningfully uses the same three codes, so cron/CI can branch on
 exit status without reading output.
-    0 = clean — ran fine, nothing to flag
-    1 = real finding — drift beyond threshold, a BROKEN rule, a structural
+    0 = clean, ran fine, nothing to flag
+    1 = real finding, drift beyond threshold, a BROKEN rule, a structural
         harness error, a measured pillar below 50, etc. (command-specific
         meaning of "finding", but always "ran fine and found a problem")
-    2 = tool/environment failure — auth rejected, adapter unavailable, a
+    2 = tool/environment failure, auth rejected, adapter unavailable, a
         setup/load crash, or (for --last-run consumers) no saved run to
         resolve, or an explicit run_dir/baseline path that doesn't exist.
         Distinct from "ran fine and found a problem".
 Applies to checkup, drift, ab, validate, and the --last-run consumers
-(gap, cost, trace grade). Keep it stable — do not repurpose a code.
+(gap, cost, trace grade). Keep it stable, do not repurpose a code.
 """
 
 from __future__ import annotations
@@ -156,7 +156,7 @@ def resolve_run_dir(arg: str | None) -> Path | None:
 
     None (argument omitted) or the literal "last" both mean "whatever was
     saved most recently". Returns None, never raises, when nothing has been
-    saved yet — callers print their own message and exit(2).
+    saved yet, callers print their own message and exit(2).
     """
     if arg is not None and arg != "last":
         return Path(arg)

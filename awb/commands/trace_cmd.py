@@ -1,4 +1,4 @@
-"""`awb trace grade <run_dir>` — score trace artifacts by up to 6 behaviors."""
+"""`awb trace grade <run_dir>`, score trace artifacts by up to 6 behaviors."""
 
 from __future__ import annotations
 

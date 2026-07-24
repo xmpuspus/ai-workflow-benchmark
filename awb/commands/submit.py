@@ -1,4 +1,4 @@
-"""submit commands — export, submit, compare-submissions."""
+"""submit commands, export, submit, compare-submissions."""
 
 from __future__ import annotations
 
