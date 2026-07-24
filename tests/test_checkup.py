@@ -1103,7 +1103,8 @@ class TestCheckupFullProbe:
 
 
 class TestFinalStateAdversaryFindings:
-    """r2-final blockers: no paid preflight before input validation; nothing-measured is not clean."""
+    """r2-final blockers: no paid preflight before input validation, and a
+    probe that measures nothing must not read as clean."""
 
     def test_json_without_yes_fails_before_any_adapter_call(self, tmp_path, monkeypatch):
         from click.testing import CliRunner
