@@ -1,11 +1,18 @@
 """Tests for the warmup command."""
 
+import re
 from unittest.mock import MagicMock, patch
 
 from click.testing import CliRunner
 
 from awb.cli import cli
 from awb.commands.warmup import _template_key
+
+
+def _tasks_total(output: str) -> int:
+    match = re.search(r"(\d+) tasks total", output)
+    assert match, f"'tasks total' not found in output: {output!r}"
+    return int(match.group(1))
 
 
 def test_template_key_consistent():
@@ -68,3 +75,24 @@ def test_warmup_clear():
     assert result.exit_code == 0
     assert "cleared" in result.output
     mock_mgr.clear_templates.assert_called_once()
+
+
+def test_warmup_fast_check_prints_notice():
+    result = CliRunner().invoke(cli, ["warmup", "--fast-check", "--dry-run"])
+    assert result.exit_code == 0, result.output
+    assert "Fast-check mode" in result.output
+
+
+def test_warmup_fast_check_warms_only_eight_tasks():
+    result = CliRunner().invoke(cli, ["warmup", "--fast-check", "--dry-run"])
+    assert result.exit_code == 0, result.output
+    assert _tasks_total(result.output) <= 8
+
+
+def test_warmup_fast_check_warms_fewer_tasks_than_full_run():
+    runner = CliRunner()
+    full = runner.invoke(cli, ["warmup", "--dry-run"])
+    fast = runner.invoke(cli, ["warmup", "--fast-check", "--dry-run"])
+    assert full.exit_code == 0, full.output
+    assert fast.exit_code == 0, fast.output
+    assert _tasks_total(fast.output) < _tasks_total(full.output)

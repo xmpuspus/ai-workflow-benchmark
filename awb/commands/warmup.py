@@ -8,7 +8,7 @@ import hashlib
 import click
 from rich.table import Table
 
-from awb.commands._shared import console
+from awb.commands._shared import INFO, console
 
 
 def _template_key(url: str, commit: str, setup_commands: list[str]) -> str:
@@ -20,7 +20,12 @@ def _template_key(url: str, commit: str, setup_commands: list[str]) -> str:
 @click.option("--dry-run", is_flag=True, help="Show unique combos without building")
 @click.option("--clear", is_flag=True, help="Clear template cache")
 @click.option("--use-uv", is_flag=True, help="Use uv instead of pip for faster installs")
-def warmup(dry_run: bool, clear: bool, use_uv: bool) -> None:
+@click.option(
+    "--fast-check",
+    is_flag=True,
+    help="Warm only the 8 fast-check task repos (first-time setup ~1-2 min instead of ~5)",
+)
+def warmup(dry_run: bool, clear: bool, use_uv: bool, fast_check: bool) -> None:
     """Pre-build workspace templates for faster benchmark runs."""
     from awb.core.repo_manager import RepoManager
     from awb.core.task_loader import load_all_tasks
@@ -32,6 +37,12 @@ def warmup(dry_run: bool, clear: bool, use_uv: bool) -> None:
         return
 
     tasks = load_all_tasks()
+
+    if fast_check:
+        from awb.core.fast_check import select_fast_check_tasks
+
+        tasks = select_fast_check_tasks(tasks)
+        console.print(f"[bold {INFO}]Fast-check mode:[/bold {INFO}] warming {len(tasks)} repos")
 
     # Discover unique (url, commit, setup_commands) combinations
     seen: dict[str, dict] = {}
@@ -53,9 +64,7 @@ def warmup(dry_run: bool, clear: bool, use_uv: bool) -> None:
     table.add_column("Setup")
     for key, info in seen.items():
         repo_short = info["url"].split("/")[-1]
-        setup_short = (
-            info["setup_commands"][0][:60] + "..." if info["setup_commands"] else "(none)"
-        )
+        setup_short = info["setup_commands"][0][:60] + "..." if info["setup_commands"] else "(none)"
         table.add_row(key[:8], repo_short, str(len(info["task_ids"])), setup_short)
     console.print(table)
 
@@ -78,10 +87,7 @@ def warmup(dry_run: bool, clear: bool, use_uv: bool) -> None:
                     f"({info['url'].split('/')[-1]}, {len(info['task_ids'])} tasks)"
                 )
             except Exception as e:
-                console.print(
-                    f"  [red][FAIL][/red] {key[:8]} "
-                    f"({info['url'].split('/')[-1]}): {e}"
-                )
+                console.print(f"  [red][FAIL][/red] {key[:8]} ({info['url'].split('/')[-1]}): {e}")
 
     asyncio.run(_build_all())
     console.print(f"\n[green]Warmup complete — {len(seen)} templates cached[/green]")
