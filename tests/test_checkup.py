@@ -1153,3 +1153,79 @@ class TestFinalStateAdversaryFindings:
         pillars = {"verification": None, "scope": None, "efficiency": None}
         rule_stats = {"held": 0, "testable": 0, "broken": 0, "untested": 3}
         assert _compute_exit_code(pillars, rule_stats, structural_error=False) == 2
+
+
+class TestCheckupFromRun:
+    """--from-run re-grades a saved run through the full report path: zero
+    adapter calls, zero spend, so JSON mode needs no --yes."""
+
+    def _seed(self, monkeypatch, tmp_path):
+        from awb.commands import checkup_cmd  # noqa: F401 - import parity with siblings
+
+        config_dir = tmp_path / "config"
+        config_dir.mkdir()
+        (config_dir / "CLAUDE.md").write_text("- Run all tests before declaring the task done.\n")
+        task = _make_task()
+        monkeypatch.setattr("awb.core.task_loader.load_all_tasks", lambda tasks_dir=None: [task])
+
+        run_dir = tmp_path / "saved_run1"
+        run_dir.mkdir()
+        trace_name = _write_trace(run_dir, task.id, "claude-code-custom", task.files_to_examine)
+        result_obj = _make_result(task.id, score=90, trace_path=trace_name)
+        monkeypatch.setattr(
+            "awb.core.results.ResultRecorder.load_run", lambda self, p: [result_obj]
+        )
+
+        def _no_adapter(*a, **k):
+            raise AssertionError("--from-run must never touch an adapter")
+
+        monkeypatch.setattr("awb.adapters.registry.get_adapter", _no_adapter)
+        return config_dir, run_dir
+
+    def test_from_run_renders_full_report_without_adapter(self, monkeypatch, tmp_path):
+        from awb.commands import checkup_cmd
+
+        config_dir, run_dir = self._seed(monkeypatch, tmp_path)
+        result = CliRunner().invoke(
+            checkup_cmd.checkup,
+            ["--config-dir", str(config_dir), "--from-run", str(run_dir)],
+        )
+        assert result.exit_code == 0, result.output
+        assert "Rule Integrity" in result.output
+        assert "Harness Design Report" in result.output
+
+    def test_from_run_json_needs_no_yes(self, monkeypatch, tmp_path):
+        import json as _json
+
+        from awb.commands import checkup_cmd
+
+        config_dir, run_dir = self._seed(monkeypatch, tmp_path)
+        result = CliRunner().invoke(
+            checkup_cmd.checkup,
+            ["--config-dir", str(config_dir), "--from-run", str(run_dir), "--format", "json"],
+        )
+        assert result.exit_code == 0, result.output
+        payload = _json.loads(result.output)
+        assert "pillars" in payload
+
+    def test_from_run_conflicts_with_static_only(self, monkeypatch, tmp_path):
+        from awb.commands import checkup_cmd
+
+        config_dir, run_dir = self._seed(monkeypatch, tmp_path)
+        result = CliRunner().invoke(
+            checkup_cmd.checkup,
+            ["--config-dir", str(config_dir), "--from-run", str(run_dir), "--static-only"],
+        )
+        assert result.exit_code != 0
+        assert "from-run" in result.output
+
+    def test_from_run_empty_run_dir_exits_two(self, monkeypatch, tmp_path):
+        from awb.commands import checkup_cmd
+
+        config_dir, run_dir = self._seed(monkeypatch, tmp_path)
+        monkeypatch.setattr("awb.core.results.ResultRecorder.load_run", lambda self, p: [])
+        result = CliRunner().invoke(
+            checkup_cmd.checkup,
+            ["--config-dir", str(config_dir), "--from-run", str(run_dir)],
+        )
+        assert result.exit_code == 2, result.output

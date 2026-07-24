@@ -495,6 +495,14 @@ def _render_stage1_text(
     help="Output format. 'json' emits the full checkup payload as a JSON document on stdout.",
 )
 @click.option("--yes", "-y", is_flag=True, help="Skip the real-spend confirmation prompt.")
+@click.option(
+    "--from-run",
+    type=click.Path(exists=True, file_okay=False),
+    default=None,
+    help="Re-grade a saved run dir through the full report instead of running a new probe. "
+    "Zero adapter calls, zero spend: rubric changes, task-scope fixes, and harness-file "
+    "edits re-measure for free against recorded traces.",
+)
 def checkup(
     static_only: bool,
     paired: bool,
@@ -504,6 +512,7 @@ def checkup(
     concurrency: int,
     fmt: str,
     yes: bool,
+    from_run: str | None,
 ):
     """Grade a Claude Code harness: promise extraction plus a small probe of real tasks.
 
@@ -511,6 +520,11 @@ def checkup(
     finding (BROKEN rule, structural error, or a measured pillar below 50),
     2 a tool/environment failure (auth, adapter, or setup crash).
     """
+    if from_run and (static_only or paired):
+        raise click.UsageError(
+            "--from-run re-grades a saved run; it cannot combine with --static-only or --paired"
+        )
+
     config_dir_path = Path(config_dir) if config_dir else Path.home() / ".claude"
     repo_dir_path = Path(repo_dir) if repo_dir else Path.cwd()
 
@@ -529,57 +543,77 @@ def checkup(
     if fmt == "text":
         _render_stage0_text(inventory)
 
-    # Pure input validation first: nothing below this line may cost anything
-    # until the user's intent is confirmed. The adapter preflight is a real
-    # `claude` subprocess call (the v1.5.4 --dry-run lesson), so it runs only
-    # after flag validation AND the spend confirmation.
-    if fmt == "json" and not yes:
-        raise click.UsageError(
-            "checkup --format json needs --yes (no interactive prompt in JSON mode)"
-        )
-
     tasks_dir_path = Path(tasks_dir) if tasks_dir else None
-    try:
-        tasks = _load_probe_tasks(tasks_dir_path)
-    except Exception as exc:  # noqa: BLE001 - any setup/load crash is a tool failure, not a finding
-        console.print(f"[{BAD}]checkup setup failed: {exc}[/{BAD}]")
-        sys.exit(2)
-
-    n_probe = len(tasks) * (2 if paired else 1)
-    if not yes:
-        est_low, est_high = n_probe * 0.25, n_probe * 0.5
-        console.print(
-            f"\nAbout to run {n_probe} real task execution(s) via [bold]{TOOL}[/bold]"
-            f" (est. ~${est_low:.0f}-${est_high:.0f})"
-        )
-        if not click.confirm("Proceed?", default=True):
-            console.print(f"[{MUTED}]Aborted.[/{MUTED}]")
-            sys.exit(0)
-
-    try:
-        custom_adapter, vanilla_adapter = _build_and_preflight_adapters(config_dir_path, paired)
-    except _ToolFailureError as exc:
-        console.print(f"[{BAD}]{exc}[/{BAD}]")
-        sys.exit(2)
-    except Exception as exc:  # noqa: BLE001 - any setup/load crash is a tool failure, not a finding
-        console.print(f"[{BAD}]checkup setup failed: {exc}[/{BAD}]")
-        sys.exit(2)
-
-    custom_results, custom_run_dir = _run_probe(
-        TOOL, custom_adapter, tasks, tasks_dir_path, concurrency
-    )
-    save_last_run(custom_run_dir)
-
-    task_defs = {t.id: t for t in tasks}
-
     lift_report = None
-    if paired:
-        vanilla_results, _vanilla_run_dir = _run_probe(
-            VANILLA_TOOL, vanilla_adapter, tasks, tasks_dir_path, concurrency
-        )
-        from awb.scoring.workflow_lift import compute_workflow_lift
 
-        lift_report = compute_workflow_lift(vanilla_results, custom_results, task_defs)
+    if from_run:
+        # Free re-grade of a recorded run: no adapter, no prompt, no spend, so
+        # JSON mode needs no --yes here.
+        from awb.core.results import ResultRecorder
+        from awb.core.task_loader import load_all_tasks
+
+        custom_run_dir = Path(from_run)
+        try:
+            custom_results = ResultRecorder().load_run(custom_run_dir)
+            task_defs = {t.id: t for t in load_all_tasks(tasks_dir=tasks_dir_path)}
+        except Exception as exc:  # noqa: BLE001 - a bad run dir is a tool failure, not a finding
+            console.print(f"[{BAD}]checkup --from-run failed to load the run: {exc}[/{BAD}]")
+            sys.exit(2)
+        if not custom_results:
+            console.print(f"[{BAD}]No results found in {custom_run_dir}[/{BAD}]")
+            sys.exit(2)
+        n_tasks = len(custom_results)
+    else:
+        # Pure input validation first: nothing below this line may cost anything
+        # until the user's intent is confirmed. The adapter preflight is a real
+        # `claude` subprocess call (the v1.5.4 --dry-run lesson), so it runs only
+        # after flag validation AND the spend confirmation.
+        if fmt == "json" and not yes:
+            raise click.UsageError(
+                "checkup --format json needs --yes (no interactive prompt in JSON mode)"
+            )
+
+        try:
+            tasks = _load_probe_tasks(tasks_dir_path)
+        except Exception as exc:  # noqa: BLE001 - any setup/load crash is a tool failure
+            console.print(f"[{BAD}]checkup setup failed: {exc}[/{BAD}]")
+            sys.exit(2)
+
+        n_probe = len(tasks) * (2 if paired else 1)
+        if not yes:
+            est_low, est_high = n_probe * 0.25, n_probe * 0.5
+            console.print(
+                f"\nAbout to run {n_probe} real task execution(s) via [bold]{TOOL}[/bold]"
+                f" (est. ~${est_low:.0f}-${est_high:.0f})"
+            )
+            if not click.confirm("Proceed?", default=True):
+                console.print(f"[{MUTED}]Aborted.[/{MUTED}]")
+                sys.exit(0)
+
+        try:
+            custom_adapter, vanilla_adapter = _build_and_preflight_adapters(config_dir_path, paired)
+        except _ToolFailureError as exc:
+            console.print(f"[{BAD}]{exc}[/{BAD}]")
+            sys.exit(2)
+        except Exception as exc:  # noqa: BLE001 - any setup/load crash is a tool failure
+            console.print(f"[{BAD}]checkup setup failed: {exc}[/{BAD}]")
+            sys.exit(2)
+
+        custom_results, custom_run_dir = _run_probe(
+            TOOL, custom_adapter, tasks, tasks_dir_path, concurrency
+        )
+        save_last_run(custom_run_dir)
+
+        task_defs = {t.id: t for t in tasks}
+        n_tasks = len(tasks)
+
+        if paired:
+            vanilla_results, _vanilla_run_dir = _run_probe(
+                VANILLA_TOOL, vanilla_adapter, tasks, tasks_dir_path, concurrency
+            )
+            from awb.scoring.workflow_lift import compute_workflow_lift
+
+            lift_report = compute_workflow_lift(vanilla_results, custom_results, task_defs)
 
     rubric_scores = _grade_probe(custom_results, custom_run_dir, task_defs)
 
@@ -594,14 +628,14 @@ def checkup(
     presc_report = build_prescriptions(custom_results, task_defs, custom_run_dir)
     top_fixes = _rank_fixes(presc_report.prescriptions, verdicts)
 
-    verdict_line = _verdict_sentence(pillars, rule_stats, len(tasks))
+    verdict_line = _verdict_sentence(pillars, rule_stats, n_tasks)
     exit_code = _compute_exit_code(pillars, rule_stats, structural_error)
 
     if fmt == "json":
         emit_json(
             {
                 "tool": TOOL,
-                "n_tasks": len(tasks),
+                "n_tasks": n_tasks,
                 "inventory": inventory,
                 "pillars": pillars,
                 "rule_integrity": rule_stats,
@@ -615,6 +649,6 @@ def checkup(
         sys.exit(exit_code)
 
     _render_stage1_text(
-        TOOL, len(tasks), pillars, rule_stats, verdicts, lift_report, top_fixes, verdict_line
+        TOOL, n_tasks, pillars, rule_stats, verdicts, lift_report, top_fixes, verdict_line
     )
     sys.exit(exit_code)
