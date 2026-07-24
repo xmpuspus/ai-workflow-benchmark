@@ -96,9 +96,10 @@ class TestGapLastRun:
         result = CliRunner().invoke(gap, [])
         assert result.exit_code == 0, result.output
         assert "using last run" in result.output
-        # Rich wraps long tmp_path lines at console width, so check the run
-        # dir's own name rather than the full absolute path.
-        assert run_dir.name in result.output
+        # Rich wraps long tmp_path lines at console width and the wrap can
+        # fall inside the run dir name itself (it did on CI), so collapse
+        # newlines before matching.
+        assert run_dir.name in result.output.replace("\n", "")
 
     def test_gap_errors_cleanly_when_no_last_run_saved(self):
         from awb.commands.analyze import gap
