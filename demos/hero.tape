@@ -20,9 +20,9 @@ Sleep 800ms
 Show
 
 Sleep 700ms
-Type "awb tools"
+Type "awb checkup --static-only --config-dir demos/checkup-demo-config --repo-dir ."
 Enter
-Sleep 2800ms
+Sleep 4200ms
 
 Type "clear"
 Enter
