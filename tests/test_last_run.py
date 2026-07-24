@@ -117,6 +117,16 @@ class TestGapLastRun:
         assert result.exit_code == 0, result.output
         assert "using last run" not in result.output
 
+    def test_gap_explicit_nonexistent_run_dir_exits_two(self, tmp_path):
+        """An explicit but nonexistent path is a tool/environment failure
+        (exit 2), not 'ran fine and found nothing' (exit 1) - matches the
+        contract in _shared.py's module docstring."""
+        from awb.commands.analyze import gap
+
+        missing = tmp_path / "does-not-exist"
+        result = CliRunner().invoke(gap, [str(missing)])
+        assert result.exit_code == 2, result.output
+
     def test_gap_json_format_stays_parseable_when_falling_back(self, tmp_path):
         """The last-run note is text-mode only - --format json stdout must
         stay a single parseable document (same rule drift already follows)."""
@@ -148,6 +158,26 @@ class TestCostLastRun:
 
         result = CliRunner().invoke(cost, [])
         assert result.exit_code == 2
+
+    def test_cost_accepts_last_literal(self, tmp_path):
+        """gap/drift/trace grade all document the 'last' literal; cost's own
+        docstring only promised the omitted-argument case."""
+        from awb.commands.cost_cmd import cost
+
+        run_dir = tmp_path / "results" / "runs" / "2026-01-01_run1"
+        _write_result(run_dir, "BF-001")
+        save_last_run(run_dir)
+
+        result = CliRunner().invoke(cost, ["last"])
+        assert result.exit_code == 0, result.output
+        assert "using last run" in result.output
+
+    def test_cost_explicit_nonexistent_run_dir_exits_two(self, tmp_path):
+        from awb.commands.cost_cmd import cost
+
+        missing = tmp_path / "does-not-exist"
+        result = CliRunner().invoke(cost, [str(missing)])
+        assert result.exit_code == 2, result.output
 
     def test_cost_json_format_stays_parseable_when_falling_back(self, tmp_path):
         from awb.commands.cost_cmd import cost
@@ -185,6 +215,20 @@ class TestDriftLastRun:
         result = CliRunner().invoke(drift, ["--baseline", str(baseline_dir)])
         assert result.exit_code == 2
 
+    def test_drift_explicit_nonexistent_run_dir_exits_two(self, tmp_path):
+        """Before v1.6, click.Path(exists=True) caught this at argument
+        parsing; loosening it to support --last-run must not regress an
+        explicit typo'd path into an uncaught FileNotFoundError."""
+        from awb.commands.drift_cmd import drift
+
+        baseline_dir = tmp_path / "baseline_run"
+        _write_result(baseline_dir, "BF-001", score=80)
+        missing = tmp_path / "does-not-exist"
+
+        result = CliRunner().invoke(drift, [str(missing), "--baseline", str(baseline_dir)])
+        assert result.exception is None or isinstance(result.exception, SystemExit), result.output
+        assert result.exit_code == 2, result.output
+
 
 class TestTraceLastRun:
     def test_trace_grade_falls_back_to_last_run(self, tmp_path):
@@ -203,3 +247,13 @@ class TestTraceLastRun:
 
         result = CliRunner().invoke(trace, ["grade"])
         assert result.exit_code == 2
+
+    def test_trace_grade_explicit_nonexistent_run_dir_exits_two(self, tmp_path):
+        """Before this fix, a nonexistent explicit path silently exited 0
+        ('No .trace.jsonl files found'), indistinguishable from a clean run
+        with nothing to grade."""
+        from awb.commands.trace_cmd import trace
+
+        missing = tmp_path / "does-not-exist"
+        result = CliRunner().invoke(trace, ["grade", str(missing)])
+        assert result.exit_code == 2, result.output

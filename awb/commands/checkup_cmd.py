@@ -20,6 +20,7 @@ import sys
 from pathlib import Path
 
 import click
+from rich.markup import escape
 from rich.table import Table
 
 from awb.commands._shared import (
@@ -103,18 +104,25 @@ def _render_stage0_text(inventory) -> None:
                 # p.enforcement goes inside the style span, not in its own
                 # brackets - a literal "[prose]" would parse as a second
                 # (invalid) Rich markup tag and get silently dropped.
+                # p.text is raw CLAUDE.md/AGENTS.md/hook-command text the tool
+                # doesn't control, so it must be escaped before it reaches
+                # Rich's markup parser (rule text mentioning "[bold]" or a
+                # copy-pasted "[skip ci]" would otherwise crash or restyle).
                 console.print(
-                    f"    [{tag}]{p.enforcement}[/{tag}]  {p.text[:80]}  ({p.source}:{p.line})"
+                    f"    [{tag}]{p.enforcement}[/{tag}]  {escape(p.text[:80])}  "
+                    f"({p.source}:{p.line})"
                 )
     else:
         console.print(f"\n[{MUTED}]No testable promises found[/{MUTED}]")
 
     if errors or warns:
         console.print("\n[bold]Structural Issues[/bold]")
+        # i.message can embed a hook command/path token pulled out of the
+        # target's own settings.json - untrusted, must be escaped.
         for i in errors:
-            console.print(f"  [{BAD}]ERROR[/{BAD}] {i.message}  ({i.source})")
+            console.print(f"  [{BAD}]ERROR[/{BAD}] {escape(i.message)}  ({i.source})")
         for i in warns:
-            console.print(f"  [{WARN}]WARN[/{WARN}]  {i.message}  ({i.source})")
+            console.print(f"  [{WARN}]WARN[/{WARN}]  {escape(i.message)}  ({i.source})")
     else:
         console.print(f"\n[{MUTED}]No structural issues[/{MUTED}]")
 
@@ -361,14 +369,18 @@ def _escalations(verdicts: list) -> list:
     return out
 
 
-def _fix_sort_key(p) -> float:
+def _fix_sort_key(p) -> tuple[bool, float, int]:
+    """estimated_score_delta (a 0-100 points scale) and severity (a raw
+    broken-rule count) are not the same unit, so they can't be compared by
+    sign-flipping into one number. A delta-bearing prescription always ranks
+    above a severity-only one; severity only breaks ties within a tier."""
     delta = getattr(p, "estimated_score_delta", None)
-    return -(delta if delta is not None else p.severity)
+    return (delta is not None, delta or 0, p.severity)
 
 
 def _rank_fixes(prescriptions: list, verdicts: list) -> list:
     combined = list(prescriptions) + _escalations(verdicts)
-    combined.sort(key=_fix_sort_key)
+    combined.sort(key=_fix_sort_key, reverse=True)
     return combined[:3]
 
 
@@ -420,7 +432,7 @@ def _render_stage1_text(
         table.add_column("Evidence")
         table.add_column("Verdict")
         for v in verdicts:
-            text = (getattr(v.promise, "text", "") or "")[:60]
+            text = escape((getattr(v.promise, "text", "") or "")[:60])
             enforcement = getattr(v.promise, "enforcement", "")
             color = _VERDICT_COLOR.get(v.status, MUTED)
             table.add_row(text, enforcement, v.evidence, f"[{color}]{v.status}[/{color}]")
@@ -433,7 +445,10 @@ def _render_stage1_text(
         for i, fix in enumerate(top_fixes, 1):
             delta = getattr(fix, "estimated_score_delta", None)
             delta_str = f"  est. +{delta:.0f} pts" if delta is not None else ""
-            console.print(f"  {i}. {fix.rationale}{delta_str}")
+            # A rule-integrity escalation's rationale embeds the broken
+            # promise's own text (see _escalations); a prescriptions.py
+            # rationale is a fixed string with nothing to escape either way.
+            console.print(f"  {i}. {escape(fix.rationale)}{delta_str}")
         console.print(
             f"[{MUTED}]Impact estimates are independent; applying several fixes "
             f"will not sum cleanly.[/{MUTED}]"

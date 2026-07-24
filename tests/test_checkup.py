@@ -440,8 +440,6 @@ class TestRankFixes:
             snippet="## X\n",
             rationale="x",
         )
-        # Simulate a future prescriptions.py that carries the attribute.
-        object.__setattr__(low_severity_high_delta, "__dict__", low_severity_high_delta.__dict__)
         low_severity_high_delta.estimated_score_delta = 20
         high_severity_no_delta = Prescription(
             id="high-sev",
@@ -455,7 +453,42 @@ class TestRankFixes:
         top = _rank_fixes([high_severity_no_delta, low_severity_high_delta], verdicts=[])
         assert top[0].id == "low-sev"
 
-    def test_broken_prose_rule_escalates_with_hook_snippet(self):
+    def test_delta_bearing_item_outranks_higher_severity_no_delta_item(self):
+        """estimated_score_delta (a points scale) and severity (a raw broken-
+        rule count) are not the same unit; sorting -delta against -severity
+        in one key would let a severity=10 no-delta item outrank a delta=1
+        item. A single comparable key (has_delta, delta, severity) must
+        always rank delta-bearing items first, regardless of magnitude."""
+        from awb.analysis.prescriptions import Prescription
+        from awb.commands.checkup_cmd import _rank_fixes
+
+        small_delta = Prescription(
+            id="small-delta",
+            trigger="t",
+            evidence=[],
+            affected_tasks=[],
+            severity=1,
+            snippet="## A\n",
+            rationale="a",
+            estimated_score_delta=1.0,
+        )
+        large_severity_no_delta = Prescription(
+            id="large-severity",
+            trigger="t",
+            evidence=[],
+            affected_tasks=[],
+            severity=10,
+            snippet="## B\n",
+            rationale="b",
+        )
+        top = _rank_fixes([large_severity_no_delta, small_delta], verdicts=[])
+        assert top[0].id == "small-delta"
+
+    def test_broken_scope_rule_escalates_with_pretooluse_snippet(self):
+        """_hook_snippet picks the PreToolUse-shaped snippet unless the
+        pattern name contains 'verif' or 'test' - a scope_constraint promise
+        takes the else branch. An `in ... or in ...` assertion would pass
+        either way (or if the branches were swapped); pin the actual branch."""
         from awb.commands.checkup_cmd import _rank_fixes
 
         promise = _FakeHarnessPromise(
@@ -468,7 +501,27 @@ class TestRankFixes:
         verdicts = [_FakeRuleVerdict(promise=promise, status="BROKEN", evidence="violated 3/8")]
         top = _rank_fixes([], verdicts)
         assert len(top) == 1
-        assert "PreToolUse" in top[0].snippet or "Stop" in top[0].snippet
+        assert "PreToolUse" in top[0].snippet
+        assert "Stop" not in top[0].snippet
+        assert "hook" in top[0].rationale.lower()
+
+    def test_broken_verification_rule_escalates_with_stop_snippet(self):
+        """The 'verif'/'test' substring branch: a verification_gate promise
+        must get the Stop-shaped snippet, not PreToolUse."""
+        from awb.commands.checkup_cmd import _rank_fixes
+
+        promise = _FakeHarnessPromise(
+            text="run tests before declaring done",
+            pattern="verification_gate",
+            enforcement="prose",
+            source="CLAUDE.md",
+            line=9,
+        )
+        verdicts = [_FakeRuleVerdict(promise=promise, status="BROKEN", evidence="violated 2/8")]
+        top = _rank_fixes([], verdicts)
+        assert len(top) == 1
+        assert "Stop" in top[0].snippet
+        assert "PreToolUse" not in top[0].snippet
         assert "hook" in top[0].rationale.lower()
 
     def test_broken_hook_enforced_rule_does_not_escalate(self):
@@ -499,6 +552,143 @@ class TestRankFixes:
         verdicts = [_FakeRuleVerdict(promise=promise, status="HELD", evidence="fired 8/8")]
         top = _rank_fixes([], verdicts)
         assert top == []
+
+
+# ----- CLI: --static-only against the REAL awb.harness package ---------------
+# Every test above/below this section installs a fake awb.harness.promises/
+# integrity into sys.modules. That fake's dataclass shapes happen to match
+# the real ones field-for-field, but nothing enforces that going forward - a
+# future rename or field addition in promises.py would leave every faked
+# test green while the real CLI path broke. These tests import the real
+# awb.harness package instead, so the wiring itself is under test.
+
+
+class TestCheckupStaticOnlyRealHarness:
+    def test_promise_inventory_and_clean_exit(self, tmp_path):
+        from awb.commands.checkup_cmd import checkup
+
+        config_dir = tmp_path / "config"
+        repo_dir = tmp_path / "repo"
+        config_dir.mkdir()
+        repo_dir.mkdir()
+        (repo_dir / "CLAUDE.md").write_text("- Run all tests before declaring the task done.\n")
+
+        result = CliRunner().invoke(
+            checkup,
+            [
+                "--static-only",
+                "--config-dir",
+                str(config_dir),
+                "--repo-dir",
+                str(repo_dir),
+            ],
+        )
+
+        assert result.exit_code == 0, result.output
+        assert "Promise Inventory" in result.output
+        assert "verification_gate" in result.output
+        assert "Run all tests before declaring the task done." in result.output
+        assert "No structural issues" in result.output
+
+    def test_structural_error_from_missing_hook_file_exits_one(self, tmp_path):
+        from awb.commands.checkup_cmd import checkup
+
+        config_dir = tmp_path / "config"
+        repo_dir = tmp_path / "repo"
+        config_dir.mkdir()
+        repo_dir.mkdir()
+        (repo_dir / "CLAUDE.md").write_text("- Fix only the reported bug, nothing else.\n")
+        settings = {
+            "hooks": {
+                "PreToolUse": [
+                    {
+                        "matcher": "Bash",
+                        "hooks": [
+                            {"type": "command", "command": "python3 hooks/does_not_exist.py"}
+                        ],
+                    }
+                ]
+            }
+        }
+        (config_dir / "settings.json").write_text(json.dumps(settings))
+
+        result = CliRunner().invoke(
+            checkup,
+            [
+                "--static-only",
+                "--config-dir",
+                str(config_dir),
+                "--repo-dir",
+                str(repo_dir),
+            ],
+        )
+
+        assert result.exit_code == 1, result.output
+        assert "ERROR" in result.output
+        assert "hooks/does_not_exist.py" in result.output
+
+    def test_null_hook_command_does_not_crash(self, tmp_path):
+        """Regression: a hand-edited settings.json with a null hook command
+        used to raise AttributeError before extract_promises() could even
+        reach checkup()'s own try/except (structure.py's _extract_path_tokens
+        crash, see tests/test_harness_structure.py)."""
+        from awb.commands.checkup_cmd import checkup
+
+        config_dir = tmp_path / "config"
+        repo_dir = tmp_path / "repo"
+        config_dir.mkdir()
+        repo_dir.mkdir()
+        (repo_dir / "CLAUDE.md").write_text("- Fix only the reported bug, nothing else.\n")
+        settings = {
+            "hooks": {
+                "PreToolUse": [{"matcher": "Edit", "hooks": [{"type": "command", "command": None}]}]
+            }
+        }
+        (config_dir / "settings.json").write_text(json.dumps(settings))
+
+        result = CliRunner().invoke(
+            checkup,
+            [
+                "--static-only",
+                "--config-dir",
+                str(config_dir),
+                "--repo-dir",
+                str(repo_dir),
+            ],
+        )
+
+        assert result.exit_code == 0, result.output
+
+    def test_full_probe_wires_real_rule_integrity(self, monkeypatch, tmp_path):
+        """The full-probe path (rule_integrity(real_inventory, rubric_scores)
+        feeding _compute_pillars/_rule_stats/_verdict_sentence/
+        _compute_exit_code) with the real awb.harness dataclasses, not the
+        fakes every other full-probe test in this file installs. _run_probe
+        stays mocked - that boundary is legitimate, no real model call."""
+        from awb.commands import checkup_cmd
+
+        config_dir = tmp_path / "config"
+        config_dir.mkdir()
+        (tmp_path / "CLAUDE.md").write_text("- Run all tests before declaring the task done.\n")
+        monkeypatch.setattr("awb.adapters.registry.get_adapter", _fake_get_adapter())
+        task = _make_task()
+        monkeypatch.setattr("awb.core.task_loader.load_all_tasks", lambda tasks_dir=None: [task])
+
+        run_dir = tmp_path / "probe_run1"
+        run_dir.mkdir()
+        trace_name = _write_trace(run_dir, task.id, "claude-code-custom", task.files_to_examine)
+        result_obj = _make_result(task.id, score=90, trace_path=trace_name)
+
+        def _fake_run_probe(tool, adapter, tasks, tasks_dir, concurrency):
+            return [result_obj], run_dir
+
+        monkeypatch.setattr(checkup_cmd, "_run_probe", _fake_run_probe)
+
+        result = CliRunner().invoke(checkup_cmd.checkup, ["--config-dir", str(config_dir), "--yes"])
+
+        assert result.exit_code == 0, result.output
+        assert "Rule Integrity" in result.output
+        assert "HELD" in result.output
 
 
 # ----- CLI: --static-only -----------------------------------------------------
@@ -565,6 +755,59 @@ class TestCheckupStaticOnly:
         result = CliRunner().invoke(checkup, ["--static-only", "--config-dir", str(tmp_path)])
         assert result.exit_code == 0, result.output
         assert "not checkable yet" in result.output
+
+    def test_promise_text_with_unbalanced_markup_does_not_crash(self, monkeypatch, tmp_path):
+        """A CLAUDE.md line copy-pasted from a PR title ('Fix bug[/x]') must not
+        raise rich.errors.MarkupError - the same bug class already fixed once
+        for PR-derived text in task_cmd.py (f7cc2bb)."""
+        from awb.commands.checkup_cmd import checkup
+
+        promise = _FakeHarnessPromise(
+            text="Fix bug[/x] in [red]parser",
+            pattern="scope_constraint",
+            enforcement="prose",
+            source="CLAUDE.md",
+            line=3,
+        )
+        install_fake_harness(monkeypatch, promises=[promise])
+        result = CliRunner().invoke(checkup, ["--static-only", "--config-dir", str(tmp_path)])
+        assert result.exit_code == 0, result.output
+
+    def test_promise_text_with_balanced_markup_appears_literally(self, monkeypatch, tmp_path):
+        """A balanced bracket pair that happens to be a real Rich style name
+        must render as literal text, not as live styling that could spoof a
+        genuine verdict line."""
+        from awb.commands.checkup_cmd import checkup
+
+        promise = _FakeHarnessPromise(
+            text="run tests before done [green]spoofed PASS[/green]",
+            pattern="verification_gate",
+            enforcement="prose",
+            source="CLAUDE.md",
+            line=7,
+        )
+        install_fake_harness(monkeypatch, promises=[promise])
+        result = CliRunner().invoke(checkup, ["--static-only", "--config-dir", str(tmp_path)])
+        assert result.exit_code == 0, result.output
+        assert "[green]spoofed PASS[/green]" in result.output
+
+    def test_structural_issue_message_with_markup_does_not_crash(self, monkeypatch, tmp_path):
+        from awb.commands.checkup_cmd import checkup
+
+        install_fake_harness(
+            monkeypatch,
+            structural_issues=[
+                _FakeStructuralIssue(
+                    severity="error",
+                    message="hook references missing file: hooks/[legacy].sh",
+                    source="settings.json",
+                )
+            ],
+        )
+        result = CliRunner().invoke(checkup, ["--static-only", "--config-dir", str(tmp_path)])
+        assert result.exception is None or isinstance(result.exception, SystemExit), result.output
+        assert result.exit_code == 1, result.output
+        assert "hooks/[legacy].sh" in result.output
 
     def test_json_output_is_parseable_and_has_no_probe_keys(self, monkeypatch, tmp_path):
         from awb.commands.checkup_cmd import checkup
@@ -695,12 +938,12 @@ class TestCheckupFullProbe:
         assert result.exit_code == 0, result.output
 
     def _happy_path_mocks(
-        self, monkeypatch, tmp_path, status_by_pattern=None, structural_issues=()
+        self, monkeypatch, tmp_path, status_by_pattern=None, structural_issues=(), promise_text=None
     ):
         from awb.commands import checkup_cmd
 
         promise = _FakeHarnessPromise(
-            text="run tests before done",
+            text=promise_text or "run tests before done",
             pattern="verification_gate",
             enforcement="prose",
             source="CLAUDE.md",
@@ -775,6 +1018,29 @@ class TestCheckupFullProbe:
         assert result.exit_code == 0, result.output
         assert "Rule Integrity" in result.output
         assert "HELD" in result.output
+
+    def test_rule_integrity_table_escapes_markup_in_promise_text(self, monkeypatch, tmp_path):
+        self._happy_path_mocks(
+            monkeypatch, tmp_path, promise_text="run tests before done [green]PASS[/green]"
+        )
+        from awb.commands import checkup_cmd
+
+        result = CliRunner().invoke(checkup_cmd.checkup, self._base_args(tmp_path))
+        assert result.exit_code == 0, result.output
+        assert "[green]PASS[/green]" in result.output
+
+    def test_top_fix_escalation_rationale_escapes_promise_text(self, monkeypatch, tmp_path):
+        self._happy_path_mocks(
+            monkeypatch,
+            tmp_path,
+            promise_text="run tests before done [red]never[/red]",
+            status_by_pattern={"verification_gate": "BROKEN"},
+        )
+        from awb.commands import checkup_cmd
+
+        result = CliRunner().invoke(checkup_cmd.checkup, self._base_args(tmp_path))
+        assert result.exit_code == 1, result.output
+        assert "[red]never[/red]" in result.output
 
     def test_json_format_full_payload_is_parseable(self, monkeypatch, tmp_path):
         self._happy_path_mocks(monkeypatch, tmp_path)

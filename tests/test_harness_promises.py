@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import time
 
 import pytest
 
@@ -255,6 +256,40 @@ def test_hook_with_no_pattern_match_goes_to_unparsed_with_hook_prefix(tmp_path):
     assert "PostToolUse" in inventory.unparsed_rules[0]
 
 
+def test_hook_command_non_string_does_not_crash(tmp_path):
+    config_dir = tmp_path / "config"
+    config_dir.mkdir()
+    settings = {
+        "hooks": {
+            "PreToolUse": [{"matcher": "Bash", "hooks": [{"type": "command", "command": 42}]}]
+        }
+    }
+    (config_dir / "settings.json").write_text(json.dumps(settings, indent=2))
+
+    inventory = extract_promises(config_dir=config_dir, repo_dir=None)
+
+    assert inventory.promises == []
+    assert any("hook command is not a string" in i.message for i in inventory.structural_issues)
+
+
+def test_hook_command_null_does_not_crash(tmp_path):
+    config_dir = tmp_path / "config"
+    config_dir.mkdir()
+    settings = {
+        "hooks": {
+            "PreToolUse": [{"matcher": "Bash", "hooks": [{"type": "command", "command": None}]}]
+        }
+    }
+    (config_dir / "settings.json").write_text(json.dumps(settings, indent=2))
+
+    inventory = extract_promises(config_dir=config_dir, repo_dir=None)
+
+    # Present-but-null is malformed, not absent - the merged structural_issues
+    # (sourced from check_structure) must carry the same warn as the 42 case.
+    assert inventory.promises == []
+    assert any("hook command is not a string" in i.message for i in inventory.structural_issues)
+
+
 def test_malformed_settings_json_does_not_crash_and_yields_no_hook_promises(tmp_path):
     config_dir = tmp_path / "config"
     config_dir.mkdir()
@@ -265,6 +300,17 @@ def test_malformed_settings_json_does_not_crash_and_yields_no_hook_promises(tmp_
     assert inventory.promises == []
     # The parse failure is a structural issue, not a silently dropped promise.
     assert any(issue.severity == "error" for issue in inventory.structural_issues)
+
+
+def test_non_utf8_claude_md_does_not_crash(tmp_path):
+    (tmp_path / "CLAUDE.md").write_bytes(
+        b"- Run all tests before declaring the task done.\nCaf\xe9 is not ASCII.\n"
+    )
+
+    inventory = extract_promises(config_dir=None, repo_dir=tmp_path)
+
+    assert any(p.pattern == "verification_gate" for p in inventory.promises)
+    assert any("not valid UTF-8" in i.message for i in inventory.structural_issues)
 
 
 def test_extract_promises_joins_structural_issues(tmp_path):
@@ -278,6 +324,24 @@ def test_extract_promises_joins_structural_issues(tmp_path):
         issue.message == "vanilla harness, nothing to grade statically"
         for issue in inventory.structural_issues
     )
+
+
+class TestLongLinePerformance:
+    """A single very long CLAUDE.md line must not make --static-only, the
+    documented 'zero spend, CI-safe' entry point, hang. PATH_TOKEN_RE's
+    unanchored [\\w.\\-]+ backtracking against a slash-free line is O(n^2)."""
+
+    def test_150kb_single_line_extracts_quickly(self, tmp_path):
+        line = "Never touch " + ("x" * 150_000) + " in production"
+        _write_claude_md(tmp_path, line + "\n")
+
+        start = time.monotonic()
+        inventory = extract_promises(config_dir=None, repo_dir=tmp_path)
+        elapsed = time.monotonic() - start
+
+        assert elapsed < 5.0, f"took {elapsed:.1f}s - line-length guard not applied"
+        assert inventory.promises == []
+        assert any("too long" in u for u in inventory.unparsed_rules)
 
 
 class TestLiveRunRegressions:

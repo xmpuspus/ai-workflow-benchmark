@@ -426,6 +426,23 @@ class TestGapPrescribeCli:
         assert "Prescriptions" in result.output
         assert "Read Tests Before Editing" in result.output
 
+    def test_prescribe_text_renders_impact_estimate_and_caveat(self, tmp_path: Path):
+        """The impact-estimate line and its non-additivity caveat are only
+        pinned today via checkup_cmd.py's analogous 'Top fixes' block (see
+        test_checkup.py::test_top_fixes_include_rule_integrity_escalation_
+        when_broken asserting 'not additive'); gap --prescribe renders the
+        same fields through a different call site with no regression test."""
+        run_dir = tmp_path / "run1"
+        run_dir.mkdir()
+        _build_cli_run_dir(run_dir)
+
+        runner = CliRunner()
+        result = runner.invoke(gap, [str(run_dir), "--prescribe"])
+        assert result.exit_code == 0, result.output
+        assert "est. +" in result.output
+        assert "Impact estimates are independent" in result.output
+        assert "sum cleanly" in result.output
+
     def test_prescribe_json_includes_prescriptions_key(self, tmp_path: Path):
         run_dir = tmp_path / "run1"
         run_dir.mkdir()
@@ -448,6 +465,32 @@ class TestGapPrescribeCli:
         result = runner.invoke(gap, [str(run_dir)])
         assert result.exit_code == 0, result.output
         assert "Prescriptions" not in result.output
+
+    def test_prescribe_is_purely_additive_when_no_top_fix_clause_fires(
+        self, tmp_path: Path, monkeypatch
+    ):
+        """--prescribe must not change anything that renders before the
+        'Prescriptions (' marker. The one documented exception is the verdict
+        line's 'Top fix:' clause (see TestGapVerdictLine.
+        test_top_fix_clause_appended_when_prescribe_fires), which only fires
+        when a prescription is actually fired - so a single-task run (too few
+        data points for any prescription to fire) makes the additive claim
+        exactly testable: the two outputs must be byte-identical up to the
+        Prescriptions section."""
+        task_defs = [_make_task("BF-001", capabilities=["security_awareness"])]
+        monkeypatch.setattr("awb.core.task_loader.load_all_tasks", lambda: task_defs)
+        run_dir = tmp_path / "run1"
+        _write_result_json(run_dir, "BF-001", score=90)
+
+        plain = CliRunner().invoke(gap, [str(run_dir)])
+        prescribed = CliRunner().invoke(gap, [str(run_dir), "--prescribe"])
+        assert plain.exit_code == 0, plain.output
+        assert prescribed.exit_code == 0, prescribed.output
+
+        marker = "\nPrescriptions ("
+        assert marker in prescribed.output
+        prescribed_head = prescribed.output.split(marker)[0]
+        assert prescribed_head == plain.output
 
     def test_without_prescribe_json_has_no_prescriptions_key(self, tmp_path: Path):
         run_dir = tmp_path / "run1"

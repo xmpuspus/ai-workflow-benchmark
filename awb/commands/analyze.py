@@ -20,7 +20,7 @@ from awb.commands._shared import (
     console,
     emit_json,
     load_results_from_dirs,
-    resolve_run_dir,
+    resolve_run_dir_or_exit,
     score_style,
 )
 
@@ -162,14 +162,7 @@ def gap(run_dir: str | None, fmt: str, prescribe: bool):
     from awb.core.results import ResultRecorder
     from awb.core.task_loader import load_all_tasks
 
-    resolved = resolve_run_dir(run_dir)
-    if resolved is None:
-        # --format json stdout must stay a single parseable document.
-        if fmt == "json":
-            emit_json({"error": "no run directory given and no last run saved"})
-        else:
-            console.print(f"[{BAD}]No run directory given and no last run saved[/{BAD}]")
-        sys.exit(2)
+    resolved = resolve_run_dir_or_exit(run_dir, fmt)
     if (run_dir is None or run_dir == "last") and fmt == "text":
         console.print(f"[{MUTED}]using last run: {resolved}[/{MUTED}]")
 

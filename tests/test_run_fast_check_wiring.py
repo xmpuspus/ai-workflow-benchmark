@@ -12,10 +12,19 @@ import tempfile
 from pathlib import Path
 from types import SimpleNamespace
 
+import pytest
 from click.testing import CliRunner
 
 from awb.adapters.base import ToolAdapter, ToolResult
 from awb.commands.run import run as run_cmd
+
+
+@pytest.fixture(autouse=True)
+def _isolated_cwd(tmp_path, monkeypatch):
+    # _RecordingRunner now creates a real run-dir marker so _run_both's
+    # save_last_run wiring is exercisable; without this isolation that write
+    # (results/.last_run, a relative path) would land in the real repo.
+    monkeypatch.chdir(tmp_path)
 
 
 class _RecordingRunner:
@@ -27,7 +36,9 @@ class _RecordingRunner:
         self.kwargs = kwargs
         _RecordingRunner.instances.append(kwargs)
         self._run_id = "test-run"
-        self.recorder = SimpleNamespace(results_dir=Path(tempfile.mkdtemp()))
+        results_dir = Path(tempfile.mkdtemp())
+        (results_dir / "test-run_run1").mkdir()
+        self.recorder = SimpleNamespace(results_dir=results_dir)
 
     async def run_all(self):
         return []
@@ -176,6 +187,27 @@ class TestRunBothFastCheckWiring:
         for kwargs in _RecordingRunner.instances:
             assert kwargs["concurrency"] == 1
             assert kwargs["parallel"] is False
+
+
+class TestRunBothSavesLastRun:
+    """`awb run --fast-check` (no tool) is the natural first command per the
+    README Quick Start, and `awb gap` (no argument) right after it is
+    documented to pick up whatever just ran - that only works if _run_both
+    calls save_last_run like the tool-specified path already does."""
+
+    def test_run_both_saves_last_run_for_custom_variant(self, monkeypatch):
+        _reset()
+        monkeypatch.setattr("awb.core.runner.BenchmarkRunner", _RecordingRunner)
+        monkeypatch.setattr("awb.adapters.registry.get_adapter", lambda name: _OkAdapter())
+
+        result = CliRunner().invoke(run_cmd, ["--fast-check", "-y"])
+
+        assert result.exit_code == 0, result.output
+        from awb.commands._shared import resolve_run_dir
+
+        saved = resolve_run_dir(None)
+        assert saved is not None, "no run saved after awb run --fast-check with no tool given"
+        assert saved.name == "test-run_run1"
 
 
 class TestNonFastCheckParallelDefaultUnchanged:

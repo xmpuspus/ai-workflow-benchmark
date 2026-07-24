@@ -189,11 +189,18 @@ def ab(
     adapter_b = adapter_cls(config_dir=Path(config_b))
 
     # Check both up front: a broken config B discovered only after the full
-    # config A pass wastes the entire A run.
+    # config A pass wastes the entire A run. Adapter-unavailable and auth
+    # failure are both tool/environment failures per the exit-code contract
+    # in _shared.py (exit 2), distinct from a real benchmark finding (exit 1).
     for label, adapter in (("A", adapter_a), ("B", adapter_b)):
         if not adapter.check_available():
             console.print(f"[{BAD}]Adapter '{tool}' is not available for config {label}[/{BAD}]")
-            sys.exit(1)
+            sys.exit(2)
+        if adapter.supports_auth_check():
+            ok, msg = adapter.check_auth()
+            if not ok:
+                console.print(f"[{BAD}]{msg}[/{BAD}]")
+                sys.exit(2)
 
     ts = datetime.now(UTC).strftime("%Y-%m-%d_%H%M%S")
     runs_dir_path = Path(runs_dir)

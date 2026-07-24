@@ -173,6 +173,44 @@ def test_verdict_order_and_length_match_promise_order():
     assert all(isinstance(v, RuleVerdict) for v in verdicts)
 
 
+def test_claude_project_dir_hook_is_enforced_not_demoted(tmp_path):
+    """A hook command using $CLAUDE_PROJECT_DIR (the documented Claude Code
+    convention for a portable path) must resolve against the real repo and
+    verdict ENFORCED, not get demoted by a false 'missing file' error."""
+    config_dir = tmp_path / "config"
+    repo_dir = tmp_path / "repo"
+    config_dir.mkdir()
+    repo_dir.mkdir()
+    hooks_dir = repo_dir / ".claude" / "hooks"
+    hooks_dir.mkdir(parents=True)
+    (hooks_dir / "check.sh").write_text("#!/bin/sh\n")
+
+    settings = {
+        "hooks": {
+            "PreToolUse": [
+                {
+                    "matcher": "Bash",
+                    "hooks": [
+                        {
+                            "type": "command",
+                            "command": (
+                                "run ruff before commit $CLAUDE_PROJECT_DIR/.claude/hooks/check.sh"
+                            ),
+                        }
+                    ],
+                }
+            ]
+        }
+    }
+    (config_dir / "settings.json").write_text(json.dumps(settings, indent=2))
+
+    inventory = extract_promises(config_dir=config_dir, repo_dir=repo_dir)
+    assert not any(i.severity == "error" for i in inventory.structural_issues)
+
+    [verdict] = rule_integrity(inventory, rubric_scores={})
+    assert verdict.status == "ENFORCED"
+
+
 def test_end_to_end_realistic_claude_md_and_settings_json(tmp_path):
     config_dir = tmp_path / "config"
     repo_dir = tmp_path / "repo"

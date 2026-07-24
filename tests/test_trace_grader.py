@@ -2,8 +2,12 @@
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
+from click.testing import CliRunner
+
+from awb.commands.trace_cmd import trace
 from awb.trace import (
     FILE_EDIT,
     SHELL_COMMAND,
@@ -261,3 +265,43 @@ def test_grade_returns_six_keys_when_context_and_efficiency_gradeable(tmp_path: 
         "context_discipline",
         "tool_call_efficiency",
     }
+
+
+class TestGradeCliSixRubricColumns:
+    """`awb trace grade` was extended to 6 rubrics everywhere else in v1.6
+    (gap, checkup, submit); the grade table itself must show the two new
+    columns rather than silently truncating a trace's own grade output."""
+
+    def _write_run(self, run_dir: Path, task_id: str, files_to_examine: list[str]) -> None:
+        run_dir.mkdir(parents=True, exist_ok=True)
+        with TraceWriter(run_dir / f"{task_id}.trace.jsonl") as w:
+            w.write(
+                new_span(TOOL_USE, attributes={"gen_ai.tool.name": "Read", "file.path": "src/x.py"})
+            )
+            w.write(
+                new_span(FILE_EDIT, attributes={"file.path": "src/x.py", "file.action": "write"})
+            )
+        (run_dir / f"{task_id}.json").write_text(
+            json.dumps({"task": {"files_to_examine": files_to_examine}})
+        )
+
+    def test_new_rubric_columns_appear_when_gradeable(self, tmp_path):
+        self._write_run(tmp_path, "BF-001", files_to_examine=["src/x.py"])
+
+        result = CliRunner().invoke(trace, ["grade", str(tmp_path)])
+
+        assert result.exit_code == 0, result.output
+        assert "ctx_disc" in result.output
+        assert "tool_eff" in result.output
+
+    def test_new_rubric_columns_blank_when_not_gradeable(self, tmp_path):
+        # No files_to_examine -> context_discipline isn't gradeable; a bare
+        # single edit with no prior read makes tool_call_efficiency n/a too
+        # only when there's no read/edit signal at all, so use an empty scope
+        # and assert the missing column renders as a blank cell, not a crash.
+        self._write_run(tmp_path, "BF-002", files_to_examine=[])
+
+        result = CliRunner().invoke(trace, ["grade", str(tmp_path)])
+
+        assert result.exit_code == 0, result.output
+        assert "ctx_disc" in result.output

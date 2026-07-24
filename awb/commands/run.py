@@ -121,6 +121,7 @@ def _run_both(
                 sys.exit(1)
 
     all_results = {}
+    runners = {}
     for variant in ("claude-code-vanilla", "claude-code-custom"):
         console.print(f"\nRunning [bold]{variant}[/bold] on {len(tasks)} task(s) x {runs} run(s)")
         runner = BenchmarkRunner(
@@ -137,9 +138,21 @@ def _run_both(
             tasks_dir=tasks_dir,
         )
         all_results[variant] = asyncio.run(runner.run_all())
+        runners[variant] = runner
 
     vanilla_results = all_results["claude-code-vanilla"]
     custom_results = all_results["claude-code-custom"]
+
+    # Record the custom variant's run dir for --last-run consumers (gap,
+    # cost, drift, trace grade) - mirrors the tool-specified path below and
+    # checkup --paired, which likewise saves the custom arm, not the vanilla.
+    custom_runner = runners["claude-code-custom"]
+    results_path = custom_runner.recorder.results_dir
+    run_dirs = sorted(results_path.glob(f"{custom_runner._run_id}_run*"))
+    if run_dirs:
+        from awb.commands._shared import save_last_run
+
+        save_last_run(run_dirs[0])
 
     map_v = {r.task_id: r for r in vanilla_results}
     map_c = {r.task_id: r for r in custom_results}

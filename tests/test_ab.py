@@ -317,6 +317,8 @@ class _ConfigBBrokenAdapter(_SupportedFakeAdapter):
 
 class TestABPreflight:
     def test_config_b_unavailable_fails_before_any_run(self, monkeypatch, tmp_path, sample_task):
+        """Adapter-unavailable is a tool/environment failure per the exit-code
+        contract in _shared.py (2), not a real benchmark finding (1)."""
         from awb.commands import ab_cmd
 
         monkeypatch.setattr(
@@ -341,8 +343,40 @@ class TestABPreflight:
             ab_cmd.ab,
             ["fake-b-broken", "--config-a", str(config_a), "--config-b", str(config_b)],
         )
-        assert result.exit_code == 1
+        assert result.exit_code == 2
         assert "config B" in result.output
+
+    def test_auth_failure_exits_two_before_any_run(self, monkeypatch, tmp_path, sample_task):
+        from awb.commands import ab_cmd
+
+        class _AuthFailAdapter(_SupportedFakeAdapter):
+            def supports_auth_check(self) -> bool:
+                return True
+
+            def check_auth(self):
+                return False, "Claude Code is not logged in."
+
+        monkeypatch.setattr("awb.adapters.registry.get_adapter", lambda name: _AuthFailAdapter())
+        monkeypatch.setattr(
+            "awb.core.task_loader.load_all_tasks", lambda category=None: [sample_task]
+        )
+
+        def _must_not_run(*args, **kwargs):
+            raise AssertionError("a config ran despite auth failing")
+
+        monkeypatch.setattr(ab_cmd, "_run_config", _must_not_run)
+
+        config_a = tmp_path / "a"
+        config_b = tmp_path / "b"
+        config_a.mkdir()
+        config_b.mkdir()
+
+        result = CliRunner().invoke(
+            ab_cmd.ab,
+            ["fake-supported", "--config-a", str(config_a), "--config-b", str(config_b)],
+        )
+        assert result.exit_code == 2, result.output
+        assert "logged in" in result.output.lower()
 
     def test_small_sample_verdict_names_the_sign_test_floor(
         self, monkeypatch, tmp_path, sample_task

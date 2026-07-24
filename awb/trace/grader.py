@@ -17,6 +17,19 @@ from pathlib import Path
 from awb.trace.jsonl import load_trace
 from awb.trace.spans import FILE_EDIT, SHELL_COMMAND, TEST_RUN, TOOL_USE
 
+# Canonical rubric order: the 4 always-present rubrics, then the 2 that are
+# only included when gradeable. Other modules that aggregate/display rubric
+# scores (submit.py's trace_summary, trace_cmd.py's grade table) import this
+# instead of re-declaring the name list a third time.
+RUBRIC_NAMES: tuple[str, ...] = (
+    "read_tests_before_edit",
+    "ran_verification_after_change",
+    "no_out_of_scope_edits",
+    "no_repeated_failing_command_loop",
+    "context_discipline",
+    "tool_call_efficiency",
+)
+
 
 def _attr(span: dict, key: str, default=""):
     return (span.get("attributes") or {}).get(key, default)

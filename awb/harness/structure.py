@@ -53,13 +53,28 @@ def _display(label: str, name: str) -> str:
     return f"{label}/{name}"
 
 
-def _read_text(path: Path | None) -> str | None:
+def _read_text(path: Path | None) -> tuple[str | None, bool]:
+    """Read a file's text, returning (text, had_decode_error).
+
+    A non-UTF-8 file (a common artifact of a Windows-1252 copy-paste from
+    Word/Docs) falls back to errors="replace" instead of crashing the whole
+    static check; had_decode_error lets the caller surface a structural warn.
+    """
     if path is None or not path.exists():
-        return None
+        return None, False
     try:
-        return path.read_text()
+        return path.read_text(), False
     except OSError:
-        return None
+        return None, False
+    except UnicodeDecodeError:
+        try:
+            return path.read_text(errors="replace"), True
+        except OSError:
+            return None, False
+
+
+def _utf8_issue(source: str) -> StructuralIssue:
+    return StructuralIssue(severity="warn", message="file is not valid UTF-8", source=source)
 
 
 def _extract_path_tokens(command: str) -> list[str]:
@@ -75,7 +90,20 @@ def _extract_path_tokens(command: str) -> list[str]:
     return [t for t in tokens if "/" in t and not t.startswith("-")]
 
 
-def _resolve(token: str, base: Path) -> Path:
+def _expand_project_dir(token: str, repo_dir: Path | None) -> str:
+    """Expand $CLAUDE_PROJECT_DIR to the repo being checked.
+
+    Real Claude Code settings.json hook commands commonly use this env var
+    for portability (e.g. "$CLAUDE_PROJECT_DIR/.claude/hooks/check.sh"), and
+    it always names the project root, never config_dir.
+    """
+    if repo_dir is not None and "$CLAUDE_PROJECT_DIR" in token:
+        return token.replace("$CLAUDE_PROJECT_DIR", str(repo_dir))
+    return token
+
+
+def _resolve(token: str, base: Path, repo_dir: Path | None = None) -> Path:
+    token = _expand_project_dir(token, repo_dir)
     expanded = Path(token).expanduser()
     if expanded.is_absolute():
         return expanded
@@ -85,7 +113,9 @@ def _resolve(token: str, base: Path) -> Path:
 def _check_settings_json(config_dir: Path | None) -> tuple[list[StructuralIssue], dict | None]:
     issues: list[StructuralIssue] = []
     settings_path = config_dir / SETTINGS_NAME if config_dir else None
-    text = _read_text(settings_path)
+    text, decode_error = _read_text(settings_path)
+    if decode_error:
+        issues.append(_utf8_issue(_display("config", SETTINGS_NAME)))
     if text is None:
         return issues, None
 
@@ -104,7 +134,9 @@ def _check_settings_json(config_dir: Path | None) -> tuple[list[StructuralIssue]
     return issues, data if isinstance(data, dict) else None
 
 
-def _check_hook_paths(config_dir: Path, settings_data: dict) -> list[StructuralIssue]:
+def _check_hook_paths(
+    config_dir: Path, settings_data: dict, repo_dir: Path | None = None
+) -> list[StructuralIssue]:
     issues: list[StructuralIssue] = []
     hooks = settings_data.get("hooks", {})
     if not isinstance(hooks, dict):
@@ -119,12 +151,31 @@ def _check_hook_paths(config_dir: Path, settings_data: dict) -> list[StructuralI
             for hook in group.get("hooks", []):
                 if not isinstance(hook, dict):
                     continue
-                command = hook.get("command", "")
+                raw_command = hook.get("command")
+                if "command" in hook and not isinstance(raw_command, str):
+                    # A present-but-null or wrong-type command (settings.json
+                    # hand-edited or generated badly) is malformed, not merely
+                    # absent - it must warn rather than silently become "".
+                    issues.append(
+                        StructuralIssue(
+                            severity="warn",
+                            message=f"{event} hook command is not a string: {raw_command!r}",
+                            source=_display("config", SETTINGS_NAME),
+                        )
+                    )
+                    continue
+                command = raw_command or ""
                 for token in _extract_path_tokens(command):
-                    if not _resolve(token, config_dir).exists():
+                    resolved = _resolve(token, config_dir, repo_dir)
+                    if not resolved.exists():
+                        # A stray "$VARNAME" other than $CLAUDE_PROJECT_DIR
+                        # can't be expanded without a real shell environment,
+                        # so "doesn't exist" might just mean "can't check" -
+                        # degrade to warn instead of claiming a hard error.
+                        severity = "warn" if "$" in str(resolved) else "error"
                         issues.append(
                             StructuralIssue(
-                                severity="error",
+                                severity=severity,
                                 message=f"{event} hook references missing file: {token}",
                                 source=_display("config", SETTINGS_NAME),
                             )
@@ -148,7 +199,9 @@ def _primary_claude_md(config_dir: Path | None, repo_dir: Path | None) -> tuple[
 def _check_claude_md(config_dir: Path | None, repo_dir: Path | None) -> list[StructuralIssue]:
     issues: list[StructuralIssue] = []
     path, label = _primary_claude_md(config_dir, repo_dir)
-    text = _read_text(path)
+    text, decode_error = _read_text(path)
+    if decode_error:
+        issues.append(_utf8_issue(_display(label, CLAUDE_MD_NAME)))
 
     if text is None or not text.strip():
         issues.append(
@@ -218,7 +271,7 @@ def check_structure(config_dir: Path | None, repo_dir: Path | None) -> list[Stru
     settings_issues, settings_data = _check_settings_json(config_dir)
     issues.extend(settings_issues)
     if config_dir is not None and settings_data is not None:
-        issues.extend(_check_hook_paths(config_dir, settings_data))
+        issues.extend(_check_hook_paths(config_dir, settings_data, repo_dir))
 
     issues.extend(_check_claude_md(config_dir, repo_dir))
 

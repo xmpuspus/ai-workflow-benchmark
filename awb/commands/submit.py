@@ -10,20 +10,31 @@ import click
 from rich.table import Table
 
 from awb.commands._shared import console
+from awb.trace.grader import RUBRIC_NAMES
 
 
 def _mean_trace_summary(trace_grades: list) -> dict | None:
-    """Mean of each rubric across runs that produced a gradeable trace."""
+    """Mean of each rubric across runs that produced a gradeable trace.
+
+    Derives the key set from what's actually present rather than a hardcoded
+    tuple, so a future rubric addition doesn't silently drop out of the
+    submission-level summary again. context_discipline/tool_call_efficiency
+    aren't present on every graded run (see grade_trace's docstring), so each
+    rubric's mean is taken over the runs that reported it, not zero-filled.
+    Known rubrics sort first in their canonical order; anything unrecognized
+    sorts after, alphabetically, so output stays deterministic.
+    """
     graded = [g for g in trace_grades if g is not None]
     if not graded:
         return None
-    keys = (
-        "read_tests_before_edit",
-        "ran_verification_after_change",
-        "no_out_of_scope_edits",
-        "no_repeated_failing_command_loop",
-    )
-    return {k: round(sum(g[k] for g in graded) / len(graded), 1) for k in keys}
+    present = {k for g in graded for k in g}
+    ordered = [k for k in RUBRIC_NAMES if k in present]
+    ordered.extend(sorted(k for k in present if k not in RUBRIC_NAMES))
+    summary = {}
+    for k in ordered:
+        values = [g[k] for g in graded if k in g]
+        summary[k] = round(sum(values) / len(values), 1)
+    return summary
 
 
 def _load_task_defs() -> dict:

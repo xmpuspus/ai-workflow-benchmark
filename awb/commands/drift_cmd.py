@@ -18,7 +18,7 @@ from awb.commands._shared import (
     console,
     emit_json,
     headline_panel,
-    resolve_run_dir,
+    resolve_run_dir_or_exit,
     score_style,
 )
 
@@ -54,18 +54,11 @@ def drift(run_dir: str | None, baseline_path: str, threshold: float, fmt: str):
 
     Exit code contract: exits 1 when the composite has drifted past --threshold
     (in both --format text and --format json), exits 2 when run_dir is omitted
-    and no run has been saved, exits 0 otherwise. Intended for cron/CI
-    regression watch - models and harnesses update silently.
+    and no run has been saved, or when an explicit run_dir doesn't exist,
+    exits 0 otherwise. Intended for cron/CI regression watch - models and
+    harnesses update silently.
     """
-    resolved = resolve_run_dir(run_dir)
-    if resolved is None:
-        # Keep json-mode stdout a single parseable document, matching the
-        # empty-input error path below.
-        if fmt == "json":
-            click.echo(json.dumps({"error": "no run directory given and no last run saved"}))
-        else:
-            console.print(f"[{BAD}]No run directory given and no last run saved[/{BAD}]")
-        sys.exit(2)
+    resolved = resolve_run_dir_or_exit(run_dir, fmt)
     if (run_dir is None or run_dir == "last") and fmt == "text":
         console.print(f"[{MUTED}]using last run: {resolved}[/{MUTED}]")
 

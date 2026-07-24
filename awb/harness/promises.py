@@ -115,6 +115,11 @@ IMPERATIVE_VERBS = {
 
 BULLET_RE = re.compile(r"^\s*(?:[-*+]|\d+[.)])\s+")
 
+# PATH_TOKEN_RE's [\w.\-]+ backtracks O(n^2) against a long slash-free run.
+# No legitimate single-line rule needs to be this long - past this it's a
+# prose wall (an unwrapped paragraph, a pasted spec block), not a rule.
+MAX_RULE_LINE_LENGTH = 2000
+
 
 @dataclass
 class HarnessPromise:
@@ -175,11 +180,34 @@ def _iter_rule_lines(text: str) -> Iterator[tuple[int, str]]:
         yield i, line
 
 
-def _extract_from_markdown(path: Path, source_label: str) -> tuple[list[HarnessPromise], list[str]]:
-    text = path.read_text()
+def _utf8_issue(source: str) -> StructuralIssue:
+    return StructuralIssue(severity="warn", message="file is not valid UTF-8", source=source)
+
+
+def _read_text_safe(path: Path) -> tuple[str, bool]:
+    """Read a file's text, returning (text, had_decode_error).
+
+    A non-UTF-8 file (a common artifact of a Windows-1252 copy-paste from
+    Word/Docs) falls back to errors="replace" instead of crashing
+    extract_promises(); had_decode_error lets the caller surface a
+    structural warn (mirrors structure.py's _read_text).
+    """
+    try:
+        return path.read_text(), False
+    except UnicodeDecodeError:
+        return path.read_text(errors="replace"), True
+
+
+def _extract_from_markdown(
+    path: Path, source_label: str
+) -> tuple[list[HarnessPromise], list[str], bool]:
+    text, decode_error = _read_text_safe(path)
     promises: list[HarnessPromise] = []
     unparsed: list[str] = []
     for line_no, line in _iter_rule_lines(text):
+        if len(line) > MAX_RULE_LINE_LENGTH:
+            unparsed.append(f"line {line_no} too long, skipped ({len(line)} chars)")
+            continue
         key = _match_line(line)
         if key:
             promises.append(
@@ -193,7 +221,7 @@ def _extract_from_markdown(path: Path, source_label: str) -> tuple[list[HarnessP
             )
         elif _looks_imperative(line):
             unparsed.append(line)
-    return promises, unparsed
+    return promises, unparsed, decode_error
 
 
 def _find_line(raw_text: str, needle: str) -> int:
@@ -205,21 +233,21 @@ def _find_line(raw_text: str, needle: str) -> int:
     return raw_text.count("\n", 0, idx) + 1
 
 
-def _extract_from_hooks(config_dir: Path) -> tuple[list[HarnessPromise], list[str]]:
+def _extract_from_hooks(config_dir: Path) -> tuple[list[HarnessPromise], list[str], bool]:
     settings_path = config_dir / "settings.json"
     if not settings_path.exists():
-        return [], []
+        return [], [], False
 
-    raw_text = settings_path.read_text()
+    raw_text, decode_error = _read_text_safe(settings_path)
     try:
         data = json.loads(raw_text)
     except json.JSONDecodeError:
         # structure.py already reports the parse error; nothing to extract.
-        return [], []
+        return [], [], decode_error
 
     hooks = data.get("hooks", {}) if isinstance(data, dict) else {}
     if not isinstance(hooks, dict):
-        return [], []
+        return [], [], decode_error
 
     promises: list[HarnessPromise] = []
     unparsed: list[str] = []
@@ -230,11 +258,17 @@ def _extract_from_hooks(config_dir: Path) -> tuple[list[HarnessPromise], list[st
         for group in groups:
             if not isinstance(group, dict):
                 continue
-            matcher = group.get("matcher", "")
+            matcher = group.get("matcher") or ""
+            if not isinstance(matcher, str):
+                matcher = ""
             for hook in group.get("hooks", []):
                 if not isinstance(hook, dict):
                     continue
-                command = hook.get("command", "")
+                command = hook.get("command") or ""
+                if not isinstance(command, str):
+                    # Malformed settings.json (e.g. hand-edited); structure.py
+                    # already surfaces this shape as a structural warn.
+                    continue
                 key = _match_line(command) or _match_line(matcher)
                 if key:
                     promises.append(
@@ -250,7 +284,7 @@ def _extract_from_hooks(config_dir: Path) -> tuple[list[HarnessPromise], list[st
                     descriptor = f"hook: {event} matcher={matcher!r} command={command}"
                     unparsed.append(descriptor)
 
-    return promises, unparsed
+    return promises, unparsed, decode_error
 
 
 def extract_promises(config_dir: Path | None, repo_dir: Path | None) -> HarnessInventory:
@@ -263,32 +297,40 @@ def extract_promises(config_dir: Path | None, repo_dir: Path | None) -> HarnessI
     promises: list[HarnessPromise] = []
     unparsed_rules: list[str] = []
     files_scanned: list[str] = []
+    decode_issues: list[StructuralIssue] = []
 
     if config_dir is not None:
         claude_md = config_dir / "CLAUDE.md"
         if claude_md.exists():
             files_scanned.append("config/CLAUDE.md")
-            p, u = _extract_from_markdown(claude_md, "config/CLAUDE.md")
+            p, u, bad_utf8 = _extract_from_markdown(claude_md, "config/CLAUDE.md")
             promises.extend(p)
             unparsed_rules.extend(u)
+            if bad_utf8:
+                decode_issues.append(_utf8_issue("config/CLAUDE.md"))
 
         settings_path = config_dir / "settings.json"
         if settings_path.exists():
             files_scanned.append("config/settings.json")
-            p, u = _extract_from_hooks(config_dir)
+            p, u, bad_utf8 = _extract_from_hooks(config_dir)
             promises.extend(p)
             unparsed_rules.extend(u)
+            if bad_utf8:
+                decode_issues.append(_utf8_issue("config/settings.json"))
 
     if repo_dir is not None:
         for name, label in (("CLAUDE.md", "repo/CLAUDE.md"), ("AGENTS.md", "repo/AGENTS.md")):
             path = repo_dir / name
             if path.exists():
                 files_scanned.append(label)
-                p, u = _extract_from_markdown(path, label)
+                p, u, bad_utf8 = _extract_from_markdown(path, label)
                 promises.extend(p)
                 unparsed_rules.extend(u)
+                if bad_utf8:
+                    decode_issues.append(_utf8_issue(label))
 
     structural_issues = check_structure(config_dir, repo_dir)
+    structural_issues.extend(decode_issues)
 
     return HarnessInventory(
         promises=promises,

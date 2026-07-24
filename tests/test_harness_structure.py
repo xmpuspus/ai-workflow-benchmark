@@ -25,6 +25,19 @@ def test_invalid_json_is_an_error(tmp_path):
     assert errors[0].source == "config/settings.json"
 
 
+def test_non_utf8_settings_json_does_not_crash_and_warns(tmp_path):
+    config_dir = tmp_path / "config"
+    config_dir.mkdir()
+    # Otherwise-valid JSON with a Windows-1252 byte (not valid UTF-8) in a
+    # string value - a common artifact of a copy-paste from Word/Docs.
+    (config_dir / "settings.json").write_bytes(b'{"hooks": {}, "note": "caf\xe9"}')
+
+    issues = check_structure(config_dir=config_dir, repo_dir=None)
+
+    assert any("not valid UTF-8" in i.message for i in issues)
+    assert not any("not valid JSON" in i.message for i in issues)
+
+
 def test_missing_settings_json_is_not_reported(tmp_path):
     config_dir = tmp_path / "config"
     config_dir.mkdir()
@@ -59,6 +72,61 @@ def test_hook_referencing_missing_script_is_an_error(tmp_path):
     assert "PreToolUse" in errors[0].message
 
 
+def test_hook_command_expands_claude_project_dir_to_repo_dir(tmp_path):
+    """Real Claude Code settings.json hooks commonly use $CLAUDE_PROJECT_DIR
+    for portability - it must resolve against the repo being checked, not be
+    treated as a literal, always-missing path segment."""
+    config_dir = tmp_path / "config"
+    repo_dir = tmp_path / "repo"
+    repo_dir.mkdir()
+    hooks_dir = repo_dir / ".claude" / "hooks"
+    hooks_dir.mkdir(parents=True)
+    (hooks_dir / "check.sh").write_text("#!/bin/sh\n")
+    _write_settings(
+        config_dir,
+        {
+            "PreToolUse": [
+                {
+                    "matcher": "Bash",
+                    "hooks": [
+                        {
+                            "type": "command",
+                            "command": "$CLAUDE_PROJECT_DIR/.claude/hooks/check.sh",
+                        }
+                    ],
+                }
+            ]
+        },
+    )
+
+    issues = check_structure(config_dir=config_dir, repo_dir=repo_dir)
+
+    assert not any(i.severity == "error" for i in issues)
+
+
+def test_hook_command_with_unresolvable_env_var_degrades_to_warn(tmp_path):
+    """A env var other than $CLAUDE_PROJECT_DIR can't be resolved without a
+    real shell environment; the check can't tell if it's genuinely missing,
+    so it must not claim a hard error."""
+    config_dir = tmp_path / "config"
+    _write_settings(
+        config_dir,
+        {
+            "PreToolUse": [
+                {
+                    "matcher": "Bash",
+                    "hooks": [{"type": "command", "command": "$SOME_OTHER_VAR/hooks/check.sh"}],
+                }
+            ]
+        },
+    )
+
+    issues = check_structure(config_dir=config_dir, repo_dir=None)
+
+    assert not any(i.severity == "error" for i in issues)
+    assert any(i.severity == "warn" and "check.sh" in i.message for i in issues)
+
+
 def test_hook_referencing_existing_script_has_no_error(tmp_path):
     config_dir = tmp_path / "config"
     _write_settings(
@@ -79,6 +147,35 @@ def test_hook_referencing_existing_script_has_no_error(tmp_path):
     issues = check_structure(config_dir=config_dir, repo_dir=None)
 
     assert issues == []
+
+
+def test_hook_command_null_does_not_crash(tmp_path):
+    config_dir = tmp_path / "config"
+    _write_settings(
+        config_dir,
+        {"PreToolUse": [{"matcher": "Edit", "hooks": [{"type": "command", "command": None}]}]},
+    )
+
+    issues = check_structure(config_dir=config_dir, repo_dir=None)
+
+    # A present-but-null command is malformed settings.json, not an absent
+    # one - it must warn like the non-string (42) case below, not silently
+    # get coerced into an empty command with no signal at all.
+    assert not any(i.severity == "error" for i in issues)
+    assert any("hook command is not a string" in i.message for i in issues)
+
+
+def test_hook_command_non_string_does_not_crash(tmp_path):
+    config_dir = tmp_path / "config"
+    _write_settings(
+        config_dir,
+        {"PreToolUse": [{"matcher": "Edit", "hooks": [{"type": "command", "command": 42}]}]},
+    )
+
+    issues = check_structure(config_dir=config_dir, repo_dir=None)
+
+    assert not any(i.severity == "error" for i in issues)
+    assert any("hook command is not a string" in i.message for i in issues)
 
 
 def test_hook_command_with_no_path_token_is_not_flagged(tmp_path):
@@ -124,6 +221,19 @@ def test_empty_claude_md_warns_vanilla_harness(tmp_path):
     issues = check_structure(config_dir=None, repo_dir=repo_dir)
 
     assert any(i.message == "vanilla harness, nothing to grade statically" for i in issues)
+
+
+def test_non_utf8_claude_md_does_not_crash_and_warns(tmp_path):
+    repo_dir = tmp_path / "repo"
+    repo_dir.mkdir()
+    (repo_dir / "CLAUDE.md").write_bytes(b"# Rules\n\nCaf\xe9 is not ASCII.\n")
+
+    issues = check_structure(config_dir=None, repo_dir=repo_dir)
+
+    assert any("not valid UTF-8" in i.message for i in issues)
+    # A decode error must not also masquerade as "no CLAUDE.md" - the file
+    # has real content once decoded with replacement characters.
+    assert not any(i.message == "vanilla harness, nothing to grade statically" for i in issues)
 
 
 def test_nonempty_claude_md_does_not_warn_vanilla(tmp_path):

@@ -13,7 +13,8 @@ exit status without reading output.
         meaning of "finding", but always "ran fine and found a problem")
     2 = tool/environment failure — auth rejected, adapter unavailable, a
         setup/load crash, or (for --last-run consumers) no saved run to
-        resolve. Distinct from "ran fine and found a problem".
+        resolve, or an explicit run_dir/baseline path that doesn't exist.
+        Distinct from "ran fine and found a problem".
 Applies to checkup, drift, ab, validate, and the --last-run consumers
 (gap, cost, trace grade). Keep it stable — do not repurpose a code.
 """
@@ -163,3 +164,28 @@ def resolve_run_dir(arg: str | None) -> Path | None:
         return None
     saved = _LAST_RUN_POINTER.read_text().strip()
     return Path(saved) if saved else None
+
+
+def resolve_run_dir_or_exit(arg: str | None, fmt: str) -> Path:
+    """Resolve arg via resolve_run_dir, or exit(2) with a clean message.
+
+    Shared by every --last-run consumer (gap, drift, trace grade) so "nothing
+    saved yet" and "you pointed at a path that doesn't exist" both surface as
+    the same tool/environment failure (exit 2, per this module's exit-code
+    contract) instead of an uncaught exception or a misleading 0/1.
+    """
+    resolved = resolve_run_dir(arg)
+    if resolved is None:
+        _print_run_dir_error(fmt, "No run directory given and no last run saved")
+        sys.exit(2)
+    if not resolved.exists():
+        _print_run_dir_error(fmt, f"Run directory not found: {resolved}")
+        sys.exit(2)
+    return resolved
+
+
+def _print_run_dir_error(fmt: str, message: str) -> None:
+    if fmt == "json":
+        emit_json({"error": message[0].lower() + message[1:]})
+    else:
+        console.print(f"[{BAD}]{message}[/{BAD}]")

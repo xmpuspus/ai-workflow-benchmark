@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import sys
+from pathlib import Path
 
 import click
 from rich.table import Table
@@ -16,7 +17,7 @@ from awb.commands._shared import (
     emit_json,
     headline_panel,
     load_results_from_dirs,
-    resolve_run_dir,
+    resolve_run_dir_or_exit,
 )
 
 
@@ -33,20 +34,22 @@ def cost(run_dirs: tuple[str, ...], fmt: str):
     """Report cost-per-solved-task, grouped by tool, cheapest-per-solved first.
 
     RUN_DIRS defaults to the most recently saved run (see --last-run
-    plumbing in _shared.py) when omitted.
+    plumbing in _shared.py) when omitted, or when passed the literal "last".
     """
-    if not run_dirs:
-        resolved = resolve_run_dir(None)
-        if resolved is None:
-            # --format json stdout must stay a single parseable document.
-            if fmt == "json":
-                emit_json({"error": "no run directory given and no last run saved"})
-            else:
-                console.print(f"[{BAD}]No run directory given and no last run saved[/{BAD}]")
-            sys.exit(2)
+    if not run_dirs or run_dirs == ("last",):
+        resolved = resolve_run_dir_or_exit(None, fmt)
         if fmt == "text":
             console.print(f"[{MUTED}]using last run: {resolved}[/{MUTED}]")
         run_dirs = (str(resolved),)
+    else:
+        missing = [d for d in run_dirs if not Path(d).exists()]
+        if missing:
+            message = f"Run directory not found: {missing[0]}"
+            if fmt == "json":
+                emit_json({"error": message[0].lower() + message[1:]})
+            else:
+                console.print(f"[{BAD}]{message}[/{BAD}]")
+            sys.exit(2)
 
     results = load_results_from_dirs(run_dirs)
     if not results:
