@@ -269,6 +269,13 @@ def _extract_from_hooks(config_dir: Path) -> tuple[list[HarnessPromise], list[st
                     # Malformed settings.json (e.g. hand-edited); structure.py
                     # already surfaces this shape as a structural warn.
                     continue
+                if len(command) > MAX_RULE_LINE_LENGTH or len(matcher) > MAX_RULE_LINE_LENGTH:
+                    # Same O(n^2) backtracking exposure as markdown lines;
+                    # a hook command this long is not a checkable rule.
+                    unparsed.append(
+                        f"hook: {event} command too long, skipped ({len(command)} chars)"
+                    )
+                    continue
                 key = _match_line(command) or _match_line(matcher)
                 if key:
                     promises.append(
@@ -331,6 +338,16 @@ def extract_promises(config_dir: Path | None, repo_dir: Path | None) -> HarnessI
 
     structural_issues = check_structure(config_dir, repo_dir)
     structural_issues.extend(decode_issues)
+    # structure.py checks the same primary files, so a decode warn (and any
+    # future overlapping check) can arrive from both sides; report each once.
+    seen: set[tuple[str, str, str]] = set()
+    deduped: list[StructuralIssue] = []
+    for issue in structural_issues:
+        key = (issue.severity, issue.message, issue.source)
+        if key not in seen:
+            seen.add(key)
+            deduped.append(issue)
+    structural_issues = deduped
 
     return HarnessInventory(
         promises=promises,

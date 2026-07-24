@@ -356,3 +356,31 @@ class TestLiveRunRegressions:
         (tmp_path / "CLAUDE.md").write_text("- Run ruff before every commit\n")
         inv = extract_promises(tmp_path, None)
         assert [p.pattern for p in inv.promises] == ["lint_gate"]
+
+
+class TestRoundTwoDeltaFindings:
+    """r2-delta findings 1 and 2: warn dedup and the hook-text length guard."""
+
+    def test_non_utf8_claude_md_warns_exactly_once(self, tmp_path):
+        (tmp_path / "CLAUDE.md").write_bytes(b"- Run tests before done \x93smart\x94\n")
+        inv = extract_promises(tmp_path, None)
+        utf8_warns = [i for i in inv.structural_issues if "not valid UTF-8" in i.message]
+        assert len(utf8_warns) == 1
+
+    def test_oversized_hook_command_is_skipped_fast(self, tmp_path):
+        import json as _json
+        import time
+
+        long_cmd = "Never touch " + "a" * 150_000
+        settings = {
+            "hooks": {
+                "PreToolUse": [
+                    {"matcher": "Bash", "hooks": [{"type": "command", "command": long_cmd}]}
+                ]
+            }
+        }
+        (tmp_path / "settings.json").write_text(_json.dumps(settings))
+        start = time.monotonic()
+        inv = extract_promises(tmp_path, None)
+        assert time.monotonic() - start < 5.0
+        assert any("too long" in u for u in inv.unparsed_rules)

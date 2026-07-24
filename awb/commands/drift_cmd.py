@@ -62,8 +62,17 @@ def drift(run_dir: str | None, baseline_path: str, threshold: float, fmt: str):
     if (run_dir is None or run_dir == "last") and fmt == "text":
         console.print(f"[{MUTED}]using last run: {resolved}[/{MUTED}]")
 
-    current = load_reference(resolved)
-    reference = load_reference(baseline_path)
+    try:
+        current = load_reference(resolved)
+        reference = load_reference(baseline_path)
+    except (json.JSONDecodeError, ValueError, OSError) as exc:
+        # A run_dir that is actually a stray file, or a corrupt baseline JSON,
+        # is a tool-failure input, not a drift verdict: exit 2 per the contract.
+        if fmt == "json":
+            click.echo(json.dumps({"error": f"could not load reference: {exc}"}))
+        else:
+            console.print(f"[{BAD}]Could not load reference: {exc}[/{BAD}]")
+        sys.exit(2)
 
     if not current.per_task or not reference.per_task:
         # Keep json-mode stdout a single parseable document even on the

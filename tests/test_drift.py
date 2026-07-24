@@ -368,3 +368,31 @@ class TestCliThresholdBoundary:
         assert result.exit_code == 1
         payload = json.loads(result.output)
         assert "error" in payload
+
+
+class TestMalformedInputsExitTwo:
+    """r2-delta finding 3: garbage inputs must exit 2, never traceback."""
+
+    def test_run_dir_is_a_non_json_file_exits_2(self, tmp_path):
+        from click.testing import CliRunner
+
+        from awb.commands.drift_cmd import drift
+
+        junk = tmp_path / "notarun.txt"
+        junk.write_text("this is not json")
+        result = CliRunner().invoke(drift, [str(junk), "--baseline", str(junk)])
+        assert result.exit_code == 2
+        assert result.exception is None or isinstance(result.exception, SystemExit)
+
+    def test_corrupt_baseline_json_exits_2(self, tmp_path, sample_run_dir=None):
+        from click.testing import CliRunner
+
+        from awb.commands.drift_cmd import drift
+
+        run_dir = tmp_path / "run"
+        run_dir.mkdir()
+        bad = tmp_path / "baseline.json"
+        bad.write_text("{corrupt")
+        result = CliRunner().invoke(drift, [str(run_dir), "--baseline", str(bad)])
+        assert result.exit_code == 2
+        assert result.exception is None or isinstance(result.exception, SystemExit)
