@@ -43,12 +43,16 @@ def test_trace_with_file_edit_grades(tmp_path):
     p = _write(tmp_path, new_span(FILE_EDIT, attributes={"file.path": "src/x.py"}))
     scores = grade_trace_or_none(p)
     assert scores is not None
+    # No files_to_examine passed -> context_discipline is not gradeable (needs
+    # scope), but a single FILE_EDIT span makes tool_call_efficiency gradeable.
     assert set(scores) == {
         "read_tests_before_edit",
         "ran_verification_after_change",
         "no_out_of_scope_edits",
         "no_repeated_failing_command_loop",
+        "tool_call_efficiency",
     }
+    assert scores["tool_call_efficiency"] == 100
 
 
 def test_no_out_of_scope_treats_trailing_slash_as_directory(tmp_path):

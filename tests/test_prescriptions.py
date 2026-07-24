@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+import pytest
 from click.testing import CliRunner
 
 from awb.analysis.prescriptions import (
@@ -96,6 +97,12 @@ class TestRubricPrescriptions:
         scores = {"read_tests_before_edit": [("BF-001", 0)]}
         assert _rubric_prescriptions(scores) == []
 
+    def test_estimated_score_delta_is_mean_shortfall_below_threshold(self):
+        scores = {"read_tests_before_edit": [("BF-001", 40), ("BF-003", 50)]}
+        prescriptions = _rubric_prescriptions(scores)
+        # threshold 60, mean of [40, 50] is 45 -> shortfall 15.0
+        assert prescriptions[0].estimated_score_delta == pytest.approx(15.0)
+
     def test_threshold_boundary_exactly_60_does_not_fire(self):
         scores = {"no_out_of_scope_edits": [("BF-001", 60), ("BF-003", 60)]}
         assert _rubric_prescriptions(scores) == []
@@ -116,12 +123,14 @@ class TestRubricPrescriptions:
         expected = RUBRIC_PRESCRIPTIONS["ran_verification_after_change"]["snippet"]
         assert prescriptions[0].snippet == expected
 
-    def test_all_four_rubric_names_have_prescriptions(self):
+    def test_all_six_rubric_names_have_prescriptions(self):
         assert set(RUBRIC_PRESCRIPTIONS.keys()) == {
             "read_tests_before_edit",
             "ran_verification_after_change",
             "no_out_of_scope_edits",
             "no_repeated_failing_command_loop",
+            "context_discipline",
+            "tool_call_efficiency",
         }
 
 
@@ -140,6 +149,8 @@ class TestCapabilityPrescriptions:
         assert prescriptions[0].trigger == "capability:security_awareness"
         assert prescriptions[0].affected_tasks == ["BF-001", "BF-003"]
         assert prescriptions[0].evidence == ["BF-001: scored 40.0", "BF-003: scored 50.0"]
+        # threshold 60, mean of [40.0, 50.0] is 45.0 -> shortfall 15.0
+        assert prescriptions[0].estimated_score_delta == pytest.approx(15.0)
 
     def test_single_task_does_not_fire(self):
         task_defs = {"BF-001": _make_task("BF-001", capabilities=["security_awareness"])}
@@ -173,11 +184,11 @@ class TestCapabilityPrescriptions:
         assert prescriptions[0].severity == 2
 
     def test_capability_without_prescription_entry_never_fires(self):
-        # code_comprehension has no entry in CAPABILITY_PRESCRIPTIONS
-        assert "code_comprehension" not in CAPABILITY_PRESCRIPTIONS
+        # a made-up capability name has no entry in CAPABILITY_PRESCRIPTIONS
+        assert "not_a_real_capability" not in CAPABILITY_PRESCRIPTIONS
         task_defs = {
-            "BF-001": _make_task("BF-001", capabilities=["code_comprehension"]),
-            "BF-003": _make_task("BF-003", capabilities=["code_comprehension"]),
+            "BF-001": _make_task("BF-001", capabilities=["not_a_real_capability"]),
+            "BF-003": _make_task("BF-003", capabilities=["not_a_real_capability"]),
         }
         results = [
             _make_result("BF-001", score=10, max_score=100),
@@ -185,12 +196,19 @@ class TestCapabilityPrescriptions:
         ]
         assert _capability_prescriptions(results, task_defs, threshold=60) == []
 
-    def test_all_four_capabilities_have_prescriptions(self):
+    def test_all_eleven_capabilities_have_prescriptions(self):
         assert set(CAPABILITY_PRESCRIPTIONS.keys()) == {
-            "completeness_tracking",
-            "convention_adherence",
+            "code_comprehension",
+            "bug_diagnosis",
+            "multi_file_reasoning",
+            "framework_knowledge",
+            "test_writing",
             "refactoring_discipline",
             "security_awareness",
+            "completeness_tracking",
+            "convention_adherence",
+            "context_discovery",
+            "security_methodology",
         }
 
 
@@ -294,6 +312,28 @@ class TestSorting:
         severities = [p.severity for p in report.prescriptions]
         assert severities == sorted(severities, reverse=True)
 
+    def test_sorts_by_delta_within_equal_severity(self, tmp_path: Path):
+        # Both capabilities fire with severity 2 (2 low tasks each), but
+        # completeness_tracking's mean score (10) is farther below the 60
+        # threshold than security_awareness's (45), so it should sort first.
+        task_defs = {
+            "BF-001": _make_task("BF-001", capabilities=["security_awareness"]),
+            "BF-003": _make_task("BF-003", capabilities=["security_awareness"]),
+            "BF-004": _make_task("BF-004", capabilities=["completeness_tracking"]),
+            "BF-005": _make_task("BF-005", capabilities=["completeness_tracking"]),
+        }
+        results = [
+            _make_result("BF-001", score=40, max_score=100),
+            _make_result("BF-003", score=50, max_score=100),
+            _make_result("BF-004", score=10, max_score=100),
+            _make_result("BF-005", score=10, max_score=100),
+        ]
+        report = build_prescriptions(results, task_defs, tmp_path)
+        triggers = [p.trigger for p in report.prescriptions]
+        assert triggers.index("capability:completeness_tracking") < triggers.index(
+            "capability:security_awareness"
+        )
+
 
 class TestPrescriptionDataclasses:
     def test_prescription_report_defaults(self):
@@ -301,6 +341,12 @@ class TestPrescriptionDataclasses:
         assert report.prescriptions == []
         assert report.n_traces_graded == 0
         assert report.n_traces_missing == 0
+
+    def test_prescription_report_carries_the_non_additivity_caveat(self):
+        report = PrescriptionReport(tool="claude-code")
+        assert report.caveat == (
+            "Impact estimates are independent; applying several fixes will not sum cleanly."
+        )
 
     def test_prescription_fields(self):
         p = Prescription(
@@ -313,6 +359,20 @@ class TestPrescriptionDataclasses:
             rationale="because",
         )
         assert p.id == "rubric-x"
+        assert p.estimated_score_delta is None
+
+    def test_prescription_estimated_score_delta_accepts_explicit_value(self):
+        p = Prescription(
+            id="rubric-x",
+            trigger="trace:x",
+            evidence=["BF-001: scored 0"],
+            affected_tasks=["BF-001"],
+            severity=1,
+            snippet="## X\n",
+            rationale="because",
+            estimated_score_delta=15.0,
+        )
+        assert p.estimated_score_delta == pytest.approx(15.0)
 
 
 def _real_task_pair():
