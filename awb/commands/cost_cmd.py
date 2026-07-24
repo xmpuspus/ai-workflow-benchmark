@@ -16,11 +16,12 @@ from awb.commands._shared import (
     emit_json,
     headline_panel,
     load_results_from_dirs,
+    resolve_run_dir,
 )
 
 
 @click.command()
-@click.argument("run_dirs", nargs=-1, type=click.Path(exists=True))
+@click.argument("run_dirs", nargs=-1, type=click.Path())
 @click.option(
     "--format",
     "fmt",
@@ -29,7 +30,24 @@ from awb.commands._shared import (
     help="Output format. 'json' emits the list of CostReport as a JSON document on stdout.",
 )
 def cost(run_dirs: tuple[str, ...], fmt: str):
-    """Report cost-per-solved-task, grouped by tool, cheapest-per-solved first."""
+    """Report cost-per-solved-task, grouped by tool, cheapest-per-solved first.
+
+    RUN_DIRS defaults to the most recently saved run (see --last-run
+    plumbing in _shared.py) when omitted.
+    """
+    if not run_dirs:
+        resolved = resolve_run_dir(None)
+        if resolved is None:
+            # --format json stdout must stay a single parseable document.
+            if fmt == "json":
+                emit_json({"error": "no run directory given and no last run saved"})
+            else:
+                console.print(f"[{BAD}]No run directory given and no last run saved[/{BAD}]")
+            sys.exit(2)
+        if fmt == "text":
+            console.print(f"[{MUTED}]using last run: {resolved}[/{MUTED}]")
+        run_dirs = (str(resolved),)
+
     results = load_results_from_dirs(run_dirs)
     if not results:
         console.print(f"[{BAD}]No results found[/{BAD}]")

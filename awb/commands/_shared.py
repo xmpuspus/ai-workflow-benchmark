@@ -3,6 +3,19 @@
 The visual contract (color constants, score_style, summary_table, headline_panel,
 emit_json) is used by every awb subcommand so output looks like one tool, not
 nine different dialects.
+
+Exit code contract (project-wide, added v1.6): every analysis/probe command
+that can fail meaningfully uses the same three codes, so cron/CI can branch on
+exit status without reading output.
+    0 = clean — ran fine, nothing to flag
+    1 = real finding — drift beyond threshold, a BROKEN rule, a structural
+        harness error, a measured pillar below 50, etc. (command-specific
+        meaning of "finding", but always "ran fine and found a problem")
+    2 = tool/environment failure — auth rejected, adapter unavailable, a
+        setup/load crash, or (for --last-run consumers) no saved run to
+        resolve. Distinct from "ran fine and found a problem".
+Applies to checkup, drift, ab, validate, and the --last-run consumers
+(gap, cost, trace grade). Keep it stable — do not repurpose a code.
 """
 
 from __future__ import annotations
@@ -118,3 +131,35 @@ def load_results_from_dirs(run_dirs: tuple[str, ...]) -> list:
     for d in run_dirs:
         all_results.extend(recorder.load_run(Path(d)))
     return all_results
+
+
+# ----- --last-run plumbing (added v1.6) --------------------------------------
+# A fixed relative path, not RESULTS_DIR-derived: the pointer must be findable
+# regardless of where AWB_RESULTS_DIR points a given run's output.
+_LAST_RUN_POINTER = Path("results") / ".last_run"
+
+
+def save_last_run(run_dir: Path) -> None:
+    """Record the most recently produced run dir for later --last-run lookup.
+
+    Called by any command that finishes a real run (run.py's runner, checkup's
+    probe) so the next gap/cost/drift/trace invocation doesn't need the run
+    dir hand-copied off the terminal.
+    """
+    _LAST_RUN_POINTER.parent.mkdir(parents=True, exist_ok=True)
+    _LAST_RUN_POINTER.write_text(f"{run_dir}\n")
+
+
+def resolve_run_dir(arg: str | None) -> Path | None:
+    """Resolve a run_dir CLI argument, falling back to the saved last run.
+
+    None (argument omitted) or the literal "last" both mean "whatever was
+    saved most recently". Returns None, never raises, when nothing has been
+    saved yet — callers print their own message and exit(2).
+    """
+    if arg is not None and arg != "last":
+        return Path(arg)
+    if not _LAST_RUN_POINTER.exists():
+        return None
+    saved = _LAST_RUN_POINTER.read_text().strip()
+    return Path(saved) if saved else None

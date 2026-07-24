@@ -399,3 +399,82 @@ class TestGapPrescribeCli:
         assert result.exit_code == 0, result.output
         data = json.loads(result.output)
         assert "prescriptions" not in data
+
+
+def _write_result_json(run_dir: Path, task_id: str, score: float, tool: str = "fake-tool") -> None:
+    run_dir.mkdir(parents=True, exist_ok=True)
+    result = RunResult(
+        task_id=task_id,
+        tool=tool,
+        run_id=run_dir.name,
+        timestamp="2026-01-01T00:00:00Z",
+        outcome=RunOutcome(success=False, partial_credit_score=score, partial_credit_max=100),
+        metrics=RunMetrics(),
+        cost=RunCost(),
+        quality=RunQuality(),
+        environment=RunEnvironment(os="test", hardware="test"),
+    )
+    (run_dir / f"{task_id}_{tool}.json").write_text(json.dumps(result.to_dict()))
+
+
+class TestGapVerdictLine:
+    """`awb gap` names the worst capability before the Capability Profile
+    section (v1.6 design: one honest sentence up front, ai-workflow-benchmark
+    docs/superpowers/plans/2026-07-23-awb-v16-harness-design-score.md)."""
+
+    def _setup(self, tmp_path, monkeypatch):
+        task_defs = [
+            _make_task("BF-001", capabilities=["security_awareness"]),
+            _make_task("BF-003", capabilities=["security_awareness"]),
+        ]
+        monkeypatch.setattr("awb.core.task_loader.load_all_tasks", lambda: task_defs)
+        run_dir = tmp_path / "run1"
+        _write_result_json(run_dir, "BF-001", score=30)
+        _write_result_json(run_dir, "BF-003", score=50)
+        return run_dir
+
+    def test_names_worst_capability_with_score_and_task_count(self, tmp_path, monkeypatch):
+        run_dir = self._setup(tmp_path, monkeypatch)
+
+        result = CliRunner().invoke(gap, [str(run_dir)])
+        assert result.exit_code == 0, result.output
+        # mean(30, 50) == 40; RunCost() defaults to zero spend so the derived
+        # cost_discipline capability scores near-perfect and never wins "worst".
+        assert "Biggest gap: security_awareness 40/100 across 2 tasks." in result.output
+
+    def test_verdict_line_appears_before_capability_profile_section(self, tmp_path, monkeypatch):
+        run_dir = self._setup(tmp_path, monkeypatch)
+
+        result = CliRunner().invoke(gap, [str(run_dir)])
+        assert result.exit_code == 0, result.output
+        assert result.output.index("Biggest gap") < result.output.index("Capability Profile")
+
+    def test_no_top_fix_clause_without_prescribe(self, tmp_path, monkeypatch):
+        run_dir = self._setup(tmp_path, monkeypatch)
+
+        result = CliRunner().invoke(gap, [str(run_dir)])
+        assert result.exit_code == 0, result.output
+        assert "Top fix:" not in result.output
+
+    def test_top_fix_clause_appended_when_prescribe_fires(self, tmp_path, monkeypatch):
+        run_dir = self._setup(tmp_path, monkeypatch)
+
+        result = CliRunner().invoke(gap, [str(run_dir), "--prescribe"])
+        assert result.exit_code == 0, result.output
+        # Both tasks score below CAPABILITY_SCORE_THRESHOLD (60), so the
+        # security_awareness prescription fires and is the only (= highest
+        # severity) one in the report. Assert as two substrings, not one
+        # long span, since Rich word-wraps long lines at console width.
+        assert "Biggest gap: security_awareness 40/100 across 2 tasks." in result.output
+        assert "Top fix: Security" in result.output
+        assert "Checklist." in result.output
+
+    def test_no_verdict_line_json_format_unaffected(self, tmp_path, monkeypatch):
+        """The verdict line is text-rendering only; JSON output is untouched."""
+        run_dir = self._setup(tmp_path, monkeypatch)
+
+        result = CliRunner().invoke(gap, [str(run_dir), "--format", "json"])
+        assert result.exit_code == 0, result.output
+        data = json.loads(result.output)
+        assert "verdict" not in data
+        assert "Biggest gap" not in result.output
