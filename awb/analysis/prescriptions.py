@@ -22,6 +22,12 @@ RUBRIC_MIN_LOW_TASKS = 2
 CAPABILITY_SCORE_THRESHOLD = 60
 CAPABILITY_MIN_TASKS = 2
 
+# Lighthouse-style honesty rule: impact estimates are computed independently
+# per prescription (mean shortfall below the firing threshold), so stacking
+# several fixes does not mean their deltas add up. Surfaced in the report so
+# a renderer prints it once next to the ranked list.
+IMPACT_CAVEAT = "Impact estimates are independent; applying several fixes will not sum cleanly."
+
 
 @dataclass
 class Prescription:
@@ -32,6 +38,7 @@ class Prescription:
     severity: int
     snippet: str
     rationale: str
+    estimated_score_delta: float | None = None
 
 
 @dataclass
@@ -40,6 +47,7 @@ class PrescriptionReport:
     prescriptions: list[Prescription] = field(default_factory=list)
     n_traces_graded: int = 0
     n_traces_missing: int = 0
+    caveat: str = IMPACT_CAVEAT
 
 
 # Deterministic rubric name -> CLAUDE.md fix. Content mirrors the workflow
@@ -104,6 +112,39 @@ RUBRIC_PRESCRIPTIONS: dict[str, dict[str, str]] = {
             "error output before trying again.\n"
             "- Change the approach on the third attempt. Do not re-run the "
             "identical command a third time.\n"
+        ),
+    },
+    "context_discipline": {
+        "id": "rubric-context_discipline",
+        "rationale": (
+            "The tool read far more files than the task's declared scope "
+            "justified, spending turns browsing instead of fixing the named files."
+        ),
+        "snippet": (
+            "## Read With a Budget\n"
+            "\n"
+            "- Before exploring, list the files the task names as in scope. "
+            "Read those first.\n"
+            "- If a fix needs a file outside that list, say why before opening it.\n"
+            "- Stop reading new files once you understand the change; do not keep "
+            "browsing for context you already have.\n"
+        ),
+    },
+    "tool_call_efficiency": {
+        "id": "rubric-tool_call_efficiency",
+        "rationale": (
+            "The tool re-read the same file repeatedly, or re-edited the same "
+            "file back to back with nothing run in between, which wastes turns "
+            "without adding new information."
+        ),
+        "snippet": (
+            "## Avoid Redundant Reads and Edits\n"
+            "\n"
+            "- Read a file once and hold onto what it said. Do not reopen a file "
+            "you already read unless it changed.\n"
+            "- After editing a file, run the affected tests or command before "
+            "editing that same file again.\n"
+            "- If a fix needs a follow-up edit, verify the first edit first.\n"
         ),
     },
 }
@@ -174,6 +215,132 @@ CAPABILITY_PRESCRIPTIONS: dict[str, dict[str, str]] = {
             "even if the tests pass.\n"
         ),
     },
+    "bug_diagnosis": {
+        "id": "capability-bug_diagnosis",
+        "rationale": (
+            "The tool patches symptoms without tracing the failure back to a "
+            "root cause, so the same bug resurfaces under a different input."
+        ),
+        "snippet": (
+            "## Diagnose Before Patching\n"
+            "\n"
+            "- Reproduce the bug first. State the exact input and the exact "
+            "wrong output.\n"
+            "- Trace the wrong output back through the code to the single line "
+            "that causes it before changing anything.\n"
+            "- Fix the root cause, not the symptom. If the fix only hides a bad "
+            "value instead of preventing it, keep looking.\n"
+        ),
+    },
+    "multi_file_reasoning": {
+        "id": "capability-multi_file_reasoning",
+        "rationale": (
+            "Changes touch only the file where the error appeared and miss the "
+            "other files that share the same contract (callers, tests, config), "
+            "leaving the codebase inconsistent."
+        ),
+        "snippet": (
+            "## Trace the Full Change\n"
+            "\n"
+            "- Before editing, search for every caller, test, and config entry "
+            "that references the function or field you are changing.\n"
+            "- List every file that needs to change together, then edit all of "
+            "them in the same pass.\n"
+            "- A change that compiles but leaves one caller on the old contract "
+            "is incomplete.\n"
+        ),
+    },
+    "test_writing": {
+        "id": "capability-test_writing",
+        "rationale": (
+            "New code ships without tests, or with tests that check the "
+            "implementation instead of the behavior, so a later refactor cannot "
+            "catch a regression."
+        ),
+        "snippet": (
+            "## Write Tests That Catch Regressions\n"
+            "\n"
+            "- Every new function or bug fix gets a test that fails without the "
+            "change and passes with it.\n"
+            "- Test behavior and outputs, not internal method calls or "
+            "implementation details.\n"
+            "- Cover the failure case the bug report described, not only the "
+            "happy path.\n"
+        ),
+    },
+    "context_discovery": {
+        "id": "capability-context_discovery",
+        "rationale": (
+            "The tool starts writing code before finding the existing pattern "
+            "for the same problem, producing a second, inconsistent way of "
+            "doing the same thing."
+        ),
+        "snippet": (
+            "## Find the Existing Pattern First\n"
+            "\n"
+            "- Before adding new code, search the codebase for how the same "
+            "kind of problem is already solved.\n"
+            "- Reuse the existing helper, config, or convention instead of "
+            "writing a new one.\n"
+            "- If no existing pattern fits, say so before introducing a new one.\n"
+        ),
+    },
+    "security_methodology": {
+        "id": "capability-security_methodology",
+        "rationale": (
+            "Security-relevant changes are made ad hoc, with no repeatable "
+            "check for the standard failure classes, so coverage depends on "
+            "luck rather than a method."
+        ),
+        "snippet": (
+            "## Security Review Pass\n"
+            "\n"
+            "- For any change touching auth, input parsing, or external data, "
+            "check: injection, missing auth check, secret exposure, unsafe "
+            "deserialization.\n"
+            "- Name which of these apply and which do not in the summary of the "
+            "change.\n"
+            "- Do not mark a security-relevant task done without stating this "
+            "pass was run.\n"
+        ),
+    },
+    "code_comprehension": {
+        "id": "capability-code_comprehension",
+        "rationale": (
+            "The tool edits code without first understanding what it currently "
+            "does, producing a change that does not account for existing "
+            "behavior or edge cases."
+        ),
+        "snippet": (
+            "## Understand Before Editing\n"
+            "\n"
+            "- Read the full function or class you are about to change, not "
+            "just the lines near the error.\n"
+            "- State in your own words what the current code does before "
+            "changing it.\n"
+            "- If the current behavior is unclear, trace it through a concrete "
+            "example first.\n"
+        ),
+    },
+    "framework_knowledge": {
+        "id": "capability-framework_knowledge",
+        "rationale": (
+            "Changes fight the framework instead of using its built-in "
+            "mechanism, adding custom code where the framework already "
+            "provides the feature."
+        ),
+        "snippet": (
+            "## Use the Framework, Do Not Fight It\n"
+            "\n"
+            "- Before writing custom logic, check whether the framework already "
+            "provides this (built-in validation, routing, lifecycle hook, ORM "
+            "method).\n"
+            "- Match the idioms already used elsewhere in this codebase for the "
+            "same framework.\n"
+            "- Only reach for a custom implementation when the framework has no "
+            "supported way to do it.\n"
+        ),
+    },
 }
 
 
@@ -216,6 +383,18 @@ def _grade_traces(
     return rubric_scores, n_graded, n_missing
 
 
+def _mean_shortfall(scores: list, threshold: float) -> float | None:
+    """Mean gap below the firing threshold, e.g. [40, 50] at threshold 60 -> 15.0.
+
+    None when there is nothing to average (should not happen for a fired
+    prescription, since firing requires >= 2 evidence tasks, but a prescription
+    should never crash on the estimate rather than degrade to "not computable").
+    """
+    if not scores:
+        return None
+    return round(threshold - (sum(scores) / len(scores)), 1)
+
+
 def _rubric_prescriptions(
     rubric_scores: dict[str, list[tuple[str, int]]],
 ) -> list[Prescription]:
@@ -237,6 +416,9 @@ def _rubric_prescriptions(
                 severity=len(low),
                 snippet=spec["snippet"],
                 rationale=spec["rationale"],
+                estimated_score_delta=_mean_shortfall(
+                    [sc for _, sc in low], RUBRIC_SCORE_THRESHOLD
+                ),
             )
         )
     return prescriptions
@@ -292,6 +474,7 @@ def _capability_prescriptions(
                 severity=len(low),
                 snippet=spec["snippet"],
                 rationale=spec["rationale"],
+                estimated_score_delta=_mean_shortfall([sc for _, sc in low], threshold),
             )
         )
     return prescriptions
@@ -316,7 +499,8 @@ def build_prescriptions(
 
     prescriptions = _rubric_prescriptions(rubric_scores)
     prescriptions.extend(_capability_prescriptions(results, task_defs, threshold))
-    prescriptions.sort(key=lambda p: -p.severity)
+    # Most severe first; within the same severity, the bigger estimated fix wins.
+    prescriptions.sort(key=lambda p: (-p.severity, -(p.estimated_score_delta or 0)))
 
     return PrescriptionReport(
         tool=tool,
