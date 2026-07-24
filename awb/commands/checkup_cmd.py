@@ -1,0 +1,589 @@
+"""checkup command — stage 0 promise extraction + stage 1 probe + verdict report.
+
+`awb checkup` is the harness-design instrument (design doc:
+docs/superpowers/plans/2026-07-23-awb-v16-harness-design-score.md). Stage 0
+parses the harness's own CLAUDE.md/settings.json for testable promises
+(verification gates, scope rules, ...) for free and instantly. Stage 1 runs a
+small probe of real tasks and proves which of those promises actually held.
+Exit code contract is documented once in awb/commands/_shared.py's module
+docstring; this command returns 0 clean / 1 real finding / 2 tool failure.
+
+awb.harness.promises / awb.harness.integrity are a parallel work package and
+are imported lazily (inside functions) so this module — and its test suite —
+load fine before that package lands.
+"""
+
+from __future__ import annotations
+
+import asyncio
+import sys
+from pathlib import Path
+
+import click
+from rich.table import Table
+
+from awb.commands._shared import (
+    BAD,
+    INFO,
+    MUTED,
+    OK,
+    WARN,
+    bar,
+    console,
+    emit_json,
+    save_last_run,
+    score_style,
+)
+
+TOOL = "claude-code-custom"
+VANILLA_TOOL = "claude-code-vanilla"
+
+# The published task-set size, for the "n/100 tasks" honesty line in the
+# report header (awb validate / CLAUDE.md: 100 tasks across 8 categories).
+_FULL_SUITE_SIZE = 100
+
+_PILLAR_LABELS = {
+    "verification_discipline": "verification discipline",
+    "scope_discipline": "scope discipline",
+    "efficiency": "efficiency",
+}
+
+_VERDICT_COLOR = {"HELD": OK, "ENFORCED": OK, "BROKEN": BAD, "UNTESTED": MUTED}
+
+
+def _probe_confidence(n_tasks: int, full_suite_size: int = _FULL_SUITE_SIZE) -> str:
+    """Confidence that an n-task probe represents the full published suite.
+
+    Deliberately not _shared.confidence_label: that answers "how much do I
+    trust one capability's score from n task results" (n=8 -> "med").
+    This answers "how much does an n-task probe tell me about the 100-task
+    suite" - the design doc's header is explicit that the standard 8-task
+    fast-check probe should read "low".
+    """
+    if n_tasks >= full_suite_size * 0.5:
+        return "high"
+    if n_tasks >= full_suite_size * 0.15:
+        return "med"
+    return "low"
+
+
+class _ToolFailureError(Exception):
+    """Stage-1 setup could not proceed (auth, adapter, empty task set).
+
+    Caught once in checkup() and mapped to exit 2 - distinct from a clean
+    run that simply found a problem (exit 1).
+    """
+
+
+# ----- Stage 0: promise extraction ------------------------------------------
+
+
+def _has_structural_error(inventory) -> bool:
+    return any(i.severity == "error" for i in inventory.structural_issues)
+
+
+def _render_stage0_text(inventory) -> None:
+    errors = [i for i in inventory.structural_issues if i.severity == "error"]
+    warns = [i for i in inventory.structural_issues if i.severity == "warn"]
+
+    console.print(
+        f"\n[bold]Harness Structure[/bold]  {len(inventory.files_scanned)} file(s) scanned"
+    )
+
+    by_pattern: dict[str, list] = {}
+    for p in inventory.promises:
+        by_pattern.setdefault(p.pattern, []).append(p)
+
+    if by_pattern:
+        console.print(f"\n[bold]Promise Inventory[/bold] ({len(inventory.promises)} rule(s))")
+        for pattern in sorted(by_pattern):
+            console.print(f"  [{INFO}]{pattern}[/{INFO}]")
+            for p in by_pattern[pattern]:
+                tag = OK if p.enforcement == "hook" else MUTED
+                # p.enforcement goes inside the style span, not in its own
+                # brackets - a literal "[prose]" would parse as a second
+                # (invalid) Rich markup tag and get silently dropped.
+                console.print(
+                    f"    [{tag}]{p.enforcement}[/{tag}]  {p.text[:80]}  ({p.source}:{p.line})"
+                )
+    else:
+        console.print(f"\n[{MUTED}]No testable promises found[/{MUTED}]")
+
+    if errors or warns:
+        console.print("\n[bold]Structural Issues[/bold]")
+        for i in errors:
+            console.print(f"  [{BAD}]ERROR[/{BAD}] {i.message}  ({i.source})")
+        for i in warns:
+            console.print(f"  [{WARN}]WARN[/{WARN}]  {i.message}  ({i.source})")
+    else:
+        console.print(f"\n[{MUTED}]No structural issues[/{MUTED}]")
+
+    if inventory.unparsed_rules:
+        console.print(
+            f"\n[{MUTED}]{len(inventory.unparsed_rules)} rule(s) not checkable yet "
+            f"(unrecognized pattern, not scored)[/{MUTED}]"
+        )
+
+
+# ----- Stage 1: probe setup ---------------------------------------------------
+
+
+def _load_probe_tasks(tasks_dir: Path | None) -> list:
+    from awb.core.fast_check import select_fast_check_tasks
+    from awb.core.task_loader import load_all_tasks
+
+    all_tasks = load_all_tasks(tasks_dir=tasks_dir)
+    tasks = select_fast_check_tasks(all_tasks)
+    if not tasks:
+        raise _ToolFailureError("No tasks available to probe")
+    return tasks
+
+
+def _preflight(adapter, label: str) -> str | None:
+    try:
+        if not adapter.check_available():
+            return f"Adapter '{label}' is not available in this environment"
+    except NotImplementedError:
+        return f"Adapter '{label}' is a stub — not yet implemented"
+    if adapter.supports_auth_check():
+        ok, msg = adapter.check_auth()
+        if not ok:
+            return msg
+    return None
+
+
+def _build_and_preflight_adapters(config_dir: Path, paired: bool):
+    from awb.adapters.registry import get_adapter
+
+    try:
+        base = get_adapter(TOOL)
+    except ValueError as exc:
+        raise _ToolFailureError(str(exc)) from exc
+    custom_adapter = type(base)(config_dir=config_dir)
+    err = _preflight(custom_adapter, TOOL)
+    if err:
+        raise _ToolFailureError(err)
+
+    vanilla_adapter = None
+    if paired:
+        try:
+            vanilla_adapter = get_adapter(VANILLA_TOOL)
+        except ValueError as exc:
+            raise _ToolFailureError(str(exc)) from exc
+        err = _preflight(vanilla_adapter, VANILLA_TOOL)
+        if err:
+            raise _ToolFailureError(err)
+    return custom_adapter, vanilla_adapter
+
+
+def _run_probe(tool: str, adapter, tasks, tasks_dir: Path | None, concurrency: int):
+    """Run one probe pass through BenchmarkRunner, same class run.py uses.
+
+    The adapter is built with --config-dir already applied (run.py has no
+    such flag, so it always builds its own adapter from the bare tool name -
+    injecting the pre-built instance afterward, the way awb ab already does
+    for --config-a/--config-b, is the only way to thread it through).
+    """
+    from awb.core.runner import BenchmarkRunner
+
+    runner = BenchmarkRunner(
+        tool=tool, tasks=tasks, runs=1, concurrency=concurrency, tasks_dir=tasks_dir
+    )
+    runner._adapter = adapter
+    results = asyncio.run(runner.run_all())
+    run_dir = runner.recorder.results_dir / f"{runner._run_id}_run1"
+    return results, run_dir
+
+
+def _grade_probe(results, run_dir: Path, task_defs: dict) -> dict[str, list]:
+    """Grade every result's trace, bucketed by rubric name.
+
+    A result with no trace, an absent trace file, or a span-less trace
+    contributes nothing (never a faked 0 or 100) — mirrors
+    awb/analysis/prescriptions.py's _grade_traces.
+    """
+    from awb.trace.grader import grade_trace_or_none
+
+    rubric_scores: dict[str, list] = {}
+    for r in results:
+        if not r.trace_path:
+            continue
+        trace_path = run_dir / r.trace_path
+        if not trace_path.exists():
+            continue
+        task = task_defs.get(r.task_id)
+        files_to_examine = task.files_to_examine if task else []
+        scores = grade_trace_or_none(trace_path, files_to_examine=files_to_examine)
+        if scores is None:
+            continue
+        for name, score in scores.items():
+            rubric_scores.setdefault(name, []).append(score)
+    return rubric_scores
+
+
+# ----- Pillar / rule-integrity / verdict computation --------------------------
+
+
+def _mean(values: list) -> float | None:
+    present = [v for v in values if v is not None]
+    if not present:
+        return None
+    return round(sum(present) / len(present), 1)
+
+
+def _compute_pillars(rubric_scores: dict) -> dict:
+    """Verification/scope from the 4 existing rubrics; efficiency from the 2
+    new ones (context_discipline, tool_call_efficiency) when present. A
+    pillar with no data is None ("not measured"), never imputed as 0."""
+    efficiency_values = rubric_scores.get("context_discipline", []) + rubric_scores.get(
+        "tool_call_efficiency", []
+    )
+    return {
+        "verification_discipline": _mean(rubric_scores.get("ran_verification_after_change", [])),
+        "scope_discipline": _mean(rubric_scores.get("no_out_of_scope_edits", [])),
+        "efficiency": _mean(efficiency_values),
+    }
+
+
+def _rule_stats(verdicts: list) -> dict:
+    """testable = every verdict except UNTESTED; held = HELD + ENFORCED."""
+    testable = [v for v in verdicts if v.status != "UNTESTED"]
+    held = [v for v in testable if v.status in ("HELD", "ENFORCED")]
+    broken = [v for v in testable if v.status == "BROKEN"]
+    return {
+        "held": len(held),
+        "testable": len(testable),
+        "broken": len(broken),
+        "untested": len(verdicts) - len(testable),
+    }
+
+
+def _compute_exit_code(pillars: dict, rule_stats: dict, structural_error: bool) -> int:
+    any_broken = rule_stats.get("broken", 0) > 0
+    any_low = any(v is not None and v < 50 for v in pillars.values())
+    return 1 if (structural_error or any_broken or any_low) else 0
+
+
+def _verdict_sentence(pillars: dict, rule_stats: dict, n_tasks: int) -> str:
+    """One plain-language sentence naming the best pillar, the worst pillar,
+    and the rule-integrity count (design doc: "Verdict: your harness verifies
+    its work (100) but breaks its own scope rule ...")."""
+    measured = {k: v for k, v in pillars.items() if v is not None}
+    testable = rule_stats.get("testable", 0)
+    rule_clause = (
+        "no testable rules"
+        if testable == 0
+        else f"{rule_stats['held']}/{testable} stated rules held"
+    )
+
+    if not measured:
+        return f"Verdict: no pillar was measurable from {n_tasks} probe task(s), and {rule_clause}."
+
+    best_key = max(measured, key=measured.get)
+    worst_key = min(measured, key=measured.get)
+    if best_key == worst_key:
+        return (
+            f"Verdict: {_PILLAR_LABELS[best_key]} is the only measured pillar, at "
+            f"{measured[best_key]:.0f}, and {rule_clause}."
+        )
+    return (
+        f"Verdict: {_PILLAR_LABELS[best_key]} is strongest at {measured[best_key]:.0f}, "
+        f"{_PILLAR_LABELS[worst_key]} is weakest at {measured[worst_key]:.0f}, "
+        f"and {rule_clause}."
+    )
+
+
+# ----- Top fixes: prescriptions + rule-integrity escalations -----------------
+
+
+def _hook_snippet(promise) -> str:
+    """A short, concrete settings.json hook the BROKEN prose rule could
+    become. Verification/test-shaped rules gate on Stop (the agent tries to
+    finish); everything else gates on PreToolUse (before an edit happens)."""
+    pattern = (getattr(promise, "pattern", "") or "").lower()
+    if "verif" in pattern or "test" in pattern:
+        return (
+            "{\n"
+            '  "hooks": {\n'
+            '    "Stop": [\n'
+            '      {"hooks": [{"type": "command", "command": "scripts/require_tests_green.sh"}]}\n'
+            "    ]\n"
+            "  }\n"
+            "}"
+        )
+    return (
+        "{\n"
+        '  "hooks": {\n'
+        '    "PreToolUse": [\n'
+        '      {"matcher": "Edit|Write", "hooks": '
+        '[{"type": "command", "command": "scripts/enforce_rule.sh"}]}\n'
+        "    ]\n"
+        "  }\n"
+        "}"
+    )
+
+
+def _escalations(verdicts: list) -> list:
+    """Each BROKEN prose rule becomes a prescription: convert it to a hook.
+
+    A BROKEN hook-enforced rule is excluded — it is already a hook, there is
+    nothing to convert. Severity uses the probe-wide BROKEN count (per-rule
+    violation counts aren't available from RuleVerdict.evidence, which is
+    free-form text) so a harness with several broken promises surfaces them
+    above a single 2-task rubric hit.
+    """
+    from awb.analysis.prescriptions import Prescription
+
+    broken = [v for v in verdicts if v.status == "BROKEN"]
+    prose_broken = [v for v in broken if getattr(v.promise, "enforcement", "") == "prose"]
+    if not prose_broken:
+        return []
+
+    severity = len(broken)
+    out = []
+    for v in prose_broken:
+        text = (getattr(v.promise, "text", "") or "rule").strip()
+        pattern = getattr(v.promise, "pattern", "rule")
+        out.append(
+            Prescription(
+                id=f"rule-integrity:{pattern}",
+                trigger=f"rule-integrity:{text[:40]}",
+                evidence=[v.evidence],
+                affected_tasks=[],
+                severity=severity,
+                snippet=_hook_snippet(v.promise),
+                rationale=(
+                    f'"{text}" is stated as prose but was broken in the probe '
+                    f"({v.evidence}). Convert it to a PreToolUse/Stop hook."
+                ),
+            )
+        )
+    return out
+
+
+def _fix_sort_key(p) -> float:
+    delta = getattr(p, "estimated_score_delta", None)
+    return -(delta if delta is not None else p.severity)
+
+
+def _rank_fixes(prescriptions: list, verdicts: list) -> list:
+    combined = list(prescriptions) + _escalations(verdicts)
+    combined.sort(key=_fix_sort_key)
+    return combined[:3]
+
+
+# ----- Stage 1 + 2: report rendering ------------------------------------------
+
+
+def _render_stage1_text(
+    tool, n_tasks, pillars, rule_stats, verdicts, lift_report, top_fixes, verdict_line
+):
+    confidence = _probe_confidence(n_tasks)
+    console.print(
+        f"\n[bold]Harness Design Report[/bold]  "
+        f"{tool}, {n_tasks}/{_FULL_SUITE_SIZE} tasks, confidence: {confidence}"
+    )
+    console.print(verdict_line)
+    console.print()
+
+    for key, label in _PILLAR_LABELS.items():
+        score = pillars.get(key)
+        if score is None:
+            console.print(f"  {label:<24} [{MUTED}]{bar(None)}[/{MUTED}]  not measured")
+        else:
+            style = score_style(score)
+            console.print(f"  {label:<24} [{style}]{bar(score)}[/{style}]  {score:5.1f}")
+
+    if rule_stats["testable"] == 0:
+        console.print(f"  {'rule integrity':<24} [{MUTED}]no testable rules[/{MUTED}]")
+    else:
+        ri_pct = rule_stats["held"] / rule_stats["testable"] * 100
+        ri_style = score_style(ri_pct)
+        console.print(
+            f"  {'rule integrity':<24} "
+            f"[{ri_style}]{rule_stats['held']}/{rule_stats['testable']}[/{ri_style}]"
+            f"  ({rule_stats['untested']} untested)"
+        )
+
+    if lift_report is not None:
+        sign = "+" if lift_report.lift >= 0 else ""
+        color = OK if lift_report.lift > 0 else (BAD if lift_report.lift < 0 else MUTED)
+        p_str = f"p={lift_report.p_value:.3f}" if lift_report.p_value is not None else "n/a"
+        console.print(
+            f"\n  Workflow lift  [{color}]{sign}{lift_report.lift:.1f} pts[/{color}]  ({p_str})"
+        )
+
+    if verdicts:
+        table = Table(title="Rule Integrity", header_style="bold")
+        table.add_column("Rule")
+        table.add_column("Enforcement")
+        table.add_column("Evidence")
+        table.add_column("Verdict")
+        for v in verdicts:
+            text = (getattr(v.promise, "text", "") or "")[:60]
+            enforcement = getattr(v.promise, "enforcement", "")
+            color = _VERDICT_COLOR.get(v.status, MUTED)
+            table.add_row(text, enforcement, v.evidence, f"[{color}]{v.status}[/{color}]")
+        console.print(table)
+
+    if top_fixes:
+        console.print(
+            "\n[bold]Top fixes[/bold] (estimated impact, independent estimates, not additive)"
+        )
+        for i, fix in enumerate(top_fixes, 1):
+            delta = getattr(fix, "estimated_score_delta", None)
+            delta_str = f"  est. +{delta:.0f} pts" if delta is not None else ""
+            console.print(f"  {i}. {fix.rationale}{delta_str}")
+        console.print(
+            f"[{MUTED}]Impact estimates are independent; applying several fixes "
+            f"will not sum cleanly.[/{MUTED}]"
+        )
+
+
+@click.command()
+@click.option(
+    "--static-only", is_flag=True, help="Stage 0 only: promise extraction, zero spend, CI-safe."
+)
+@click.option("--paired", is_flag=True, help="Also run the vanilla arm and report Workflow Lift.")
+@click.option(
+    "--config-dir",
+    type=click.Path(file_okay=False),
+    default=None,
+    help="Harness config dir to inspect and run with (default: ~/.claude).",
+)
+@click.option(
+    "--repo-dir",
+    type=click.Path(file_okay=False),
+    default=None,
+    help="Repo dir to inspect for structural checks (default: current directory).",
+)
+@click.option(
+    "--tasks-dir",
+    type=click.Path(exists=True, file_okay=False),
+    default=None,
+    help="Load probe tasks from a custom directory instead of the packaged ones.",
+)
+@click.option(
+    "-j", "--concurrency", type=int, default=4, show_default=True, help="Max parallel probe tasks."
+)
+@click.option(
+    "--format",
+    "fmt",
+    type=click.Choice(["text", "json"]),
+    default="text",
+    help="Output format. 'json' emits the full checkup payload as a JSON document on stdout.",
+)
+@click.option("--yes", "-y", is_flag=True, help="Skip the real-spend confirmation prompt.")
+def checkup(
+    static_only: bool,
+    paired: bool,
+    config_dir: str | None,
+    repo_dir: str | None,
+    tasks_dir: str | None,
+    concurrency: int,
+    fmt: str,
+    yes: bool,
+):
+    """Grade a Claude Code harness: promise extraction plus a small probe of real tasks.
+
+    Exit code contract (see awb/commands/_shared.py): 0 clean, 1 a real
+    finding (BROKEN rule, structural error, or a measured pillar below 50),
+    2 a tool/environment failure (auth, adapter, or setup crash).
+    """
+    config_dir_path = Path(config_dir) if config_dir else Path.home() / ".claude"
+    repo_dir_path = Path(repo_dir) if repo_dir else Path.cwd()
+
+    from awb.harness.promises import extract_promises
+
+    inventory = extract_promises(config_dir_path, repo_dir_path)
+    structural_error = _has_structural_error(inventory)
+
+    if static_only:
+        if fmt == "json":
+            emit_json({"stage": "static-only", "inventory": inventory})
+        else:
+            _render_stage0_text(inventory)
+        sys.exit(1 if structural_error else 0)
+
+    if fmt == "text":
+        _render_stage0_text(inventory)
+
+    tasks_dir_path = Path(tasks_dir) if tasks_dir else None
+    try:
+        tasks = _load_probe_tasks(tasks_dir_path)
+        custom_adapter, vanilla_adapter = _build_and_preflight_adapters(config_dir_path, paired)
+    except _ToolFailureError as exc:
+        console.print(f"[{BAD}]{exc}[/{BAD}]")
+        sys.exit(2)
+    except Exception as exc:  # noqa: BLE001 - any setup/load crash is a tool failure, not a finding
+        console.print(f"[{BAD}]checkup setup failed: {exc}[/{BAD}]")
+        sys.exit(2)
+
+    n_probe = len(tasks) * (2 if paired else 1)
+    if not yes:
+        if fmt == "json":
+            raise click.UsageError(
+                "checkup --format json needs --yes (no interactive prompt in JSON mode)"
+            )
+        est_low, est_high = n_probe * 0.25, n_probe * 0.5
+        console.print(
+            f"\nAbout to run {n_probe} real task execution(s) via [bold]{TOOL}[/bold]"
+            f" (est. ~${est_low:.0f}-${est_high:.0f})"
+        )
+        if not click.confirm("Proceed?", default=True):
+            console.print(f"[{MUTED}]Aborted.[/{MUTED}]")
+            sys.exit(0)
+
+    custom_results, custom_run_dir = _run_probe(
+        TOOL, custom_adapter, tasks, tasks_dir_path, concurrency
+    )
+    save_last_run(custom_run_dir)
+
+    task_defs = {t.id: t for t in tasks}
+
+    lift_report = None
+    if paired:
+        vanilla_results, _vanilla_run_dir = _run_probe(
+            VANILLA_TOOL, vanilla_adapter, tasks, tasks_dir_path, concurrency
+        )
+        from awb.scoring.workflow_lift import compute_workflow_lift
+
+        lift_report = compute_workflow_lift(vanilla_results, custom_results, task_defs)
+
+    rubric_scores = _grade_probe(custom_results, custom_run_dir, task_defs)
+
+    from awb.harness.integrity import rule_integrity
+
+    verdicts = rule_integrity(inventory, rubric_scores)
+    pillars = _compute_pillars(rubric_scores)
+    rule_stats = _rule_stats(verdicts)
+
+    from awb.analysis.prescriptions import build_prescriptions
+
+    presc_report = build_prescriptions(custom_results, task_defs, custom_run_dir)
+    top_fixes = _rank_fixes(presc_report.prescriptions, verdicts)
+
+    verdict_line = _verdict_sentence(pillars, rule_stats, len(tasks))
+    exit_code = _compute_exit_code(pillars, rule_stats, structural_error)
+
+    if fmt == "json":
+        emit_json(
+            {
+                "tool": TOOL,
+                "n_tasks": len(tasks),
+                "inventory": inventory,
+                "pillars": pillars,
+                "rule_integrity": rule_stats,
+                "verdicts": verdicts,
+                "workflow_lift": lift_report,
+                "prescriptions": top_fixes,
+                "verdict": verdict_line,
+                "exit_code": exit_code,
+            }
+        )
+        sys.exit(exit_code)
+
+    _render_stage1_text(
+        TOOL, len(tasks), pillars, rule_stats, verdicts, lift_report, top_fixes, verdict_line
+    )
+    sys.exit(exit_code)

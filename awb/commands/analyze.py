@@ -20,6 +20,7 @@ from awb.commands._shared import (
     console,
     emit_json,
     load_results_from_dirs,
+    resolve_run_dir,
     score_style,
 )
 
@@ -137,7 +138,7 @@ def compare(run_dir_1: str, run_dir_2: str, fmt: str):
 
 
 @click.command()
-@click.argument("run_dir", type=click.Path(exists=True))
+@click.argument("run_dir", required=False, type=click.Path())
 @click.option(
     "--format",
     "fmt",
@@ -151,14 +152,29 @@ def compare(run_dir_1: str, run_dir_2: str, fmt: str):
     default=False,
     help="Add concrete CLAUDE.md config fixes for sustained rubric/capability gaps.",
 )
-def gap(run_dir: str, fmt: str, prescribe: bool):
-    """Analyze capability gaps and suggest workflow improvements."""
+def gap(run_dir: str | None, fmt: str, prescribe: bool):
+    """Analyze capability gaps and suggest workflow improvements.
+
+    RUN_DIR defaults to the most recently saved run (see --last-run
+    plumbing in _shared.py) when omitted, or when passed the literal "last".
+    """
     from awb.analysis.gap_analysis import generate_gap_report
     from awb.core.results import ResultRecorder
     from awb.core.task_loader import load_all_tasks
 
+    resolved = resolve_run_dir(run_dir)
+    if resolved is None:
+        # --format json stdout must stay a single parseable document.
+        if fmt == "json":
+            emit_json({"error": "no run directory given and no last run saved"})
+        else:
+            console.print(f"[{BAD}]No run directory given and no last run saved[/{BAD}]")
+        sys.exit(2)
+    if (run_dir is None or run_dir == "last") and fmt == "text":
+        console.print(f"[{MUTED}]using last run: {resolved}[/{MUTED}]")
+
     recorder = ResultRecorder()
-    results = recorder.load_run(Path(run_dir))
+    results = recorder.load_run(resolved)
     if not results:
         console.print(f"[{BAD}]No results found in directory[/{BAD}]")
         sys.exit(1)
@@ -171,7 +187,7 @@ def gap(run_dir: str, fmt: str, prescribe: bool):
     if prescribe:
         from awb.analysis.prescriptions import build_prescriptions
 
-        presc_report = build_prescriptions(results, task_defs, Path(run_dir))
+        presc_report = build_prescriptions(results, task_defs, resolved)
 
     if fmt == "json":
         if presc_report is not None:
@@ -187,6 +203,24 @@ def gap(run_dir: str, fmt: str, prescribe: bool):
         f"\n[bold]{report.tool}[/bold]  Overall: "
         f"[bold {overall_style}]{report.overall_score:.1f}[/bold {overall_style}]\n"
     )
+
+    tested = {
+        name: cap_score
+        for name, cap_score in report.capability_profile.scores.items()
+        if cap_score.score is not None
+    }
+    if tested:
+        worst_name = min(tested, key=lambda n: tested[n].score)
+        worst = tested[worst_name]
+        verdict = (
+            f"Biggest gap: {worst_name} {worst.score:.0f}/100 across {worst.tasks_tested} tasks."
+        )
+        if presc_report is not None and presc_report.prescriptions:
+            top_fix = presc_report.prescriptions[0]
+            fix_title = top_fix.snippet.strip().splitlines()[0].lstrip("#").strip()
+            verdict += f" Top fix: {fix_title}."
+        console.print(f"{verdict}\n")
+
     console.print("[bold]Capability Profile[/bold]")
     for cap_name, cap_score in report.capability_profile.scores.items():
         label = cap_name.replace("_", " ")
