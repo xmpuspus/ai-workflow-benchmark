@@ -110,3 +110,24 @@ def test_on_event_signature_is_callable_typed():
     )
     # Sanity: the alias itself exists and points at a Callable
     assert "Callable" in str(StreamEventCallback)
+
+
+class TestConfigDirDefaultSkipsOverride:
+    """CLAUDE_CONFIG_DIR pointing at the real default breaks macOS Keychain auth:
+    Claude Code switches to file-based credential lookup and reports logged-out.
+    Found live: `awb checkup` defaults --config-dir to ~/.claude and could never
+    pass the auth preflight on a Keychain-authed machine."""
+
+    def test_default_config_dir_does_not_set_env_override(self):
+        import pathlib
+
+        from awb.adapters.claude_code import ClaudeCodeCustomAdapter
+
+        adapter = ClaudeCodeCustomAdapter(config_dir=pathlib.Path.home() / ".claude")
+        assert "CLAUDE_CONFIG_DIR" not in adapter._get_env()
+
+    def test_non_default_config_dir_still_sets_env_override(self, tmp_path):
+        from awb.adapters.claude_code import ClaudeCodeCustomAdapter
+
+        adapter = ClaudeCodeCustomAdapter(config_dir=tmp_path)
+        assert adapter._get_env()["CLAUDE_CONFIG_DIR"] == str(tmp_path)

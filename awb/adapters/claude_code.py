@@ -267,7 +267,12 @@ class ClaudeCodeCustomAdapter(ClaudeCodeVanillaAdapter):
         env = dict(os.environ)
         env["AWB_BENCHMARK"] = "1"
         keep: set[str] = set()
-        if self.config_dir is not None:
+        default_config = Path.home() / ".claude"
+        if self.config_dir is not None and Path(self.config_dir).resolve() != default_config:
+            # Only override when the dir actually differs from the default:
+            # CLAUDE_CONFIG_DIR switches Claude Code to file-based credential
+            # lookup, which misses macOS Keychain auth and reports logged-out
+            # even though a default-config session works fine.
             env["CLAUDE_CONFIG_DIR"] = str(self.config_dir)
             keep.add("CLAUDE_CONFIG_DIR")
         return self._clean_env(env, keep=keep)
