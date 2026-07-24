@@ -10,7 +10,7 @@
     <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-green" alt="License"></a>
   </p>
   <br/>
-  <img src="demos/hero.gif" alt="awb tools, awb validate, awb gap, awb cost, awb leaderboard --readiness output" width="820"/>
+  <img src="demos/hero.gif" alt="awb checkup --static-only, awb validate, awb gap, awb cost, awb leaderboard --readiness output" width="820"/>
   <br/>
   <sub>v1.6: grade your harness design - awb checkup extracts the rules your CLAUDE.md promises, runs an 8-task probe, and shows which rules held, broke, or never fired.</sub>
 </div>
@@ -27,7 +27,7 @@ AWB measures whether a configured tool+workflow combination can ship correct, re
 
 Related work measures complementary axes. [HAL](https://arxiv.org/abs/2510.11977) analyzes agent traces with LLM judges across 11 tasks at 2.5B-token scale. [Artificial Analysis](https://artificialanalysis.ai/agents/coding-agents) publishes harness-vs-harness comparisons holding the model constant. [SWE-bench Verified](https://www.swebench.com/) and [SWE-bench Pro](https://scaleapi.github.io/SWE-bench_Pro-os/) score patches against real GitHub issues. [LiveCodeBench](https://arxiv.org/abs/2403.07974) addresses contamination by time-segmenting contest problems. [METR RE-Bench](https://arxiv.org/abs/2411.15114) compares humans and agents in matched ML-engineering environments.
 
-AWB's distinct contribution is twofold: (1) a paired **vanilla-vs-custom** adapter pair that isolates the workflow-configuration delta for the same model, surfaced as a single Workflow Lift score with a sign-test p-value; (2) **deterministic** trace-grading rubrics (read-tests-before-edit, ran-verification-after-change, no-out-of-scope-edits, no-repeated-failing-loop) computed from OpenTelemetry-aligned `.trace.jsonl` artifacts, not LLM judges. See [METHODOLOGY.md#related-work](METHODOLOGY.md#related-work) for citation details.
+AWB's distinct contribution is twofold: (1) a paired **vanilla-vs-custom** adapter pair that isolates the workflow-configuration delta for the same model, surfaced as a single Workflow Lift score with a sign-test p-value; (2) **deterministic** trace-grading rubrics (read-tests-before-edit, ran-verification-after-change, no-out-of-scope-edits, no-repeated-failing-loop, context-discipline, tool-call-efficiency) computed from OpenTelemetry-aligned `.trace.jsonl` artifacts, not LLM judges. See [METHODOLOGY.md#related-work](METHODOLOGY.md#related-work) for citation details.
 
 ## What's New in v1.6.2
 
@@ -67,13 +67,13 @@ awb leaderboard --readiness --explain                 # Production Readiness Sco
 
 ### Five-minute reproducible demo
 
-Run this end-to-end against the published v1.4.0 fast-check baseline. Should finish in ~15 minutes for ~$4 of API spend and produce a tweetable Workflow Lift number plus a capability profile.
+Run this end-to-end against the published v1.4.0 fast-check baseline. Should finish in roughly 12 minutes (fast-check now runs parallel at -j 4; 12 min measured on a real 2026-07-24 run) for ~$4 of metered spend and produce a tweetable Workflow Lift number plus a capability profile.
 
 ```bash
 pip install awb==1.6.2
 awb quickstart                                       # 1. verify environment
 awb warmup --use-uv                                  # 2. pre-build templates
-awb run --fast-check claude-code-custom              # 3. ~15 min, ~$4, real run
+awb run --fast-check claude-code-custom              # 3. ~12 min at -j 4, real run
 awb leaderboard --readiness --explain                # 4. composite readiness score
 awb trace grade results/runs/<run_id>/               # 5. behavior rubric scores
 ```
@@ -300,20 +300,20 @@ awb run --resume                   # skip tasks with existing results
 awb run --parallel -j 4            # run 4 tasks concurrently
 awb run --adaptive                 # re-run near-miss tasks (60-99%) after initial pass
 awb run --progressive              # easy → medium → hard, stop early if pass rate too low
-awb run --fast-check               # 8 representative tasks, 1 run (~15 min, ~$4)
+awb run --fast-check               # 8 representative tasks, 1 run, parallel -j 4 (~12 min)
 awb run --use-uv                   # use uv instead of pip for 10-30x faster installs
 ```
 
 ### Execution Modes
 
-AWB v1.1 ships four execution modes tuned for different evaluation scenarios:
+AWB ships four execution modes tuned for different evaluation scenarios:
 
 | Mode | Tasks run | Wall clock | Token cost | Use when |
 |------|-----------|-----------|-----------|----------|
 | Full suite | 300 (100 × 3 runs) | ~3 hrs | ~$150 | Final evaluation, publishing results |
 | Full + adaptive | ~180 | ~1.5 hrs | ~$100 | Standard workflow, strong tools |
 | Progressive | ~150 on weak tools | ~1 hr | ~$40-75 | Unknown/mediocre tools |
-| Fast-check | 8 | ~15 min | ~$4 | PR gates, iterating on config |
+| Fast-check | 8 | ~12 min (-j 4) | ~$4 | PR gates, iterating on config |
 
 **Fast-check** (8 representative tasks, 1 per category, reports estimated full-suite score ± margin):
 
@@ -503,7 +503,7 @@ Run `awb tools` to see which are available in your environment.
 
 ## Adding Tools
 
-Implement the `ToolAdapter` ABC in `awb/adapters/`. v1.0 adds four optional methods to the ABC:
+Implement the `ToolAdapter` ABC in `awb/adapters/`. The ABC includes four optional methods:
 
 ```python
 from awb.adapters.base import ToolAdapter, ToolResult
@@ -558,6 +558,18 @@ The format captures tool version, model, hardware class, and per-task run result
 - Token efficiency: sigmoid normalizer (optimal=2k tokens/iter, baseline=15k) blended 50/50 with iteration count in the efficiency dimension
 
 ## Changelog
+
+### 1.6.2 (2026-07-24)
+
+`awb checkup --from-run <run_dir>` re-grades a saved run through the full report: zero adapter calls, zero spend, the primitive that makes iterative harness tuning cheap. Four tasks (FA-001, MF-001, RF-001, DB-001) no longer punish their own graded deliverables as out-of-scope edits; on recorded real-harness runs the scope pillar moved 77 to 96.4 under the corrected oracle. Adds demos/checkup.gif, recorded live.
+
+### 1.6.1 (2026-07-24)
+
+Three fixes found running checkup against a real harness the day 1.6.0 shipped: `CLAUDE_CONFIG_DIR` pointing at the default `~/.claude` no longer breaks macOS Keychain login detection (the 1.6.0 wheel's checkup could never pass preflight on subscription-authed Macs); the stream reader survives JSON lines over 64KB instead of silently starving the trace; auth failure messages name the real causes and quote the CLI. Promise extraction learned the "Read tests before code" phrasing.
+
+### 1.6.0 (2026-07-24)
+
+The checkup release. `awb checkup`: free instant static audit (promise extraction across 8 rule patterns + structural checks) plus a parallel 8-task probe graded on 6 deterministic rubrics, reported as a verdict line, pillar scores, a rule-integrity table (HELD/BROKEN/ENFORCED/UNTESTED per stated rule), and impact-ranked fixes. Two new trace rubrics (context_discipline, tool_call_efficiency). Prescriptions cover all 11 capabilities with impact estimates. P0 fix: tool-less `awb run --fast-check` silently ran the full suite twice; it now forwards correctly, preflights auth before cloning, and defaults to parallel -j 4. `--last-run` plumbing across run/checkup/gap/cost/drift/trace grade.
 
 ### 1.5.4 (2026-07-08)
 
