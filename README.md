@@ -300,10 +300,24 @@ AWB v1.1 ships four execution modes tuned for different evaluation scenarios:
 
 **`--use-uv`** (rewrites `pip install` → `uv pip install` for 10-30x faster installs):
 
+### `awb checkup` - Grade your harness design
+
+```bash
+awb checkup                                   # static audit + 8-task probe + rule integrity
+awb checkup --static-only                     # stage 0 only: free, instant, CI-safe
+awb checkup --config-dir ~/.claude            # which harness to grade (default ~/.claude)
+awb checkup --repo-dir .                      # repo whose CLAUDE.md/AGENTS.md also count
+awb checkup --paired                          # add the vanilla arm, report Workflow Lift
+awb checkup --format json --yes               # machine output (needs --yes, no prompt)
+```
+
+Stage 0 parses the harness files with zero model calls: structural checks (hooks resolve, settings.json valid, documented commands match the repo) plus extraction of testable promises across 8 rule patterns, each tagged hook-enforced or prose-only. Stage 1 runs the fast-check probe in parallel and grades traces on the 6 deterministic rubrics. The report leads with a verdict sentence, pillar scores, and the rule-integrity table (HELD / BROKEN / ENFORCED / UNTESTED per stated rule); broken prose rules get a hook recommendation. Exit codes: 0 clean, 1 findings, 2 tool failure (including a probe that measured nothing). Rules that match no pattern are listed as not checkable, never silently dropped.
+
 ### `awb warmup` - Pre-build workspace templates
 
 ```bash
 awb warmup              # build templates for all 63 unique (repo, commit, setup) combos
+awb warmup --fast-check # warm only the 8 fast-check probe repos (fastest first checkup)
 awb warmup --dry-run    # show combos without building
 awb warmup --clear      # reset template cache
 awb warmup --use-uv     # use uv for faster initial builds
