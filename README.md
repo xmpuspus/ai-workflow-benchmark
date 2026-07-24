@@ -29,7 +29,15 @@ Related work measures complementary axes. [HAL](https://arxiv.org/abs/2510.11977
 
 AWB's distinct contribution is twofold: (1) a paired **vanilla-vs-custom** adapter pair that isolates the workflow-configuration delta for the same model, surfaced as a single Workflow Lift score with a sign-test p-value; (2) **deterministic** trace-grading rubrics (read-tests-before-edit, ran-verification-after-change, no-out-of-scope-edits, no-repeated-failing-loop) computed from OpenTelemetry-aligned `.trace.jsonl` artifacts, not LLM judges. See [METHODOLOGY.md#related-work](METHODOLOGY.md#related-work) for citation details.
 
-## What's New in v1.6.0
+## What's New in v1.6.1
+
+Three fixes from running checkup against a real harness the day 1.6.0 shipped:
+
+- **`awb checkup` now passes its auth preflight on Keychain-authed Macs.** The default `--config-dir ~/.claude` set `CLAUDE_CONFIG_DIR`, which switches Claude Code to file-based credential lookup and misses the macOS Keychain, so a fully logged-in machine read as "Not logged in". The override now applies only when the directory differs from the default.
+- **The stream reader survives JSON lines over 64KB** (a real probe crashed the reader task mid-run and starved the trace of events); the pipe limit is now 10MB with oversized lines skipped, not fatal.
+- The auth failure message names the two non-obvious causes and quotes the CLI's actual output, and promise extraction recognizes the "Read tests before code" phrasing.
+
+The 1.6.0 feature set:
 
 - **`awb checkup`: grade your harness design in one command.** Stage 0 costs nothing and runs instantly: it parses your CLAUDE.md, AGENTS.md, and settings.json, checks that hooks resolve and documented commands match the repo, and extracts the testable promises your harness makes (8 rule patterns, each tagged hook-enforced or prose-only). Stage 1 runs the 8-task fast-check probe in parallel and grades the traces. The report opens with a plain-language verdict, pillar scores, and a rule-integrity table that answers, per stated rule: HELD, BROKEN, ENFORCED, or UNTESTED. Broken prose rules get a ready-to-paste hook recommendation. `--static-only` stays free for CI; `--paired` adds the vanilla arm and a Workflow Lift number; `--format json` for machines. Exit codes: 0 clean, 1 findings, 2 tool failure.
 - **Two new trace rubrics.** `context_discipline` (did the agent read only what the task scoped) and `tool_call_efficiency` (repeated reads, edit thrash) join the four existing deterministic rubrics. gap, checkup, submit, and both submission schema copies understand the 6-rubric grades.
@@ -58,7 +66,7 @@ awb leaderboard --readiness --explain                 # Production Readiness Sco
 Run this end-to-end against the published v1.4.0 fast-check baseline. Should finish in ~15 minutes for ~$4 of API spend and produce a tweetable Workflow Lift number plus a capability profile.
 
 ```bash
-pip install awb==1.6.0
+pip install awb==1.6.1
 awb quickstart                                       # 1. verify environment
 awb warmup --use-uv                                  # 2. pre-build templates
 awb run --fast-check claude-code-custom              # 3. ~15 min, ~$4, real run

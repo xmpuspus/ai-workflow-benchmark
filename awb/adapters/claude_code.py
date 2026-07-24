@@ -72,6 +72,10 @@ class ClaudeCodeVanillaAdapter(ToolAdapter):
                 stderr=asyncio.subprocess.PIPE,
                 cwd=workspace,
                 env=full_env,
+                # stream-json lines carry whole file contents; asyncio's 64KB
+                # readline default killed the reader mid-run (LimitOverrunError
+                # during a real MF-001 probe).
+                limit=10 * 1024 * 1024,
             )
 
             stream_events: list[dict] = []
@@ -80,7 +84,15 @@ class ClaudeCodeVanillaAdapter(ToolAdapter):
             async def _read_stream():
                 assert proc.stdout is not None
                 while True:
-                    line_bytes = await proc.stdout.readline()
+                    try:
+                        line_bytes = await proc.stdout.readline()
+                    except ValueError:
+                        # A single line beyond even the raised limit: drain the
+                        # oversized chunk and keep reading rather than dying and
+                        # silently starving the whole run of events.
+                        with contextlib.suppress(Exception):
+                            await proc.stdout.read(10 * 1024 * 1024)
+                        continue
                     if not line_bytes:
                         break
                     line = line_bytes.decode(errors="replace").strip()
@@ -241,9 +253,12 @@ class ClaudeCodeVanillaAdapter(ToolAdapter):
             env = self._get_env()
             result = subprocess.run(cmd, capture_output=True, text=True, env=env, timeout=30)
             if "Not logged in" in result.stdout:
+                said = result.stdout.strip()[:200]
                 return False, (
-                    "Claude Code is not logged in. "
-                    "Run 'claude' interactively first to authenticate, then re-run awb."
+                    "Claude Code reported it is not logged in. If you are logged in, two "
+                    "known causes: a CLAUDE_CONFIG_DIR override in the environment (unset "
+                    "it), or a sandboxed/detached shell that cannot reach the macOS "
+                    f"Keychain (run from a normal terminal). claude said: {said}"
                 )
             return True, ""
         except (subprocess.TimeoutExpired, FileNotFoundError):

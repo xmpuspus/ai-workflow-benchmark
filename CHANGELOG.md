@@ -1,5 +1,29 @@
 # Changelog
 
+## 1.6.1 (2026-07-24)
+
+Patch release: three defects found running checkup against a real harness the
+day 1.6.0 shipped.
+
+### Fixed
+
+- **`awb checkup` could never pass its auth preflight on Keychain-authed
+  Macs.** The default `--config-dir ~/.claude` set `CLAUDE_CONFIG_DIR`, which
+  switches Claude Code to file-based credential lookup and misses the macOS
+  Keychain, so the CLI reported "Not logged in" on a fully logged-in machine.
+  The override is now set only when the directory differs from the default.
+  Also affects `awb ab` arms pointing at the default config.
+- **The stream reader died on JSON lines over 64KB.** asyncio's default
+  readline limit killed the reader task mid-run (seen live during MF-001),
+  starving the trace of events. The subprocess pipe limit is now 10MB, and a
+  pathological line beyond that is drained and skipped instead of fatal.
+- The auth-preflight failure message names the two known non-obvious causes
+  (a `CLAUDE_CONFIG_DIR` override, a sandboxed shell that cannot reach the
+  Keychain) and quotes what the CLI actually said.
+- Promise extraction now recognizes the "Read tests before code" phrasing as
+  a read_before_edit rule (found live: the rule existed, the extractor missed
+  it, and the behavior rubric flagged its absence).
+
 ## 1.6.0 (2026-07-23)
 
 The checkup release: grade your harness design in minutes, with proof of which

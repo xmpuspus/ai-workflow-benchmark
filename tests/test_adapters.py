@@ -131,3 +131,50 @@ class TestConfigDirDefaultSkipsOverride:
 
         adapter = ClaudeCodeCustomAdapter(config_dir=tmp_path)
         assert adapter._get_env()["CLAUDE_CONFIG_DIR"] == str(tmp_path)
+
+
+class TestStreamReaderLongLines:
+    """A stream-json line over asyncio's 64KB default readline limit killed the
+    reader task with LimitOverrunError mid-run (seen live during MF-001)."""
+
+    def test_execute_survives_a_100kb_stream_line(self, tmp_path):
+        import asyncio
+        import json as _json
+        import sys
+
+        from awb.adapters.claude_code import ClaudeCodeVanillaAdapter
+
+        big = _json.dumps(
+            {"type": "assistant", "message": {"content": [{"type": "text", "text": "x" * 100_000}]}}
+        )
+        script = tmp_path / "fake_claude.py"
+        script.write_text(
+            "import sys\n"
+            f"sys.stdout.write({big!r} + chr(10))\n"
+            'sys.stdout.write(\'{"type": "result", "result": "done", '
+            '"total_cost_usd": 0.01}\' + chr(10))\n'
+        )
+        adapter = ClaudeCodeVanillaAdapter()
+        adapter._get_cmd = lambda prompt, max_turns: [sys.executable, str(script)]
+        result = asyncio.run(adapter.execute("do a thing", tmp_path, timeout_seconds=30))
+        assert "x" * 1000 in str(result)
+
+
+class TestCheckAuthDiagnostics:
+    """The old message guessed "run claude interactively" for every failure; the
+    two live failures were a CLAUDE_CONFIG_DIR override and a sandboxed shell."""
+
+    def test_not_logged_in_message_names_known_causes_and_quotes_output(self, monkeypatch):
+        import subprocess as sp
+
+        from awb.adapters.claude_code import ClaudeCodeVanillaAdapter
+
+        def fake_run(*args, **kwargs):
+            return sp.CompletedProcess(args=args, returncode=1, stdout="Not logged in", stderr="")
+
+        monkeypatch.setattr("awb.adapters.claude_code.subprocess.run", fake_run)
+        ok, msg = ClaudeCodeVanillaAdapter().check_auth()
+        assert not ok
+        assert "CLAUDE_CONFIG_DIR" in msg
+        assert "Keychain" in msg
+        assert "Not logged in" in msg

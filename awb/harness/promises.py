@@ -44,6 +44,7 @@ PATTERNS: dict[str, list[re.Pattern[str]]] = {
     "read_before_edit": [
         re.compile(r"read\s+(?:the\s+)?tests?\s+first", re.I),
         re.compile(r"read\b.{0,30}\bbefore\s+editing\b", re.I),
+        re.compile(r"read\s+(?:the\s+)?tests?\s+before\s+(?:the\s+)?(?:code|editing|edits?)", re.I),
     ],
     "lint_gate": [
         re.compile(

@@ -384,3 +384,13 @@ class TestRoundTwoDeltaFindings:
         inv = extract_promises(tmp_path, None)
         assert time.monotonic() - start < 5.0
         assert any("too long" in u for u in inv.unparsed_rules)
+
+
+class TestReadTestsBeforeCodePhrasing:
+    """Live finding: Xavier's own CLAUDE.md says "Read tests before code", which
+    the read_before_edit patterns missed while the behavior rubric flagged it."""
+
+    def test_read_tests_before_code_matches(self, tmp_path):
+        (tmp_path / "CLAUDE.md").write_text("- Read tests before code\n")
+        inv = extract_promises(tmp_path, None)
+        assert [p.pattern for p in inv.promises] == ["read_before_edit"]
