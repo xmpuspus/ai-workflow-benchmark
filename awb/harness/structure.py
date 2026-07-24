@@ -189,6 +189,10 @@ def _check_claude_md(config_dir: Path | None, repo_dir: Path | None) -> list[Str
     if base_dir is not None:
         for match in BACKTICK_PATH_RE.finditer(text):
             token = match.group(1)
+            # A bare basename (`publish.sh`, `ab.py`) has no single resolvable
+            # location; only slashed paths are checkable without guessing.
+            if "/" not in token:
+                continue
             if not _resolve(token, base_dir).exists():
                 issues.append(
                     StructuralIssue(

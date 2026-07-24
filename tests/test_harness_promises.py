@@ -278,3 +278,17 @@ def test_extract_promises_joins_structural_issues(tmp_path):
         issue.message == "vanilla harness, nothing to grade statically"
         for issue in inventory.structural_issues
     )
+
+
+class TestLiveRunRegressions:
+    """Cases surfaced by running checkup against a real repo (v1.6.0 integration)."""
+
+    def test_never_edit_outside_scope_is_scope_constraint(self, tmp_path):
+        (tmp_path / "CLAUDE.md").write_text("- Never edit files outside the task scope\n")
+        inv = extract_promises(tmp_path, None)
+        assert [p.pattern for p in inv.promises] == ["scope_constraint"]
+
+    def test_lint_before_every_commit_is_lint_gate(self, tmp_path):
+        (tmp_path / "CLAUDE.md").write_text("- Run ruff before every commit\n")
+        inv = extract_promises(tmp_path, None)
+        assert [p.pattern for p in inv.promises] == ["lint_gate"]

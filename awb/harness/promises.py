@@ -36,17 +36,26 @@ PATTERNS: dict[str, list[re.Pattern[str]]] = {
     "scope_constraint": [
         re.compile(r"\bfix only\b", re.I),
         re.compile(r"\bminimal fix\b", re.I),
-        re.compile(r"\bdo\s?n['o]?t\s+modify\b", re.I),
-        re.compile(r"\bnever touch\b", re.I),
+        re.compile(r"\bdo\s?n['o]?t\s+(?:modify|edit|change)\b", re.I),
+        re.compile(r"\bnever\s+(?:touch|edit|modify|change)\b", re.I),
         re.compile(r"\btouch only\b", re.I),
+        re.compile(r"\boutside\s+(?:the\s+)?(?:task\s+)?scope\b", re.I),
     ],
     "read_before_edit": [
         re.compile(r"read\s+(?:the\s+)?tests?\s+first", re.I),
         re.compile(r"read\b.{0,30}\bbefore\s+editing\b", re.I),
     ],
     "lint_gate": [
-        re.compile(r"\b(?:ruff|eslint|lint(?:er)?)\b.{0,40}\bbefore\s+(?:commit|push)", re.I),
-        re.compile(r"before\s+(?:commit|committing).{0,40}\b(?:ruff|eslint|lint(?:er)?)\b", re.I),
+        re.compile(
+            r"\b(?:ruff|eslint|lint(?:er)?)\b.{0,40}"
+            r"\bbefore\s+(?:every\s+|each\s+|any\s+)?(?:commit|committing|push|pushing)",
+            re.I,
+        ),
+        re.compile(
+            r"before\s+(?:every\s+|each\s+|any\s+)?(?:commit|committing|push|pushing).{0,40}"
+            r"\b(?:ruff|eslint|lint(?:er)?)\b",
+            re.I,
+        ),
     ],
     "test_first": [
         re.compile(r"write\s+(?:the|a)\s+tests?\s+first", re.I),

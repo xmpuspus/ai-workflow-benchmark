@@ -232,3 +232,21 @@ def test_config_claude_md_used_when_repo_claude_md_missing(tmp_path):
 
     assert len(issues) == 1
     assert issues[0].source == "config/CLAUDE.md"
+
+
+class TestBasenameReferences:
+    """A bare backticked basename cannot be resolved to one location; never warn on it."""
+
+    def test_bare_basename_reference_does_not_warn(self, tmp_path):
+        repo = tmp_path / "repo"
+        repo.mkdir()
+        (repo / "CLAUDE.md").write_text("Release helpers: `publish.sh` and `ab.py`.\n")
+        issues = check_structure(None, repo)
+        assert not [i for i in issues if "missing file" in i.message]
+
+    def test_slashed_missing_path_still_warns(self, tmp_path):
+        repo = tmp_path / "repo"
+        repo.mkdir()
+        (repo / "CLAUDE.md").write_text("See `scripts/nonexistent_helper.py` for details.\n")
+        issues = check_structure(None, repo)
+        assert [i for i in issues if "scripts/nonexistent_helper.py" in i.message]
