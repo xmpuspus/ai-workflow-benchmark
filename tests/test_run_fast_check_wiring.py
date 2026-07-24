@@ -139,9 +139,7 @@ class TestRunBothFastCheckWiring:
         monkeypatch.setattr("awb.core.runner.BenchmarkRunner", _RecordingRunner)
         monkeypatch.setattr("awb.adapters.registry.get_adapter", lambda name: _OkAdapter())
 
-        result = CliRunner().invoke(
-            run_cmd, ["--fast-check", "--progressive", "--use-uv", "-y"]
-        )
+        result = CliRunner().invoke(run_cmd, ["--fast-check", "--progressive", "--use-uv", "-y"])
 
         assert result.exit_code == 0, result.output
         for kwargs in _RecordingRunner.instances:

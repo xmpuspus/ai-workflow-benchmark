@@ -267,12 +267,16 @@ def gap(run_dir: str | None, fmt: str, prescribe: bool):
         if not presc_report.prescriptions:
             console.print(f"[{MUTED}]No sustained gaps found (need >= 2 low tasks).[/{MUTED}]")
         for p in presc_report.prescriptions:
+            delta = p.estimated_score_delta
+            delta_str = f"  est. +{delta:.0f} pts" if delta is not None else ""
             console.print(
-                f"\n  [{BAD}]{p.trigger}[/{BAD}]  severity={p.severity}  "
+                f"\n  [{BAD}]{p.trigger}[/{BAD}]  severity={p.severity}{delta_str}  "
                 f"tasks={', '.join(p.affected_tasks)}"
             )
             console.print(f"    {p.rationale}")
             console.print(Panel(p.snippet.rstrip("\n"), title=p.id, border_style=INFO))
+        if presc_report.prescriptions:
+            console.print(f"[{MUTED}]{presc_report.caveat}[/{MUTED}]")
 
 
 @click.command()

@@ -499,6 +499,9 @@ def run(
     results_path = runner.recorder.results_dir
     run_dirs = sorted(results_path.glob(f"{runner._run_id}_run*"))
     if run_dirs:
+        from awb.commands._shared import save_last_run
+
+        save_last_run(run_dirs[0])
         console.print(f"\nResults saved to {run_dirs[0].parent}/{runner._run_id}_run*/")
     else:
         console.print(f"\nResults saved to {results_path}/{runner._run_id}/")

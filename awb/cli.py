@@ -10,6 +10,7 @@ from awb import __version__
 from awb.commands.ab_cmd import ab
 from awb.commands.analyze import compare, gap, stability
 from awb.commands.calibrate import calibrate_difficulty_cmd, calibrate_timeouts_cmd
+from awb.commands.checkup_cmd import checkup
 from awb.commands.cost_cmd import cost
 from awb.commands.drift_cmd import drift
 from awb.commands.leaderboard_cmd import leaderboard
@@ -33,6 +34,7 @@ def cli(verbose: bool):
 
 
 cli.add_command(run)
+cli.add_command(checkup)
 cli.add_command(compare)
 cli.add_command(gap)
 cli.add_command(stability)
