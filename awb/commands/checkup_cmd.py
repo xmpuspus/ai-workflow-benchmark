@@ -267,6 +267,12 @@ def _rule_stats(verdicts: list) -> dict:
 
 
 def _compute_exit_code(pillars: dict, rule_stats: dict, structural_error: bool) -> int:
+    measured = [v for v in pillars.values() if v is not None]
+    if not measured and rule_stats.get("testable", 0) == 0:
+        # The probe verified nothing: every trace ungradeable and no rule
+        # testable. That is a measurement failure, not a clean harness, and
+        # cron/CI must not read it as one.
+        return 2
     any_broken = rule_stats.get("broken", 0) > 0
     any_low = any(v is not None and v < 50 for v in pillars.values())
     return 1 if (structural_error or any_broken or any_low) else 0
@@ -523,23 +529,24 @@ def checkup(
     if fmt == "text":
         _render_stage0_text(inventory)
 
+    # Pure input validation first: nothing below this line may cost anything
+    # until the user's intent is confirmed. The adapter preflight is a real
+    # `claude` subprocess call (the v1.5.4 --dry-run lesson), so it runs only
+    # after flag validation AND the spend confirmation.
+    if fmt == "json" and not yes:
+        raise click.UsageError(
+            "checkup --format json needs --yes (no interactive prompt in JSON mode)"
+        )
+
     tasks_dir_path = Path(tasks_dir) if tasks_dir else None
     try:
         tasks = _load_probe_tasks(tasks_dir_path)
-        custom_adapter, vanilla_adapter = _build_and_preflight_adapters(config_dir_path, paired)
-    except _ToolFailureError as exc:
-        console.print(f"[{BAD}]{exc}[/{BAD}]")
-        sys.exit(2)
     except Exception as exc:  # noqa: BLE001 - any setup/load crash is a tool failure, not a finding
         console.print(f"[{BAD}]checkup setup failed: {exc}[/{BAD}]")
         sys.exit(2)
 
     n_probe = len(tasks) * (2 if paired else 1)
     if not yes:
-        if fmt == "json":
-            raise click.UsageError(
-                "checkup --format json needs --yes (no interactive prompt in JSON mode)"
-            )
         est_low, est_high = n_probe * 0.25, n_probe * 0.5
         console.print(
             f"\nAbout to run {n_probe} real task execution(s) via [bold]{TOOL}[/bold]"
@@ -548,6 +555,15 @@ def checkup(
         if not click.confirm("Proceed?", default=True):
             console.print(f"[{MUTED}]Aborted.[/{MUTED}]")
             sys.exit(0)
+
+    try:
+        custom_adapter, vanilla_adapter = _build_and_preflight_adapters(config_dir_path, paired)
+    except _ToolFailureError as exc:
+        console.print(f"[{BAD}]{exc}[/{BAD}]")
+        sys.exit(2)
+    except Exception as exc:  # noqa: BLE001 - any setup/load crash is a tool failure, not a finding
+        console.print(f"[{BAD}]checkup setup failed: {exc}[/{BAD}]")
+        sys.exit(2)
 
     custom_results, custom_run_dir = _run_probe(
         TOOL, custom_adapter, tasks, tasks_dir_path, concurrency

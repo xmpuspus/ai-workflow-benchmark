@@ -1100,3 +1100,55 @@ class TestCheckupFullProbe:
         assert result.exit_code == 1, result.output
         assert "Top fixes" in result.output
         assert "not additive" in result.output
+
+
+class TestFinalStateAdversaryFindings:
+    """r2-final blockers: no paid preflight before input validation; nothing-measured is not clean."""
+
+    def test_json_without_yes_fails_before_any_adapter_call(self, tmp_path, monkeypatch):
+        from click.testing import CliRunner
+
+        from awb.commands import checkup_cmd
+
+        calls = []
+
+        def tracking_preflight(*args, **kwargs):
+            calls.append("preflight")
+            raise AssertionError("preflight must not run before input validation")
+
+        monkeypatch.setattr(checkup_cmd, "_build_and_preflight_adapters", tracking_preflight)
+        (tmp_path / "CLAUDE.md").write_text("- Run tests before done\n")
+        result = CliRunner().invoke(
+            checkup_cmd.checkup,
+            ["--config-dir", str(tmp_path), "--repo-dir", str(tmp_path), "--format", "json"],
+        )
+        assert result.exit_code != 0
+        assert calls == []
+
+    def test_declined_prompt_never_runs_preflight(self, tmp_path, monkeypatch):
+        from click.testing import CliRunner
+
+        from awb.commands import checkup_cmd
+
+        calls = []
+
+        def tracking_preflight(*args, **kwargs):
+            calls.append("preflight")
+            raise AssertionError("preflight must not run before the user confirms spend")
+
+        monkeypatch.setattr(checkup_cmd, "_build_and_preflight_adapters", tracking_preflight)
+        (tmp_path / "CLAUDE.md").write_text("- Run tests before done\n")
+        result = CliRunner().invoke(
+            checkup_cmd.checkup,
+            ["--config-dir", str(tmp_path), "--repo-dir", str(tmp_path)],
+            input="n\n",
+        )
+        assert result.exit_code == 0
+        assert calls == []
+
+    def test_nothing_measured_is_exit_2_not_clean(self):
+        from awb.commands.checkup_cmd import _compute_exit_code
+
+        pillars = {"verification": None, "scope": None, "efficiency": None}
+        rule_stats = {"held": 0, "testable": 0, "broken": 0, "untested": 3}
+        assert _compute_exit_code(pillars, rule_stats, structural_error=False) == 2
