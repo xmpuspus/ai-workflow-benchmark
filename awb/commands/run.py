@@ -34,6 +34,10 @@ def _run_both(
     concurrency=3,
     adaptive=False,
     tasks_dir=None,
+    progressive=False,
+    fast_check=False,
+    use_uv=False,
+    yes=False,
 ):
     """Run vanilla and custom back-to-back then show a comparison."""
     from awb.core.runner import BenchmarkRunner
@@ -50,9 +54,36 @@ def _run_both(
     if difficulty:
         tasks = [t for t in tasks if t.difficulty == difficulty]
 
+    # Fast-check mode: select representative tasks once, before the variant
+    # loop, so both variants run the identical 8 tasks (mirrors the
+    # tool-specified path below; see run.py:291-299 in the original bug).
+    if fast_check:
+        from awb.core.fast_check import select_fast_check_tasks
+
+        tasks = select_fast_check_tasks(tasks)
+        runs = 1  # Single run for fast-check
+        console.print(
+            f"[bold cyan]Fast-check mode:[/bold cyan] {len(tasks)} representative tasks, 1 run"
+        )
+
     if not tasks:
         console.print("[yellow]No tasks matched filters[/yellow]")
         return
+
+    # Confirmation prompt for large runs (same threshold as the tool-specified
+    # path; fast-check's 8 tasks x 1 run stays under it). Cost is doubled
+    # here since both variants actually execute the task set.
+    total_runs = len(tasks) * runs
+    est_cost = total_runs * 0.50 * 2  # rough estimate: ~$0.50/task, x2 variants
+    if not yes and not task_id and total_runs > 10:
+        console.print(
+            f"About to run [bold]{len(tasks)}[/bold] task(s) x "
+            f"[bold]{runs}[/bold] run(s) x 2 variants = "
+            f"[bold]{total_runs * 2}[/bold] executions "
+            f"(estimated ~${est_cost:.0f})"
+        )
+        if not click.confirm("Proceed?", default=True):
+            return
 
     if dry_run:
         table = Table(title="Tasks (dry run)")
@@ -65,7 +96,32 @@ def _run_both(
         console.print(table)
         return
 
+    # Pre-flight availability + auth check for both variants before any
+    # workspace prep, so a missing auth fails in 1s instead of after a clone.
+    from awb.adapters.registry import get_adapter as _get_adapter
+
+    for variant in ("claude-code-vanilla", "claude-code-custom"):
+        adapter = _get_adapter(variant)
+        try:
+            if not adapter.check_available():
+                console.print(
+                    f"[red]Adapter '{variant}' is not available in this environment[/red]"
+                )
+                sys.exit(1)
+        except NotImplementedError as exc:
+            raise click.UsageError(
+                f"Adapter '{variant}' is a stub, not yet implemented. "
+                f"Run 'awb tools' to see available adapters."
+            ) from exc
+
+        if adapter.supports_auth_check():
+            ok, msg = adapter.check_auth()
+            if not ok:
+                console.print(f"[red]{msg}[/red]")
+                sys.exit(1)
+
     all_results = {}
+    runners = {}
     for variant in ("claude-code-vanilla", "claude-code-custom"):
         console.print(f"\nRunning [bold]{variant}[/bold] on {len(tasks)} task(s) x {runs} run(s)")
         runner = BenchmarkRunner(
@@ -77,12 +133,26 @@ def _run_both(
             resume=resume,
             concurrency=concurrency,
             adaptive=adaptive,
+            progressive=progressive,
+            use_uv=use_uv,
             tasks_dir=tasks_dir,
         )
         all_results[variant] = asyncio.run(runner.run_all())
+        runners[variant] = runner
 
     vanilla_results = all_results["claude-code-vanilla"]
     custom_results = all_results["claude-code-custom"]
+
+    # Record the custom variant's run dir for --last-run consumers (gap,
+    # cost, drift, trace grade) - mirrors the tool-specified path below and
+    # checkup --paired, which likewise saves the custom arm, not the vanilla.
+    custom_runner = runners["claude-code-custom"]
+    results_path = custom_runner.recorder.results_dir
+    run_dirs = sorted(results_path.glob(f"{custom_runner._run_id}_run*"))
+    if run_dirs:
+        from awb.commands._shared import save_last_run
+
+        save_last_run(run_dirs[0])
 
     map_v = {r.task_id: r for r in vanilla_results}
     map_c = {r.task_id: r for r in custom_results}
@@ -195,8 +265,9 @@ def _run_both(
     "-j",
     "--concurrency",
     type=int,
-    default=1,
-    help="Max parallel tasks; -j>1 enables parallel mode (default: 1, sequential)",
+    default=None,
+    help="Max parallel tasks; -j>1 enables parallel mode (default: 1 sequential, "
+    "4 with --fast-check)",
 )
 @click.option("--adaptive", is_flag=True, help="Only re-run near-miss tasks on runs 2+")
 @click.option("--progressive", is_flag=True, help="Run easy first, stop early if failing")
@@ -220,7 +291,7 @@ def run(
     dry_run: bool,
     timeout: int | None,
     resume: bool,
-    concurrency: int,
+    concurrency: int | None,
     adaptive: bool,
     progressive: bool,
     fast_check: bool,
@@ -241,6 +312,16 @@ def run(
         console.print(f"[{BAD}]--resume cannot be combined with --tasks-dir yet[/{BAD}]")
         console.print("Run the private task set without --resume.")
         sys.exit(1)
+
+    # Fast-check defaults to parallel at concurrency 4, the empirically safe
+    # sweet spot (git clones start failing above it). An explicit -j always
+    # wins, including -j 1 to force sequential; non-fast-check behavior is
+    # unchanged (sequential, concurrency 1, unless -j/--parallel says otherwise).
+    concurrency_explicit = concurrency is not None
+    if concurrency is None:
+        concurrency = 4 if fast_check else 1
+    if fast_check and not (concurrency_explicit and concurrency <= 1):
+        parallel = True
 
     # Resolve tool from workflow or direct argument
     workflow_info = None
@@ -274,6 +355,10 @@ def run(
             concurrency=concurrency,
             adaptive=adaptive,
             tasks_dir=tasks_dir_path,
+            progressive=progressive,
+            fast_check=fast_check,
+            use_uv=use_uv,
+            yes=yes,
         )
         return
 
@@ -427,6 +512,9 @@ def run(
     results_path = runner.recorder.results_dir
     run_dirs = sorted(results_path.glob(f"{runner._run_id}_run*"))
     if run_dirs:
+        from awb.commands._shared import save_last_run
+
+        save_last_run(run_dirs[0])
         console.print(f"\nResults saved to {run_dirs[0].parent}/{runner._run_id}_run*/")
     else:
         console.print(f"\nResults saved to {results_path}/{runner._run_id}/")

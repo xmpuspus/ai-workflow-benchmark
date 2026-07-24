@@ -206,6 +206,16 @@
                   "type": "number",
                   "minimum": 0,
                   "maximum": 100
+                },
+                "context_discipline": {
+                  "type": "number",
+                  "minimum": 0,
+                  "maximum": 100
+                },
+                "tool_call_efficiency": {
+                  "type": "number",
+                  "minimum": 0,
+                  "maximum": 100
                 }
               }
             }
@@ -382,6 +392,16 @@
                           "maximum": 100
                         },
                         "no_repeated_failing_command_loop": {
+                          "type": "integer",
+                          "minimum": 0,
+                          "maximum": 100
+                        },
+                        "context_discipline": {
+                          "type": "integer",
+                          "minimum": 0,
+                          "maximum": 100
+                        },
+                        "tool_call_efficiency": {
                           "type": "integer",
                           "minimum": 0,
                           "maximum": 100

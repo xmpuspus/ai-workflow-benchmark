@@ -12,7 +12,7 @@
   <br/>
   <img src="demos/hero.gif" alt="awb tools, awb validate, awb gap, awb cost, awb leaderboard --readiness output" width="820"/>
   <br/>
-  <sub>v1.5: benchmark your own setup - mine private tasks from your merged PRs, A/B test your CLAUDE.md, catch silent regressions, and price every solved task.</sub>
+  <sub>v1.6: grade your harness design - awb checkup extracts the rules your CLAUDE.md promises, runs an 8-task probe, and shows which rules held, broke, or never fired.</sub>
 </div>
 
 ---
@@ -29,22 +29,15 @@ Related work measures complementary axes. [HAL](https://arxiv.org/abs/2510.11977
 
 AWB's distinct contribution is twofold: (1) a paired **vanilla-vs-custom** adapter pair that isolates the workflow-configuration delta for the same model, surfaced as a single Workflow Lift score with a sign-test p-value; (2) **deterministic** trace-grading rubrics (read-tests-before-edit, ran-verification-after-change, no-out-of-scope-edits, no-repeated-failing-loop) computed from OpenTelemetry-aligned `.trace.jsonl` artifacts, not LLM judges. See [METHODOLOGY.md#related-work](METHODOLOGY.md#related-work) for citation details.
 
-## What's New in v1.5.4
+## What's New in v1.6.0
 
-- **`awb run --dry-run` is instant.** The preview paid the adapter auth preflight, a real model call that can take 30 seconds; a dry run now prints the task table without touching the adapter. Surfaced while recording the from-pr demo below.
+- **`awb checkup`: grade your harness design in one command.** Stage 0 costs nothing and runs instantly: it parses your CLAUDE.md, AGENTS.md, and settings.json, checks that hooks resolve and documented commands match the repo, and extracts the testable promises your harness makes (8 rule patterns, each tagged hook-enforced or prose-only). Stage 1 runs the 8-task fast-check probe in parallel and grades the traces. The report opens with a plain-language verdict, pillar scores, and a rule-integrity table that answers, per stated rule: HELD, BROKEN, ENFORCED, or UNTESTED. Broken prose rules get a ready-to-paste hook recommendation. `--static-only` stays free for CI; `--paired` adds the vanilla arm and a Workflow Lift number; `--format json` for machines. Exit codes: 0 clean, 1 findings, 2 tool failure.
+- **Two new trace rubrics.** `context_discipline` (did the agent read only what the task scoped) and `tool_call_efficiency` (repeated reads, edit thrash) join the four existing deterministic rubrics. gap, checkup, submit, and both submission schema copies understand the 6-rubric grades.
+- **Prescriptions cover all 11 capabilities** (was 4) and carry `est. +N pts` impact estimates, with the caveat printed in the output: estimates are independent and do not sum.
+- **The fast path is actually fast, and safe.** `awb run --fast-check` with no tool name silently dropped the flag and ran the full 100-task suite on both variants (roughly $300 of spend instead of ~$4); it now forwards correctly, runs the identical 8 tasks on both arms, preflights adapter auth before any clone, and defaults to parallel execution (-j 4). `awb warmup --fast-check` warms only the 8 probe repos.
+- **`--last-run` everywhere.** run and checkup remember their run directory; gap, cost, drift, and trace grade use it when you omit the path.
 
-- **`awb task from-pr` fetches PR files correctly.** The files call passed per_page as a gh -F field, which silently turns the GET into a POST that GitHub 404s, so mining failed on every real PR. per_page now rides the query string; caught by the live fresh-venv smoke against a real merged PR.
-- **`awb submit` accepts the trust columns.** The v1.4.0 baselines added `readiness`, `trace_summary`, and per-run `trace_grade` blocks, but the submission schema still rejected them, so validating an `awb export` (or the published baseline itself) failed. Both schema copies now define the blocks, with a guard test keeping them in sync. `trace_summary: null` (zero graded traces) validates too.
-
-The rest of the 1.5 line - the harness-tuning release: the instrument now points at your own stack, not just the public task set. See [Benchmark Your Own Setup](#benchmark-your-own-setup) for the full loop.
-
-- **`awb task from-pr <pr_url>`** mines a private benchmark task from a merged GitHub PR: pre-merge SHA pinned, the PR's test files overlaid onto the old tree, provenance stamped `real_pr`. Run private sets with **`awb run --tasks-dir`**; the task-set hash now reflects the directory actually loaded.
-- **`awb ab --config-a <dir> --config-b <dir>`** answers "did my CLAUDE.md change help?": same adapter, two config dirs, paired sign test, per-arm config hashes recorded.
-- **`awb drift`** compares a fresh run against a prior run or published baseline and exits 1 past the threshold, built for cron/CI regression watch.
-- **`awb cost`** reports dollars per solved task (failed-attempt spend included), wasted spend, and tokens per solve.
-- **`awb gap --prescribe`** turns trace-rubric failures and weak capabilities into ready-to-paste CLAUDE.md snippets with task-level evidence.
-
-Carried over from v1.2.0-v1.4.0: real deterministic trace grading, baselines with trust columns, public GitHub Pages leaderboard, task-set hash on every result, the Production Readiness Score, strict result schema v2, exact-pinned dependencies, and the documented security boundary.
+Carried over from the 1.5 line (harness tuning): mine private tasks from merged PRs (`awb task from-pr`, `awb run --tasks-dir`), paired config A/B (`awb ab`), regression watch (`awb drift`), dollars per solved task (`awb cost`), and prescriptions (`awb gap --prescribe`). From v1.2.0-v1.4.0: deterministic trace grading, trust-column baselines, the public GitHub Pages leaderboard, task-set hashes, the Production Readiness Score, strict result schema v2, exact-pinned dependencies, and the documented security boundary.
 
 ## Quick Start
 
@@ -52,10 +45,11 @@ Carried over from v1.2.0-v1.4.0: real deterministic trace grading, baselines wit
 pip install awb
 
 awb quickstart                                        # verify your setup
-awb warmup                                            # pre-build workspace templates (one-time, ~5 min)
-awb run --fast-check claude-code-custom               # 8 tasks, ~15 min, ~$4 (quick signal)
+awb checkup --static-only                             # instant free audit of your CLAUDE.md + hooks
+awb warmup --fast-check                               # warm the 8 probe repos (one-time)
+awb checkup                                           # static audit + 8-task probe + rule integrity
 awb run --progressive --adaptive claude-code-custom   # full suite with early exit + smart re-runs
-awb gap results/runs/<run_dir>/                       # analyze capability gaps
+awb gap                                               # capability gaps (defaults to your last run)
 awb leaderboard --readiness --explain                 # Production Readiness Score per tool
 ```
 
@@ -64,7 +58,7 @@ awb leaderboard --readiness --explain                 # Production Readiness Sco
 Run this end-to-end against the published v1.4.0 fast-check baseline. Should finish in ~15 minutes for ~$4 of API spend and produce a tweetable Workflow Lift number plus a capability profile.
 
 ```bash
-pip install awb==1.5.4
+pip install awb==1.6.0
 awb quickstart                                       # 1. verify environment
 awb warmup --use-uv                                  # 2. pre-build templates
 awb run --fast-check claude-code-custom              # 3. ~15 min, ~$4, real run

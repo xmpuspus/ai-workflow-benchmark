@@ -1,9 +1,80 @@
 # Changelog
 
+## 1.6.0 (2026-07-23)
+
+The checkup release: grade your harness design in minutes, with proof of which
+rules actually fired.
+
+### Added
+
+- **`awb checkup`**: one command, three stages. Stage 0 parses CLAUDE.md,
+  AGENTS.md, and settings.json with zero model calls: structural checks (hooks
+  resolve, JSON valid, documented commands match the repo's build files) plus
+  extraction of the harness's testable promises across 8 rule patterns, each
+  tagged hook-enforced or prose-only. Stage 1 runs the 8-task fast-check probe
+  in parallel and grades the traces. The report leads with a plain-language
+  verdict, pillar scores, a rule-integrity table (HELD / BROKEN / ENFORCED /
+  UNTESTED per stated rule, with a wrong verdict deliberately traded away for
+  UNTESTED when signal is weak), and top fixes ranked by estimated impact.
+  Broken prose rules escalate to a ready-to-paste hook recommendation.
+  `--static-only` runs the free stage alone; `--paired` adds the vanilla arm
+  and Workflow Lift; `--format json` for CI. Exit codes: 0 clean, 1 findings,
+  2 tool failure, now documented as the project-wide contract.
+- **Two new deterministic trace rubrics**: `context_discipline` (distinct
+  files read vs the task's declared scope) and `tool_call_efficiency`
+  (repeated reads and edit thrash), both derived from spans the runner already
+  emits. Both submission schema copies accept the 6-rubric grades.
+- **Prescriptions cover all 11 capabilities** (was 4) and carry
+  `est. +N pts` impact estimates, sorted within severity, with an explicit
+  caveat that independent estimates do not sum.
+- **`--last-run` plumbing**: `awb run` and `awb checkup` record their run
+  directory; `gap`, `cost`, `drift`, and `trace grade` fall back to it when
+  the run-dir argument is omitted.
+- **`awb warmup --fast-check`** warms only the repos of the 8 probe tasks.
+- `awb gap` opens with a one-line verdict naming the worst capability and the
+  top prescription.
+
+### Fixed
+
+- **`awb run --fast-check` with no tool name silently ran the full suite
+  twice.** The tool-less comparison path dropped `--fast-check`,
+  `--progressive`, `--use-uv`, and `--yes`, so the most natural first command
+  executed 100 tasks x 3 runs x 2 variants (roughly $300 at the documented
+  per-task rate) instead of 8 tasks for about $4. All four flags now forward,
+  and both variants run the identical 8-task set.
+- The comparison path now runs the same adapter availability and auth
+  preflight as the tool path (fails in about a second instead of after the
+  first workspace clone) and prompts before large runs with a cost estimate
+  that accounts for both variants.
+- Fast-check defaults to parallel execution at concurrency 4; an explicit
+  `-j` always wins, including `-j 1` to force sequential.
+- Six user-visible suggestion strings carried em-dashes; replaced with plain
+  punctuation.
+
+## 1.5.0 through 1.5.4 (2026-07-08, backfill)
+
+These five releases shipped without changelog entries; recorded here for the
+audit trail.
+
+- **1.5.0**: the harness-tuning release. `awb task from-pr` (mine a private
+  task from a merged GitHub PR, pre-merge SHA pinned, PR test files overlaid),
+  `awb run --tasks-dir`, `awb ab` (paired config A/B with sign test),
+  `awb drift` (regression watch with a stable exit-code contract), `awb cost`
+  (dollars per solved task), `awb gap --prescribe` (CLAUDE.md snippet
+  prescriptions).
+- **1.5.1**: submission schema accepts the v1.4.0 trust columns (`readiness`,
+  `trace_summary`, per-run `trace_grade`); both schema copies patched with a
+  sync guard test.
+- **1.5.2**: `trace_summary: null` (zero graded traces) validates.
+- **1.5.3**: `task from-pr` passed per_page as a `gh api -F` field, silently
+  turning the GET into a POST that GitHub 404s; moved to the query string.
+- **1.5.4**: `awb run --dry-run` no longer pays the adapter auth preflight;
+  previews are instant.
+
 ## 1.4.0 (2026-05-30)
 
-Trust-fix release from a fresh product audit. The headline differentiator —
-deterministic trace grading — was scoring 100 on every run because the runner
+Trust-fix release from a fresh product audit. The headline differentiator,
+deterministic trace grading, was scoring 100 on every run because the runner
 never emitted the spans the rubrics needed. This release makes the grader
 actually grade (validated against a real fast-check run), fixes two silent
 data-loss bugs in the runner, and tightens the storefront.
@@ -174,20 +245,20 @@ Trust and differentiation release: fixes seven trust blockers from the v2 strate
 
 ### Added (P1)
 
-- **`task_set_hash`** — `awb.scoring.integrity.compute_task_set_hash()` walks the bundled tasks directory and returns a deterministic SHA-256 over (path, bytes) pairs. Stamped on every result so leaderboard rows can refuse to compare across mismatched task sets.
-- **OpenTelemetry-aligned trace artifact** — new `awb/trace/` package writes a `<task_id>_<tool>.trace.jsonl` file beside each result. Spans use OTel GenAI conventions (`gen_ai.client.operation`, `gen_ai.tool.use`, `gen_ai.usage.input_tokens`, `gen_ai.tool.name`) plus AWB-specific names for shell commands, file edits, and test runs. The runner wires these via the existing adapter `on_event` callback; collectors can ingest the JSONL with no transform.
-- **`awb trace grade <run_dir>`** — scores each trace.jsonl by four shipping disciplines (read tests before edit, ran verification after change, no out-of-scope edits, no repeated failing-command loop). Each score 0-100.
-- **Production Readiness Score** — `awb.scoring.readiness.compute_readiness_score()` composite over 7 dimensions (correctness 35%, regression-safety 20%, security 15%, review-burden 10%, maintainability 8%, cost 7%, speed 5%). New `--readiness` flag on `awb leaderboard` prints per-tool composites to stdout.
-- **Task provenance fields** — optional `provenance.{source_pr_url, created_at, last_verified_at}`, `contamination_risk` (`low`/`medium`/`high`/`unknown`), and `label` (`real_pr`/`synthetic_overlay`/`mutated`/`fresh`) on the task schema. Backward compatible — all 100 existing tasks validate unchanged.
+- **`task_set_hash`**: `awb.scoring.integrity.compute_task_set_hash()` walks the bundled tasks directory and returns a deterministic SHA-256 over (path, bytes) pairs. Stamped on every result so leaderboard rows can refuse to compare across mismatched task sets.
+- **OpenTelemetry-aligned trace artifact**: new `awb/trace/` package writes a `<task_id>_<tool>.trace.jsonl` file beside each result. Spans use OTel GenAI conventions (`gen_ai.client.operation`, `gen_ai.tool.use`, `gen_ai.usage.input_tokens`, `gen_ai.tool.name`) plus AWB-specific names for shell commands, file edits, and test runs. The runner wires these via the existing adapter `on_event` callback; collectors can ingest the JSONL with no transform.
+- **`awb trace grade <run_dir>`**: scores each trace.jsonl by four shipping disciplines (read tests before edit, ran verification after change, no out-of-scope edits, no repeated failing-command loop). Each score 0-100.
+- **Production Readiness Score**: `awb.scoring.readiness.compute_readiness_score()` composite over 7 dimensions (correctness 35%, regression-safety 20%, security 15%, review-burden 10%, maintainability 8%, cost 7%, speed 5%). New `--readiness` flag on `awb leaderboard` prints per-tool composites to stdout.
+- **Task provenance fields**: optional `provenance.{source_pr_url, created_at, last_verified_at}`, `contamination_risk` (`low`/`medium`/`high`/`unknown`), and `label` (`real_pr`/`synthetic_overlay`/`mutated`/`fresh`) on the task schema. Backward compatible: all 100 existing tasks validate unchanged.
 
 ### Fixed (P0 trust blockers)
 
 - **Token budget fields no longer dropped** during YAML parse. `max_input_tokens` and `max_output_tokens` now flow from the task spec into `TaskConstraints`, enabling the runner's existing budget enforcement.
-- **Workflow descriptor schema enum aligned with adapter registry** — schema now permits all 9 registered adapters (was 4). New guard test asserts the two stay in sync.
-- **Setup cache key is now order-sensitive** — the previous `tuple(sorted(setup_commands))` collided two semantically-different setups; install order can change resolved deps. Extracted `_setup_cache_key()` helper.
-- **Missing security scanner binary surfaces a warning instead of silent clean pass** — `bandit`/`semgrep` not installed used to return clean; now `run_security_scan` marks `all_clean=False` and annotates the output.
+- **Workflow descriptor schema enum aligned with adapter registry**: schema now permits all 9 registered adapters (was 4). New guard test asserts the two stay in sync.
+- **Setup cache key is now order-sensitive**: the previous `tuple(sorted(setup_commands))` collided two semantically-different setups; install order can change resolved deps. Extracted `_setup_cache_key()` helper.
+- **Missing security scanner binary surfaces a warning instead of silent clean pass**: `bandit`/`semgrep` not installed used to return clean; now `run_security_scan` marks `all_clean=False` and annotates the output.
 - **Adapter `on_event` is now properly typed** as `Callable[[dict], bool | None]` with documented event schema (assistant/tool_use/result, with usage shape). Exported `StreamEventCallback` alias.
-- **Gap analysis classifier enriched** — two new categories: `regression_introduced` (when `quality.test_regressions > 0`) and `no_edits_made` (when `metrics.files_modified == 0`), each with their own suggestion rules.
+- **Gap analysis classifier enriched**: two new categories: `regression_introduced` (when `quality.test_regressions > 0`) and `no_edits_made` (when `metrics.files_modified == 0`), each with their own suggestion rules.
 
 ### Changed
 
@@ -218,15 +289,15 @@ No code changes.
 Release-hygiene follow-ups to the v1.1.x release train:
 
 - **Single source of truth for version.** `pyproject.toml` now uses `dynamic = ["version"]` with `[tool.hatch.version] path = "awb/__init__.py"`, so `awb/__init__.py` is the only place the version lives. Fixes the v1.1.0 → v1.1.1 incident where the two files drifted.
-- **`scripts/test_pypi_install.sh`** — release smoke test that installs the just-built wheel in a fresh venv and exercises every CLI command end-to-end (info, tools, validate, quickstart, warmup, run dry-runs, gap, compare, stability, calibrate-*, export, submit, compare-submissions, leaderboard, workflow export/validate/diff, migrate-results). Catches packaging bugs that editable dev installs hide. `scripts/publish.sh` now runs it automatically before `twine upload`.
-- **Leaderboard default output path fix.** `awb leaderboard` previously wrote to `<package_install_dir>/awb/leaderboard/output/` — this broke on read-only installs and polluted site-packages. Now defaults to `./results/leaderboard/` in the current working directory, overridable with `--output-dir`.
+- **`scripts/test_pypi_install.sh`**: release smoke test that installs the just-built wheel in a fresh venv and exercises every CLI command end-to-end (info, tools, validate, quickstart, warmup, run dry-runs, gap, compare, stability, calibrate-*, export, submit, compare-submissions, leaderboard, workflow export/validate/diff, migrate-results). Catches packaging bugs that editable dev installs hide. `scripts/publish.sh` now runs it automatically before `twine upload`.
+- **Leaderboard default output path fix.** `awb leaderboard` previously wrote to `<package_install_dir>/awb/leaderboard/output/`, which broke on read-only installs and polluted site-packages. Now defaults to `./results/leaderboard/` in the current working directory, overridable with `--output-dir`.
 
 ## 1.1.2 (2026-04-07)
 
 Packaging fixes found via exhaustive CLI smoke tests of the fresh PyPI install:
 
 - Include `awb/workflow/schema.json` in the wheel (fixes `awb workflow validate`, `awb workflow diff`, `awb workflow init`)
-- Include `awb/submission/schema.json` in the wheel — copied from `results/submission-schema.json`, loader now prefers the packaged copy and falls back to the repo layout (fixes `awb submit` and `awb compare-submissions` on installed versions)
+- Include `awb/submission/schema.json` in the wheel: copied from `results/submission-schema.json`, loader now prefers the packaged copy and falls back to the repo layout (fixes `awb submit` and `awb compare-submissions` on installed versions)
 - Both bugs were pre-existing in v1.0.x; v1.1.x inherited them. The fix is a hatch include list change plus a loader update.
 
 ## 1.1.1 (2026-04-07)
@@ -238,28 +309,28 @@ Packaging fixes found via exhaustive CLI smoke tests of the fresh PyPI install:
 Performance and token optimization release. Cuts full-run wall clock by 33-50% and enables sub-$5 quick evaluations.
 
 ### Speed
-- **Workspace template cache** (`~/.cache/awb/templates/`) — pip install runs once per unique (repo, commit, setup) combo; subsequent tasks copy the template (~2s vs ~45s). Saves ~55 min on a full run with 74 FastAPI tasks.
-- **`awb warmup`** — pre-build all unique workspace templates before benchmarking
-- **`--use-uv`** flag — rewrite `pip install` to `uv pip install` for 10-30x faster dependency installs
-- **Parallel partial credit evaluation** — independent grep/file checks run concurrently via asyncio.gather; pytest-based criteria still run sequentially (shared venv state)
-- **Adaptive timeout tightening** — runs 2+ use `min(original, 2x run1_actual)` to prevent 900s hangs on tasks that took 45s
+- **Workspace template cache** (`~/.cache/awb/templates/`): pip install runs once per unique (repo, commit, setup) combo; subsequent tasks copy the template (~2s vs ~45s). Saves ~55 min on a full run with 74 FastAPI tasks.
+- **`awb warmup`**: pre-build all unique workspace templates before benchmarking
+- **`--use-uv`** flag: rewrite `pip install` to `uv pip install` for 10-30x faster dependency installs
+- **Parallel partial credit evaluation**: independent grep/file checks run concurrently via asyncio.gather; pytest-based criteria still run sequentially (shared venv state)
+- **Adaptive timeout tightening**: runs 2+ use `min(original, 2x run1_actual)` to prevent 900s hangs on tasks that took 45s
 
 ### Token efficiency
-- **Progressive execution** (`--progressive`) — runs easy tasks first, stops if easy pass rate < 40% or medium pass rate < 20%. Saves 50-80% of tokens on weak tools.
-- **Fast-check mode** (`--fast-check`) — runs 8 representative tasks (1 per category) with 1 run. ~15 min and ~$4 vs ~3 hrs and ~$150 for a full suite. Reports estimated full-suite score with confidence margin.
-- **Token budget enforcement** — new `max_input_tokens` and `max_output_tokens` fields in task constraints. Adapter streams events in real-time and kills the process if budget exceeded.
-- **Streaming token monitor** — Claude Code adapter now parses stream events as they arrive (not post-hoc), enabling live budget checks and future per-iteration analysis.
+- **Progressive execution** (`--progressive`): runs easy tasks first, stops if easy pass rate < 40% or medium pass rate < 20%. Saves 50-80% of tokens on weak tools.
+- **Fast-check mode** (`--fast-check`): runs 8 representative tasks (1 per category) with 1 run. ~15 min and ~$4 vs ~3 hrs and ~$150 for a full suite. Reports estimated full-suite score with confidence margin.
+- **Token budget enforcement**: new `max_input_tokens` and `max_output_tokens` fields in task constraints. Adapter streams events in real-time and kills the process if budget exceeded.
+- **Streaming token monitor**: Claude Code adapter now parses stream events as they arrive (not post-hoc), enabling live budget checks and future per-iteration analysis.
 
 ### Scoring
-- **Richer RunCost** — new fields: `cache_read_tokens`, `cache_creation_tokens`, `thinking_tokens`. Backward compatible (additive).
-- **Token efficiency in composite score** — the `efficiency` dimension now blends 50% iteration count + 50% tokens-per-iteration via a new sigmoid normalizer (optimal=2k tokens/iter, baseline=15k).
+- **Richer RunCost**: new fields: `cache_read_tokens`, `cache_creation_tokens`, `thinking_tokens`. Backward compatible (additive).
+- **Token efficiency in composite score**: the `efficiency` dimension now blends 50% iteration count + 50% tokens-per-iteration via a new sigmoid normalizer (optimal=2k tokens/iter, baseline=15k).
 - **Two new weight profiles**:
-  - `token_efficient` — 25% cost weight, 15% efficiency (up from 2%)
-  - `rate_limited` — 30% cost weight, for evaluating tools under tight API limits
-- **Token-aware gap analysis** — detects cost-per-point outliers (3x median), low cache hit rates (<30%), and cost-inefficient failures.
+  - `token_efficient`: 25% cost weight, 15% efficiency (up from 2%)
+  - `rate_limited`: 30% cost weight, for evaluating tools under tight API limits
+- **Token-aware gap analysis**: detects cost-per-point outliers (3x median), low cache hit rates (<30%), and cost-inefficient failures.
 
 ### Results
-- **JSONL output** — alongside per-file JSON, each run also appends to `{base_run_id}.jsonl` for fast batch loading. Backward compatible.
+- **JSONL output**: alongside per-file JSON, each run also appends to `{base_run_id}.jsonl` for fast batch loading. Backward compatible.
 - **`load_jsonl()`** on ResultRecorder for faster analysis across many tasks.
 
 ### Tests
@@ -288,13 +359,13 @@ Product audit fixes: 27 findings across observability, scoring, reliability, per
 
 ### Scoring
 - Add `SECURITY_METHODOLOGY` to Capability enum (was in schema but missing from code)
-- Fix `normalize_quality` to use signed lint delta — negative deltas (lint improvements) now score correctly
+- Fix `normalize_quality` to use signed lint delta: negative deltas (lint improvements) now score correctly
 - Remove hardcoded `METRIC_WEIGHTS` from config.py; all callers use `load_weight_profile()` from weights.yaml
 - Fix timeout calibrator to allow increasing timeouts when p95 data shows tasks need more time
 - Leaderboard uses per-task `compute_aggregate_score` instead of legacy `compute_composite_score`
 
 ### Reliability
-- Handle `KeyboardInterrupt` gracefully in `awb run` — partial results preserved
+- Handle `KeyboardInterrupt` gracefully in `awb run`: partial results preserved
 - Guard against `load_single()` returning None during resume
 - Fix `find_incomplete_run` to scan all `_runN` directories, not just `_run1`
 - Add 600s timeout to repo setup commands
@@ -302,7 +373,7 @@ Product audit fixes: 27 findings across observability, scoring, reliability, per
 - Move workspace cleanup into `finally` block
 
 ### Performance
-- Add bare-clone cache (`~/.cache/awb/clones/`) — `git clone --mirror` then `git clone --local`
+- Add bare-clone cache (`~/.cache/awb/clones/`): `git clone --mirror` then `git clone --local`
 - Cache `RunEnvironment()` and adapter instance in `BenchmarkRunner.__init__`
 - Add module-level schema cache to `task_loader._load_schema()`
 
@@ -328,7 +399,7 @@ Product audit fixes: 27 findings across observability, scoring, reliability, per
 
 ### Added
 - CLI modularized: `awb/cli.py` (948 lines) split into 9 focused modules in `awb/commands/` (`run.py`, `analyze.py`, `calibrate.py`, `leaderboard_cmd.py`, `migrate.py`, `submit.py`, `validate.py`, `workflow_cmd.py`, `_shared.py`)
-- 4 new adapters: Gemini CLI (`gemini-cli`), Codex CLI (`codex-cli`), Windsurf (stub), Copilot (stub) — joining claude-code-vanilla, claude-code-custom, pi, cursor (stub), aider (stub)
+- 4 new adapters: Gemini CLI (`gemini-cli`), Codex CLI (`codex-cli`), Windsurf (stub), Copilot (stub): joining claude-code-vanilla, claude-code-custom, pi, cursor (stub), aider (stub)
 - `awb migrate-results` command to convert v0.5.x result JSON files to v1.0 format
 - Result format v1.0: all result JSON now includes a `version: "1.0"` field and `config_hash` persisted in workflow metadata
 - 11 capabilities (was 8): added `completeness_tracking`, `convention_adherence`, `context_discovery` alongside the existing 8; `security_methodology` was added in v0.5.0
@@ -349,7 +420,7 @@ New optional methods on `ToolAdapter`: `supports_auth_check()`, `check_auth()`, 
 ## 0.5.5 (2026-03-26)
 
 ### Added
-- Pre-flight auth check before benchmark runs — detects "Not logged in" and exits with clear instructions instead of silently scoring 0
+- Pre-flight auth check before benchmark runs: detects "Not logged in" and exits with clear instructions instead of silently scoring 0
 - Adapter prints claude stderr to console when it fails (visible red error message)
 
 ## 0.5.4 (2026-03-25)
@@ -361,16 +432,16 @@ New optional methods on `ToolAdapter`: `supports_auth_check()`, `check_auth()`, 
 ## 0.5.3 (2026-03-24)
 
 ### Changed
-- Vanilla adapter now uses `--system-prompt` override and `CLAUDE_SKIP_HOOKS=1` for clean isolation — hooks, skills, and auto-memory are disabled while auth remains functional
+- Vanilla adapter now uses `--system-prompt` override and `CLAUDE_SKIP_HOOKS=1` for clean isolation: hooks, skills, and auto-memory are disabled while auth remains functional
 - Workflow task setup reliability: valid repo commits, grep-based verification checks, calibrated difficulty
 
 ## 0.5.0 (2026-03-24)
 
 ### Added
 - New **workflow** task category (30 tasks: WF-001 to WF-030) testing completeness tracking, convention discovery, security methodology, context utilization, async safety, dead code removal, config extraction, test-driven implementation, structured debugging, and more
-- `workspace_claude_md` field in task schema — injects project-level CLAUDE.md into workspaces for tasks that test context discovery
+- `workspace_claude_md` field in task schema: injects project-level CLAUDE.md into workspaces for tasks that test context discovery
 - New capabilities: `completeness_tracking`, `convention_adherence`, `context_discovery`, `security_methodology`
-- Benchmark grows from 80 to 100 tasks — workflow category is 30% of total score
+- Benchmark grows from 80 to 100 tasks: workflow category is 30% of total score
 
 ### Changed
 - Removed 10 zero-signal tasks that never passed or had extreme variance
@@ -403,10 +474,10 @@ New optional methods on `ToolAdapter`: `supports_auth_check()`, `check_auth()`, 
 ### Added
 - 20 new real-world engineering tasks (80 total): test-first diagnosis, review-only analysis, performance profiling, regression bisection, ambiguous requirements, Dockerfile writing, documentation generation, TypeScript typing, merge conflict resolution, dependency migration, large codebase navigation, CI/CD config fixing
 - Workflow Lift Score: primary benchmark output measuring custom vs vanilla difference with statistical significance, broken down by capability
-- Coding-performance hooks now fire in benchmark mode (frustration-detector, stop-continuation, file-count-escalation) — these ARE the workflow being measured
+- Coding-performance hooks now fire in benchmark mode (frustration-detector, stop-continuation, file-count-escalation): these ARE the workflow being measured
 
 ### Changed
-- Benchmark no longer disables workflow hooks — custom adapter runs with full coding-performance automation while vanilla runs with none, producing a true workflow contribution measurement
+- Benchmark no longer disables workflow hooks: custom adapter runs with full coding-performance automation while vanilla runs with none, producing a true workflow contribution measurement
 - CLAUDE.md execution discipline rules moved to top of file for maximum attention
 
 ### Fixed
@@ -417,7 +488,7 @@ New optional methods on `ToolAdapter`: `supports_auth_check()`, `check_auth()`, 
 ### Added
 
 - 60-task benchmark suite across 7 categories: bug-fix, feature-addition, refactoring, code-review, debugging, multi-file, legacy-code
-- Sigmoid normalization with per-task baselines — scores never go negative, smooth gradient above baseline
+- Sigmoid normalization with per-task baselines: scores never go negative, smooth gradient above baseline
 - Capability profiles: 8-dimension radar chart covering code comprehension, bug diagnosis, multi-file reasoning, framework knowledge, test writing, refactoring discipline, security awareness, and cost discipline
 - Gap analysis engine with failure classification (timeout / test_error / partial_completion / code_error), systematic pattern detection, and ranked improvement suggestions
 - Statistical framework: t-distribution confidence intervals, sign test significance testing, integrity checks (contamination detection, variance anomalies)
@@ -431,7 +502,7 @@ New optional methods on `ToolAdapter`: `supports_auth_check()`, `check_auth()`, 
 ### Changed
 
 - Scoring: merged `success_rate` and `partial_credit` into a single `correctness` dimension weighted at 55%
-- Normalization: sigmoid curve replaces linear — cost above baseline no longer collapses score to 0
+- Normalization: sigmoid curve replaces linear: cost above baseline no longer collapses score to 0
 - Per-task baselines derived from task difficulty instead of global constants
 - Difficulty-weighted aggregation: hard=2.5×, medium=1.5×, easy=1.0×
 

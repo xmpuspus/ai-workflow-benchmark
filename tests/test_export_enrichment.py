@@ -9,6 +9,8 @@ readiness block, so a regenerated baseline showcases them.
 
 from __future__ import annotations
 
+import pytest
+
 from awb.commands.submit import build_submission
 from awb.core.config import (
     RunCost,
@@ -68,3 +70,63 @@ def test_run_trace_grade_is_null_when_no_spans(tmp_path):
     results = [_result("BF-001", success=True, trace_path="missing.trace.jsonl")]
     sub = build_submission(results, run_dir=tmp_path, task_defs={}, submitter="me")
     assert sub["results"][0]["runs"][0]["trace_grade"] is None
+
+
+def test_trace_summary_averages_all_six_rubrics_when_gradeable():
+    from awb.commands.submit import _mean_trace_summary
+
+    grades = [
+        {
+            "read_tests_before_edit": 100,
+            "ran_verification_after_change": 100,
+            "no_out_of_scope_edits": 100,
+            "no_repeated_failing_command_loop": 100,
+            "context_discipline": 80,
+            "tool_call_efficiency": 60,
+        },
+        {
+            "read_tests_before_edit": 0,
+            "ran_verification_after_change": 0,
+            "no_out_of_scope_edits": 0,
+            "no_repeated_failing_command_loop": 0,
+            "context_discipline": 100,
+            "tool_call_efficiency": 100,
+        },
+    ]
+    summary = _mean_trace_summary(grades)
+    assert set(summary.keys()) == {
+        "read_tests_before_edit",
+        "ran_verification_after_change",
+        "no_out_of_scope_edits",
+        "no_repeated_failing_command_loop",
+        "context_discipline",
+        "tool_call_efficiency",
+    }
+    assert summary["context_discipline"] == pytest.approx(90.0)
+    assert summary["tool_call_efficiency"] == pytest.approx(80.0)
+
+
+def test_trace_summary_averages_new_rubric_only_over_runs_that_reported_it():
+    """context_discipline/tool_call_efficiency are omitted per-run when not
+    gradeable - the mean must not treat a missing key as zero."""
+    from awb.commands.submit import _mean_trace_summary
+
+    grades = [
+        {
+            "read_tests_before_edit": 100,
+            "ran_verification_after_change": 100,
+            "no_out_of_scope_edits": 100,
+            "no_repeated_failing_command_loop": 100,
+            "context_discipline": 40,
+        },
+        {
+            "read_tests_before_edit": 0,
+            "ran_verification_after_change": 0,
+            "no_out_of_scope_edits": 0,
+            "no_repeated_failing_command_loop": 0,
+            # no context_discipline for this run - not gradeable
+        },
+    ]
+    summary = _mean_trace_summary(grades)
+    assert summary["context_discipline"] == pytest.approx(40.0)
+    assert "tool_call_efficiency" not in summary

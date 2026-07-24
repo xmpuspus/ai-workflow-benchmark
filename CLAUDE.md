@@ -81,7 +81,16 @@ CLI commands:
 - `awb ab <tool> --config-a <dir> --config-b <dir>` - same adapter, two config dirs (CLAUDE_CONFIG_DIR for claude-code-custom), paired sign test via `compare_tools_paired`. Adapters opt in with `supports_config_dir = True`.
 - `awb drift <run_dir> --baseline <ref>` - reference is a run dir or an awb/v2 baseline JSON. Exit code contract: 1 on drift beyond `--threshold` (default 5.0), 0 otherwise; keep that stable, cron/CI depends on it.
 - `awb cost <run_dirs>...` - cost per solved task; divides total spend (failed attempts included) by solves. `cost_per_solved` is None when nothing solved, never a division crash.
-- `awb gap <run_dir> --prescribe` - appends prescriptions from `awb/analysis/prescriptions.py`; a rubric fires at score < 60 on 2+ tasks. Without the flag, gap output must stay byte-identical.
+- `awb gap <run_dir> --prescribe` - appends prescriptions from `awb/analysis/prescriptions.py`; a rubric fires at score < 60 on 2+ tasks. `--prescribe` is purely additive: it appends the Prescriptions section and changes nothing above it. (Since v1.6 the default gap output opens with a one-line verdict; the pre-v1.6 "byte-identical without the flag" phrasing is superseded by that.)
+
+## Checkup Commands (added v1.6)
+
+- `awb checkup` - stage 0 (free, instant): structural checks + promise extraction from CLAUDE.md/AGENTS.md/settings.json via `awb/harness/`; stage 1: the 8-task fast-check probe, parallel, graded on 6 trace rubrics; report = verdict line, pillar scores, rule-integrity table (HELD/BROKEN/ENFORCED/UNTESTED), ranked fixes. `--static-only` skips the probe; `--paired` adds the vanilla arm + Workflow Lift.
+- Exit-code contract (documented in `awb/commands/_shared.py`, applies to checkup/drift/ab and future gating commands): 0 clean, 1 real findings past threshold, 2 tool failure (bad input path, adapter/auth crash). Keep stable, CI depends on it.
+- Rule-integrity verdicts are deliberately conservative: weak signal resolves to UNTESTED, never HELD/BROKEN (a wrong verdict costs user trust; see `awb/harness/integrity.py`).
+- Promise extraction is precision-over-recall: unmatched imperative lines land in `unparsed_rules` and are surfaced as "not checkable yet", never silently dropped. New rule patterns go into the fixed taxonomy in `awb/harness/promises.py` with positive and negative tests.
+- `results/.last_run` is written by `awb run`/`awb checkup`; `gap`, `cost`, `drift`, and `trace grade` fall back to it when the run-dir argument is omitted.
+- Any user-file-derived string (rule text, hook commands, evidence) printed through Rich must pass `rich.markup.escape()` at the interpolation site; raw CLAUDE.md content contains bracket tags (`[PASS]`, `[/x]`) that otherwise crash or spoof the renderer.
 
 ## Adding an Adapter
 

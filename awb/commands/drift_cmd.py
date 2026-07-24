@@ -18,12 +18,13 @@ from awb.commands._shared import (
     console,
     emit_json,
     headline_panel,
+    resolve_run_dir_or_exit,
     score_style,
 )
 
 
 @click.command()
-@click.argument("run_dir", type=click.Path(exists=True))
+@click.argument("run_dir", required=False, type=click.Path())
 @click.option(
     "--baseline",
     "baseline_path",
@@ -45,15 +46,33 @@ from awb.commands._shared import (
     default="text",
     help="Output format. 'json' emits the DriftReport as a JSON document on stdout.",
 )
-def drift(run_dir: str, baseline_path: str, threshold: float, fmt: str):
+def drift(run_dir: str | None, baseline_path: str, threshold: float, fmt: str):
     """Compare a fresh run against a reference and flag regressions.
 
+    RUN_DIR defaults to the most recently saved run (see --last-run plumbing
+    in _shared.py) when omitted, or when passed the literal "last".
+
     Exit code contract: exits 1 when the composite has drifted past --threshold
-    (in both --format text and --format json), exits 0 otherwise. Intended for
-    cron/CI regression watch - models and harnesses update silently.
+    (in both --format text and --format json), exits 2 when run_dir is omitted
+    and no run has been saved, or when an explicit run_dir doesn't exist,
+    exits 0 otherwise. Intended for cron/CI regression watch - models and
+    harnesses update silently.
     """
-    current = load_reference(run_dir)
-    reference = load_reference(baseline_path)
+    resolved = resolve_run_dir_or_exit(run_dir, fmt)
+    if (run_dir is None or run_dir == "last") and fmt == "text":
+        console.print(f"[{MUTED}]using last run: {resolved}[/{MUTED}]")
+
+    try:
+        current = load_reference(resolved)
+        reference = load_reference(baseline_path)
+    except (json.JSONDecodeError, ValueError, OSError) as exc:
+        # A run_dir that is actually a stray file, or a corrupt baseline JSON,
+        # is a tool-failure input, not a drift verdict: exit 2 per the contract.
+        if fmt == "json":
+            click.echo(json.dumps({"error": f"could not load reference: {exc}"}))
+        else:
+            console.print(f"[{BAD}]Could not load reference: {exc}[/{BAD}]")
+        sys.exit(2)
 
     if not current.per_task or not reference.per_task:
         # Keep json-mode stdout a single parseable document even on the

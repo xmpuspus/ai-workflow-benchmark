@@ -123,6 +123,9 @@ if [ -d "$SAMPLE_RUN_SRC" ]; then
         check "awb compare-submissions" \
             awb compare-submissions export.json export2.json
         check "awb leaderboard" awb leaderboard
+        check "awb cost" awb cost "results/runs/${BASE}_run1"
+        check "awb drift (self-baseline, exit 0)" \
+            awb drift "results/runs/${BASE}_run1" --baseline "results/runs/${BASE}_run1"
     else
         echo "  [SKIP] no sample runs in $SAMPLE_RUN_SRC"
     fi
@@ -138,6 +141,25 @@ check "awb workflow export" \
 check "awb workflow validate" awb workflow validate wf.yaml
 cp wf.yaml wf2.yaml
 check "awb workflow diff" awb workflow diff wf.yaml wf2.yaml
+
+echo
+echo "--- Harness tuning (v1.5) ---"
+check "awb ab --help" awb ab --help
+check "awb drift --help" awb drift --help
+check "awb cost --help" awb cost --help
+check "awb task --help" awb task --help
+check "awb trace --help" awb trace --help
+
+echo
+echo "--- Checkup (v1.6) ---"
+check "awb checkup --help" awb checkup --help
+mkdir -p fake-config
+printf -- "- Run tests before declaring done\n- Never edit files outside the task scope\n" \
+    > fake-config/CLAUDE.md
+check "awb checkup --static-only" \
+    awb checkup --static-only --config-dir fake-config --repo-dir .
+check "awb checkup --static-only --format json" \
+    awb checkup --static-only --config-dir fake-config --repo-dir . --format json
 
 echo
 echo "--- Migrate ---"
