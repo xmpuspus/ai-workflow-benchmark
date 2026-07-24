@@ -39,11 +39,11 @@ SUGGESTION_RULES: dict[tuple[str, str], list[str]] = {
         "Consider configuring max iteration limits to force early convergence",
     ],
     ("timeout", "framework_knowledge"): [
-        "Tool timed out — likely exploring unfamiliar API surface",
+        "Tool timed out, likely exploring unfamiliar API surface",
         "Add framework documentation references to tool context",
     ],
     ("timeout", "bug_diagnosis"): [
-        "Tool timed out while debugging — may be exploring wrong hypotheses",
+        "Tool timed out while debugging, may be exploring wrong hypotheses",
         "Add structured debugging methodology to workflow configuration",
     ],
     ("test_error", "test_writing"): [
@@ -69,16 +69,16 @@ SUGGESTION_RULES: dict[tuple[str, str], list[str]] = {
         "Configure the tool to halt and re-plan when a previously passing test fails",
     ],
     ("regression_introduced", "test_writing"): [
-        "Pre-existing tests regressed — likely an unsafe change to shared code paths",
+        "Pre-existing tests regressed, likely an unsafe change to shared code paths",
         "Add a pre-edit step that captures the baseline test set, then diffs after",
     ],
     ("no_edits_made", "code_comprehension"): [
-        "Tool produced zero file changes — likely got stuck exploring",
+        "Tool produced zero file changes, likely got stuck exploring",
         "Reduce ambiguity in the prompt or add explicit pointers to files_to_examine",
         "Lower max_iterations so the tool commits to a change instead of looping on Read",
     ],
     ("no_edits_made", "context_discovery"): [
-        "Tool finished without writing any files — search/discovery overran the budget",
+        "Tool finished without writing any files, search/discovery overran the budget",
         "Provide a more directed entry point or seed file in the workflow descriptor",
     ],
 }

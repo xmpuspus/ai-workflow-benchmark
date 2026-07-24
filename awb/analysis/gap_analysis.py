@@ -172,7 +172,7 @@ def detect_patterns(
                 patterns.append(
                     f"Task {task_id}: ${cost:.2f} for {score_pct:.0f}% "
                     f"(${cpp:.3f}/point, {cpp / median_cpp:.1f}x median). "
-                    f"Token-inefficient — investigate tool's exploration strategy."
+                    f"Token-inefficient. Investigate tool's exploration strategy."
                 )
 
     # Pattern: poor cache efficiency (if data available)
