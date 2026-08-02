@@ -684,7 +684,12 @@ See [CHANGELOG.md](CHANGELOG.md) for the full history (v1.0.0, v0.5.x, v0.4.x, v
 
 ## Citing AWB
 
-If you use AWB in research, cite it via Zenodo. The concept DOI [`10.5281/zenodo.20361437`](https://doi.org/10.5281/zenodo.20361437) always resolves to the latest release; each release also mints a version-specific DOI listed on the Zenodo record. Machine-readable metadata lives in [CITATION.cff](CITATION.cff) and [codemeta.json](codemeta.json); release process is in [docs/zenodo-doi.md](docs/zenodo-doi.md).
+If you use AWB in research, cite it via Zenodo. The v1.7.0 archive has DOI
+[`10.5281/zenodo.21753418`](https://doi.org/10.5281/zenodo.21753418). The concept
+DOI [`10.5281/zenodo.20361437`](https://doi.org/10.5281/zenodo.20361437) always
+resolves to the latest release. Machine-readable metadata lives in
+[CITATION.cff](CITATION.cff) and [codemeta.json](codemeta.json); the release
+process is in [docs/zenodo-doi.md](docs/zenodo-doi.md).
 
 ```bibtex
 @software{puspus_awb_2026,
@@ -694,8 +699,8 @@ If you use AWB in research, cite it via Zenodo. The concept DOI [`10.5281/zenodo
   year      = {2026},
   month     = aug,
   publisher = {Zenodo},
-  doi       = {10.5281/zenodo.20361437},
-  url       = {https://doi.org/10.5281/zenodo.20361437}
+  doi       = {10.5281/zenodo.21753418},
+  url       = {https://doi.org/10.5281/zenodo.21753418}
 }
 ```
 

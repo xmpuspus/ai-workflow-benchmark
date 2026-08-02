@@ -10,6 +10,9 @@ identifiers:
   - type: doi
     value: "10.5281/zenodo.20361437"
     description: "Concept DOI (always resolves to latest release)"
+  - type: doi
+    value: "10.5281/zenodo.21753418"
+    description: "Version DOI (v1.7.0)"
 repository-code: "https://github.com/xmpuspus/ai-workflow-benchmark"
 url: "https://github.com/xmpuspus/ai-workflow-benchmark"
 abstract: >
