@@ -47,6 +47,50 @@ def test_init_use_uv_defaults_false(tmp_path):
     assert mgr.use_uv is False
 
 
+def test_diff_metrics_include_tracked_staged_and_untracked_files(manager, tmp_path):
+    import subprocess
+
+    workspace = tmp_path / "repo"
+    workspace.mkdir()
+    subprocess.run(["git", "init", "-q"], cwd=workspace, check=True)
+    subprocess.run(["git", "config", "user.email", "test@example.com"], cwd=workspace, check=True)
+    subprocess.run(["git", "config", "user.name", "Test User"], cwd=workspace, check=True)
+
+    tracked = workspace / "tracked.txt"
+    tracked.write_text("one\ntwo\n")
+    subprocess.run(["git", "add", "tracked.txt"], cwd=workspace, check=True)
+    subprocess.run(["git", "commit", "-qm", "initial"], cwd=workspace, check=True)
+
+    tracked.write_text("one\ntwo changed\nthree\n")
+    subprocess.run(["git", "add", "tracked.txt"], cwd=workspace, check=True)
+    (workspace / "new.txt").write_text("alpha\nbeta\n")
+
+    assert manager.get_modified_files(workspace) == ["new.txt", "tracked.txt"]
+    assert manager.get_lines_changed(workspace) == 5
+
+
+def test_change_snapshot_excludes_setup_artifacts(manager, tmp_path):
+    import subprocess
+
+    workspace = tmp_path / "repo-snapshot"
+    workspace.mkdir()
+    subprocess.run(["git", "init", "-q"], cwd=workspace, check=True)
+    subprocess.run(["git", "config", "user.email", "test@example.com"], cwd=workspace, check=True)
+    subprocess.run(["git", "config", "user.name", "Test User"], cwd=workspace, check=True)
+    (workspace / "tracked.txt").write_text("original\n")
+    subprocess.run(["git", "add", "tracked.txt"], cwd=workspace, check=True)
+    subprocess.run(["git", "commit", "-qm", "initial"], cwd=workspace, check=True)
+
+    (workspace / "AGENTS.override.md").write_text("setup instructions\n")
+    baseline = manager.capture_change_snapshot(workspace)
+
+    (workspace / "tracked.txt").write_text("changed\n")
+    (workspace / "new.txt").write_text("one\ntwo\n")
+
+    assert manager.get_modified_files_since(workspace, baseline) == ["new.txt", "tracked.txt"]
+    assert manager.get_lines_changed_since(workspace, baseline) == 4
+
+
 # ---------------------------------------------------------------------------
 # Template key derivation
 # ---------------------------------------------------------------------------
@@ -130,6 +174,7 @@ async def test_prepare_uses_template_on_cache_hit(manager, task, tmp_path):
 
     # Cleanup
     import shutil
+
     shutil.rmtree(template_path)
 
 
@@ -157,6 +202,7 @@ async def test_prepare_fast_path_does_not_run_setup_commands(manager, task, tmp_
         mock_shell.assert_not_called()
 
     import shutil
+
     shutil.rmtree(template_path)
 
 
@@ -173,6 +219,7 @@ async def test_prepare_slow_path_creates_template(manager, task, tmp_path):
     # Ensure no stale template
     if template_path.exists():
         import shutil
+
         shutil.rmtree(template_path)
 
     git_responses = {
@@ -195,14 +242,16 @@ async def test_prepare_slow_path_creates_template(manager, task, tmp_path):
     mock_proc.communicate = AsyncMock(return_value=(b"", b""))
     mock_proc.kill = MagicMock()
 
-    with patch("asyncio.create_subprocess_shell", return_value=mock_proc), patch(
-        "asyncio.wait_for", return_value=(b"", b"")
+    with (
+        patch("asyncio.create_subprocess_shell", return_value=mock_proc),
+        patch("asyncio.wait_for", return_value=(b"", b"")),
     ):
         await manager.prepare(task)
 
     assert (template_path / ".ready").exists()
 
     import shutil
+
     shutil.rmtree(template_path)
 
 
@@ -221,6 +270,7 @@ async def test_prepare_replaces_pip_install_with_uv(tmp_path, task):
     template_path = _TEMPLATE_DIR / template_key
     if template_path.exists():
         import shutil
+
         shutil.rmtree(template_path)
 
     async def fake_run(*args, cwd=None):
@@ -238,8 +288,9 @@ async def test_prepare_replaces_pip_install_with_uv(tmp_path, task):
         mock_proc.kill = MagicMock()
         return mock_proc
 
-    with patch("asyncio.create_subprocess_shell", side_effect=fake_create_subprocess_shell), patch(
-        "asyncio.wait_for", return_value=(b"", b"")
+    with (
+        patch("asyncio.create_subprocess_shell", side_effect=fake_create_subprocess_shell),
+        patch("asyncio.wait_for", return_value=(b"", b"")),
     ):
         await manager.prepare(task)
 
@@ -247,6 +298,7 @@ async def test_prepare_replaces_pip_install_with_uv(tmp_path, task):
     assert not any(cmd.startswith("pip install") for cmd in captured_cmds)
 
     import shutil
+
     if template_path.exists():
         shutil.rmtree(template_path)
 
@@ -260,6 +312,7 @@ async def test_prepare_does_not_replace_pip_when_use_uv_false(tmp_path, task):
     template_path = _TEMPLATE_DIR / template_key
     if template_path.exists():
         import shutil
+
         shutil.rmtree(template_path)
 
     async def fake_run(*args, cwd=None):
@@ -277,8 +330,9 @@ async def test_prepare_does_not_replace_pip_when_use_uv_false(tmp_path, task):
         mock_proc.kill = MagicMock()
         return mock_proc
 
-    with patch("asyncio.create_subprocess_shell", side_effect=fake_create_subprocess_shell), patch(
-        "asyncio.wait_for", return_value=(b"", b"")
+    with (
+        patch("asyncio.create_subprocess_shell", side_effect=fake_create_subprocess_shell),
+        patch("asyncio.wait_for", return_value=(b"", b"")),
     ):
         await manager.prepare(task)
 
@@ -286,6 +340,7 @@ async def test_prepare_does_not_replace_pip_when_use_uv_false(tmp_path, task):
     assert not any("uv pip install" in cmd for cmd in captured_cmds)
 
     import shutil
+
     if template_path.exists():
         shutil.rmtree(template_path)
 
@@ -334,9 +389,7 @@ async def test_cleanup_does_not_remove_templates(manager, tmp_path):
     sentinel.rmdir()
 
 
-# ---------------------------------------------------------------------------
 # workspace_claude_md applied on both fast and slow paths
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.asyncio
@@ -356,6 +409,33 @@ async def test_workspace_claude_md_written_on_fast_path(manager, task, tmp_path)
     workspace = await manager.prepare(task)
 
     assert (workspace / ".claude" / "CLAUDE.md").read_text() == "# Test instructions"
+    assert (workspace / "AGENTS.override.md").read_text() == "# Test instructions"
 
     import shutil
+
+    shutil.rmtree(template_path)
+
+
+@pytest.mark.asyncio
+async def test_workspace_instructions_preserve_existing_agents_file(manager, task, tmp_path):
+    task.workspace_claude_md = "# Task-specific instructions"
+
+    template_key = _template_key_for(task)
+    template_path = _TEMPLATE_DIR / template_key
+    template_path.mkdir(parents=True, exist_ok=True)
+    (template_path / ".ready").touch()
+    (template_path / "AGENTS.md").write_text("# Repository instructions\n")
+
+    async def fake_run(*args, cwd=None):
+        return 0, "", ""
+
+    manager._run = fake_run
+    workspace = await manager.prepare(task)
+
+    combined = (workspace / "AGENTS.override.md").read_text()
+    assert "# Repository instructions" in combined
+    assert "# Task-specific instructions" in combined
+
+    import shutil
+
     shutil.rmtree(template_path)

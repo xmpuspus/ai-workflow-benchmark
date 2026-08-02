@@ -2,7 +2,7 @@
 
 `awb checkup` is the harness-design instrument (design doc:
 docs/superpowers/plans/2026-07-23-awb-v16-harness-design-score.md). Stage 0
-parses the harness's own CLAUDE.md/settings.json for testable promises
+parses the harness's instruction and hook files for testable promises
 (verification gates, scope rules, ...) for free and instantly. Stage 1 runs a
 small probe of real tasks and proves which of those promises actually held.
 Exit code contract is documented once in awb/commands/_shared.py's module
@@ -38,6 +38,8 @@ from awb.commands._shared import (
 
 TOOL = "claude-code-custom"
 VANILLA_TOOL = "claude-code-vanilla"
+CODEX_TOOL = "codex-cli"
+CHECKUP_TOOLS = (TOOL, CODEX_TOOL)
 
 # The published task-set size, for the "n/100 tasks" honesty line in the
 # report header (awb validate / CLAUDE.md: 100 tasks across 8 categories).
@@ -160,25 +162,42 @@ def _preflight(adapter, label: str) -> str | None:
     return None
 
 
-def _build_and_preflight_adapters(config_dir: Path, paired: bool):
+def _baseline_tool(tool: str) -> str:
+    return VANILLA_TOOL if tool == TOOL else f"{tool}-baseline"
+
+
+def _build_and_preflight_adapters(
+    config_dir: Path,
+    paired: bool,
+    tool: str = TOOL,
+    baseline_config_dir: Path | None = None,
+):
     from awb.adapters.registry import get_adapter
 
     try:
-        base = get_adapter(TOOL)
+        base = get_adapter(tool)
     except ValueError as exc:
         raise _ToolFailureError(str(exc)) from exc
     custom_adapter = type(base)(config_dir=config_dir)
-    err = _preflight(custom_adapter, TOOL)
+    err = _preflight(custom_adapter, tool)
     if err:
         raise _ToolFailureError(err)
 
     vanilla_adapter = None
     if paired:
-        try:
-            vanilla_adapter = get_adapter(VANILLA_TOOL)
-        except ValueError as exc:
-            raise _ToolFailureError(str(exc)) from exc
-        err = _preflight(vanilla_adapter, VANILLA_TOOL)
+        if tool == TOOL:
+            try:
+                vanilla_adapter = get_adapter(VANILLA_TOOL)
+            except ValueError as exc:
+                raise _ToolFailureError(str(exc)) from exc
+        else:
+            if baseline_config_dir is None:
+                raise _ToolFailureError(
+                    "Codex paired checkup needs --baseline-config-dir pointing to a separate "
+                    "authenticated CODEX_HOME."
+                )
+            vanilla_adapter = type(base)(config_dir=baseline_config_dir)
+        err = _preflight(vanilla_adapter, _baseline_tool(tool))
         if err:
             raise _ToolFailureError(err)
     return custom_adapter, vanilla_adapter
@@ -463,6 +482,13 @@ def _render_stage1_text(
 
 @click.command()
 @click.option(
+    "--tool",
+    type=click.Choice(CHECKUP_TOOLS),
+    default=TOOL,
+    show_default=True,
+    help="Configured coding harness to inspect and probe.",
+)
+@click.option(
     "--static-only", is_flag=True, help="Stage 0 only: promise extraction, zero spend, CI-safe."
 )
 @click.option("--paired", is_flag=True, help="Also run the vanilla arm and report Workflow Lift.")
@@ -470,7 +496,13 @@ def _render_stage1_text(
     "--config-dir",
     type=click.Path(file_okay=False),
     default=None,
-    help="Harness config dir to inspect and run with (default: ~/.claude).",
+    help="Harness config dir to inspect and run with (default: ~/.claude or ~/.codex).",
+)
+@click.option(
+    "--baseline-config-dir",
+    type=click.Path(exists=True, file_okay=False),
+    default=None,
+    help="Separate authenticated CODEX_HOME for a paired Codex baseline run.",
 )
 @click.option(
     "--repo-dir",
@@ -504,9 +536,11 @@ def _render_stage1_text(
     "edits re-measure for free against recorded traces.",
 )
 def checkup(
+    tool: str,
     static_only: bool,
     paired: bool,
     config_dir: str | None,
+    baseline_config_dir: str | None,
     repo_dir: str | None,
     tasks_dir: str | None,
     concurrency: int,
@@ -514,7 +548,7 @@ def checkup(
     yes: bool,
     from_run: str | None,
 ):
-    """Grade a Claude Code harness: promise extraction plus a small probe of real tasks.
+    """Grade a coding-agent harness with static checks and a small real-task probe.
 
     Exit code contract (see awb/commands/_shared.py): 0 clean, 1 a real
     finding (BROKEN rule, structural error, or a measured pillar below 50),
@@ -525,7 +559,17 @@ def checkup(
             "--from-run re-grades a saved run; it cannot combine with --static-only or --paired"
         )
 
-    config_dir_path = Path(config_dir) if config_dir else Path.home() / ".claude"
+    if baseline_config_dir and (not paired or tool != CODEX_TOOL):
+        raise click.UsageError("--baseline-config-dir is only valid with --tool codex-cli --paired")
+    if paired and tool == CODEX_TOOL and not baseline_config_dir:
+        raise click.UsageError(
+            "--tool codex-cli --paired requires --baseline-config-dir for a separate "
+            "authenticated CODEX_HOME"
+        )
+
+    default_config_name = ".codex" if tool == CODEX_TOOL else ".claude"
+    config_dir_path = Path(config_dir) if config_dir else Path.home() / default_config_name
+    baseline_config_dir_path = Path(baseline_config_dir) if baseline_config_dir else None
     repo_dir_path = Path(repo_dir) if repo_dir else Path.cwd()
 
     from awb.harness.promises import extract_promises
@@ -535,7 +579,7 @@ def checkup(
 
     if static_only:
         if fmt == "json":
-            emit_json({"stage": "static-only", "inventory": inventory})
+            emit_json({"stage": "static-only", "tool": tool, "inventory": inventory})
         else:
             _render_stage0_text(inventory)
         sys.exit(1 if structural_error else 0)
@@ -583,7 +627,7 @@ def checkup(
         if not yes:
             est_low, est_high = n_probe * 0.25, n_probe * 0.5
             console.print(
-                f"\nAbout to run {n_probe} real task execution(s) via [bold]{TOOL}[/bold]"
+                f"\nAbout to run {n_probe} real task execution(s) via [bold]{tool}[/bold]"
                 f" (est. ~${est_low:.0f}-${est_high:.0f})"
             )
             if not click.confirm("Proceed?", default=True):
@@ -591,7 +635,12 @@ def checkup(
                 sys.exit(0)
 
         try:
-            custom_adapter, vanilla_adapter = _build_and_preflight_adapters(config_dir_path, paired)
+            custom_adapter, vanilla_adapter = _build_and_preflight_adapters(
+                config_dir_path,
+                paired,
+                tool=tool,
+                baseline_config_dir=baseline_config_dir_path,
+            )
         except _ToolFailureError as exc:
             console.print(f"[{BAD}]{exc}[/{BAD}]")
             sys.exit(2)
@@ -600,7 +649,7 @@ def checkup(
             sys.exit(2)
 
         custom_results, custom_run_dir = _run_probe(
-            TOOL, custom_adapter, tasks, tasks_dir_path, concurrency
+            tool, custom_adapter, tasks, tasks_dir_path, concurrency
         )
         save_last_run(custom_run_dir)
 
@@ -609,7 +658,7 @@ def checkup(
 
         if paired:
             vanilla_results, _vanilla_run_dir = _run_probe(
-                VANILLA_TOOL, vanilla_adapter, tasks, tasks_dir_path, concurrency
+                _baseline_tool(tool), vanilla_adapter, tasks, tasks_dir_path, concurrency
             )
             from awb.scoring.workflow_lift import compute_workflow_lift
 
@@ -634,7 +683,7 @@ def checkup(
     if fmt == "json":
         emit_json(
             {
-                "tool": TOOL,
+                "tool": tool,
                 "n_tasks": n_tasks,
                 "inventory": inventory,
                 "pillars": pillars,
@@ -649,6 +698,6 @@ def checkup(
         sys.exit(exit_code)
 
     _render_stage1_text(
-        TOOL, n_tasks, pillars, rule_stats, verdicts, lift_report, top_fixes, verdict_line
+        tool, n_tasks, pillars, rule_stats, verdicts, lift_report, top_fixes, verdict_line
     )
     sys.exit(exit_code)

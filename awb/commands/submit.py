@@ -112,6 +112,11 @@ def build_submission(results: list, run_dir: Path, task_defs: dict, submitter: s
                         "input_tokens": r.cost.input_tokens,
                         "output_tokens": r.cost.output_tokens,
                         "estimated_cost_usd": r.cost.estimated_cost_usd,
+                        **(
+                            {"estimated_credits": r.cost.estimated_credits}
+                            if r.cost.estimated_credits is not None
+                            else {}
+                        ),
                     },
                     "quality": {
                         "lint_delta": r.quality.lint_delta,

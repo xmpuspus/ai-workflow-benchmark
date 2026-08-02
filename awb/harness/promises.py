@@ -234,8 +234,10 @@ def _find_line(raw_text: str, needle: str) -> int:
     return raw_text.count("\n", 0, idx) + 1
 
 
-def _extract_from_hooks(config_dir: Path) -> tuple[list[HarnessPromise], list[str], bool]:
-    settings_path = config_dir / "settings.json"
+def _extract_from_hooks(
+    config_dir: Path, filename: str = "settings.json"
+) -> tuple[list[HarnessPromise], list[str], bool]:
+    settings_path = config_dir / filename
     if not settings_path.exists():
         return [], [], False
 
@@ -284,7 +286,7 @@ def _extract_from_hooks(config_dir: Path) -> tuple[list[HarnessPromise], list[st
                             text=command,
                             pattern=key,
                             enforcement="hook",
-                            source="config/settings.json",
+                            source=f"config/{filename}",
                             line=_find_line(raw_text, command),
                         )
                     )
@@ -296,7 +298,7 @@ def _extract_from_hooks(config_dir: Path) -> tuple[list[HarnessPromise], list[st
 
 
 def extract_promises(config_dir: Path | None, repo_dir: Path | None) -> HarnessInventory:
-    """Scan config_dir's CLAUDE.md/settings.json and repo_dir's CLAUDE.md/AGENTS.md.
+    """Scan Claude Code and Codex instruction and hook files.
 
     Either argument may be None (e.g. a repo with no `~/.claude` override, or
     a bare config check with no repo checked out yet). Structural issues are
@@ -308,26 +310,42 @@ def extract_promises(config_dir: Path | None, repo_dir: Path | None) -> HarnessI
     decode_issues: list[StructuralIssue] = []
 
     if config_dir is not None:
-        claude_md = config_dir / "CLAUDE.md"
-        if claude_md.exists():
-            files_scanned.append("config/CLAUDE.md")
-            p, u, bad_utf8 = _extract_from_markdown(claude_md, "config/CLAUDE.md")
+        config_markdown = [("CLAUDE.md", "config/CLAUDE.md")]
+        active_agents = (
+            "AGENTS.override.md" if (config_dir / "AGENTS.override.md").exists() else "AGENTS.md"
+        )
+        config_markdown.append((active_agents, f"config/{active_agents}"))
+        for name, label in config_markdown:
+            path = config_dir / name
+            if not path.exists():
+                continue
+            files_scanned.append(label)
+            p, u, bad_utf8 = _extract_from_markdown(path, label)
             promises.extend(p)
             unparsed_rules.extend(u)
             if bad_utf8:
-                decode_issues.append(_utf8_issue("config/CLAUDE.md"))
+                decode_issues.append(_utf8_issue(label))
 
-        settings_path = config_dir / "settings.json"
-        if settings_path.exists():
-            files_scanned.append("config/settings.json")
-            p, u, bad_utf8 = _extract_from_hooks(config_dir)
+        for filename in ("settings.json", "hooks.json"):
+            settings_path = config_dir / filename
+            if not settings_path.exists():
+                continue
+            label = f"config/{filename}"
+            files_scanned.append(label)
+            p, u, bad_utf8 = _extract_from_hooks(config_dir, filename)
             promises.extend(p)
             unparsed_rules.extend(u)
             if bad_utf8:
-                decode_issues.append(_utf8_issue("config/settings.json"))
+                decode_issues.append(_utf8_issue(label))
 
     if repo_dir is not None:
-        for name, label in (("CLAUDE.md", "repo/CLAUDE.md"), ("AGENTS.md", "repo/AGENTS.md")):
+        active_agents = (
+            "AGENTS.override.md" if (repo_dir / "AGENTS.override.md").exists() else "AGENTS.md"
+        )
+        for name, label in (
+            ("CLAUDE.md", "repo/CLAUDE.md"),
+            (active_agents, f"repo/{active_agents}"),
+        ):
             path = repo_dir / name
             if path.exists():
                 files_scanned.append(label)

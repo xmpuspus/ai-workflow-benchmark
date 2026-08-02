@@ -12,6 +12,13 @@ from rich.table import Table
 from awb.commands._shared import BAD, console
 
 
+def _format_cost(cost) -> str:
+    """Render native Codex credits and the dollar-equivalent score."""
+    if cost.estimated_credits is not None:
+        return f"{cost.estimated_credits:.2f} cr (${cost.estimated_cost_usd:.2f} equiv)"
+    return f"${cost.estimated_cost_usd:.2f}"
+
+
 def _score_style(score: float) -> str:
     """Return Rich style for score band."""
     if score >= 80:
@@ -186,8 +193,8 @@ def _run_both(
         scc = f"{rc.outcome.partial_credit_score}/{rc.outcome.partial_credit_max}" if rc else "-"
         tv = f"{rv.metrics.wall_clock_seconds:.1f}s" if rv else "-"
         tc = f"{rc.metrics.wall_clock_seconds:.1f}s" if rc else "-"
-        cv = f"${rv.cost.estimated_cost_usd:.2f}" if rv else "-"
-        cc = f"${rc.cost.estimated_cost_usd:.2f}" if rc else "-"
+        cv = _format_cost(rv.cost) if rv else "-"
+        cc = _format_cost(rc.cost) if rc else "-"
         table.add_row(tid, sv, sc, scv, scc, tv, tc, cv, cc)
 
     console.print(table)
@@ -460,7 +467,7 @@ def run(
     table.add_column("Success")
     table.add_column("Score")
     table.add_column("Time (s)")
-    table.add_column("Cost ($)")
+    table.add_column("Cost")
     table.add_column("Iterations")
 
     for r in results:
@@ -476,7 +483,7 @@ def run(
             success_str,
             score_str,
             f"{r.metrics.wall_clock_seconds:.1f}",
-            f"{r.cost.estimated_cost_usd:.2f}",
+            _format_cost(r.cost),
             str(r.metrics.iteration_count),
         )
 

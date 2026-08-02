@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import time
 from dataclasses import dataclass
+from typing import Any
 
 from awb.core.config import RunCost, RunMetrics
 
@@ -31,7 +32,7 @@ class IterationTokens:
 
 
 class MetricCollector:
-    def __init__(self) -> None:
+    def __init__(self, pricing: dict[str, Any] | None = None) -> None:
         self._start: float = 0.0
         self._end: float = 0.0
         self._tool_calls: dict[str, int] = {}
@@ -44,6 +45,7 @@ class MetricCollector:
         self._final_cost: float | None = None
         self._per_iteration: list[IterationTokens] = []
         self._current_iter: IterationTokens | None = None
+        self._pricing = pricing or MODEL_PRICING["default"]
 
     def start(self) -> None:
         self._start = time.monotonic()
@@ -65,7 +67,7 @@ class MetricCollector:
         self._current_iter = IterationTokens()
 
     def parse_stream_event(self, event: dict) -> None:
-        """Parse a Claude Code stream-json event and update counters."""
+        """Parse normalized Claude or Codex JSONL events and update counters."""
         if not isinstance(event, dict):
             return
         event_type = event.get("type", "")
@@ -131,6 +133,27 @@ class MetricCollector:
             if num_turns is not None:
                 self._iterations = int(num_turns)
 
+        elif event_type == "turn.completed":
+            usage = event.get("usage", {})
+            if isinstance(usage, dict):
+                self._input_tokens = int(usage.get("input_tokens") or 0)
+                self._output_tokens = int(usage.get("output_tokens") or 0)
+                self._cache_read = int(usage.get("cached_input_tokens") or 0)
+                self._cache_create = int(usage.get("cache_write_input_tokens") or 0)
+                self._thinking_tokens = int(usage.get("reasoning_output_tokens") or 0)
+            self._iterations += 1
+
+        elif event_type == "item.completed":
+            item = event.get("item", {})
+            if isinstance(item, dict):
+                item_type = item.get("type")
+                if isinstance(item_type, str) and item_type not in {
+                    "agent_message",
+                    "error",
+                    "reasoning",
+                }:
+                    self.record_tool_call(item_type)
+
     @property
     def elapsed_seconds(self) -> float:
         if self._end > 0:
@@ -174,13 +197,22 @@ class MetricCollector:
         )
 
     def to_cost(self) -> RunCost:
+        estimated_credits = None
         if self._final_cost is not None:
             estimated = self._final_cost
-        else:
-            estimated = (
-                self._input_tokens / 1_000_000 * INPUT_PRICE_PER_M
-                + self._output_tokens / 1_000_000 * OUTPUT_PRICE_PER_M
+        elif self._pricing.get("billing_unit") == "credits":
+            cached = min(self._cache_read, self._input_tokens)
+            uncached = max(0, self._input_tokens - cached)
+            estimated_credits = (
+                uncached / 1_000_000 * float(self._pricing.get("input_per_m", 0))
+                + cached / 1_000_000 * float(self._pricing.get("cached_input_per_m", 0))
+                + self._output_tokens / 1_000_000 * float(self._pricing.get("output_per_m", 0))
             )
+            estimated = estimated_credits * float(self._pricing.get("usd_per_credit", 0))
+        else:
+            estimated = self._input_tokens / 1_000_000 * float(
+                self._pricing["input_per_m"]
+            ) + self._output_tokens / 1_000_000 * float(self._pricing["output_per_m"])
         return RunCost(
             input_tokens=self._input_tokens,
             output_tokens=self._output_tokens,
@@ -188,4 +220,7 @@ class MetricCollector:
             cache_creation_tokens=self._cache_create,
             thinking_tokens=self._thinking_tokens,
             estimated_cost_usd=round(estimated, 4),
+            estimated_credits=(
+                round(estimated_credits, 4) if estimated_credits is not None else None
+            ),
         )

@@ -10,45 +10,53 @@
     <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-green" alt="License"></a>
   </p>
   <br/>
-  <img src="demos/hero.gif" alt="awb checkup --static-only, awb validate, awb gap, awb cost, awb leaderboard --readiness output" width="820"/>
+  <img src="demos/hero.gif" alt="Codex checkup, task validation, native credit cost report, and workflow export" width="820"/>
   <br/>
-  <sub>v1.6: grade your harness design - awb checkup extracts the rules your CLAUDE.md promises, runs an 8-task probe, and shows which rules held, broke, or never fired.</sub>
+  <sub>Grade Claude Code or Codex harness design: extract promised rules, run an 8-task probe, and show which rules held, broke, or never fired.</sub>
 </div>
 
 ---
 
 ## Why This Exists
 
-The 2025 Stack Overflow Developer Survey shows 84% of professional developers using AI in their workflow, up from 76% the year before. Yet only 33% trust AI accuracy while 46% actively distrust it ([survey.stackoverflow.co/2025/ai](https://survey.stackoverflow.co/2025/ai)). [METR's RCT of 16 experienced open-source maintainers](https://metr.org/blog/2025-07-10-early-2025-ai-experienced-os-dev-study/) found AI tooling **increased** task completion time by 19%, while developers self-reported a 20% speedup, a 39-point gap between perception and reality ([arXiv:2507.09089](https://arxiv.org/abs/2507.09089)). Static issue benchmarks like SWE-bench Verified measure model capability in isolation; [SWE-bench Pro](https://scaleapi.github.io/SWE-bench_Pro-os/) ([arXiv:2509.16941](https://arxiv.org/abs/2509.16941)) addresses contamination at scale but still scores patches, not whether a workflow can ship.
+The 2025 Stack Overflow Developer Survey shows 84% of professional developers using AI in their workflow, up from 76% the year before. Yet only 33% trust AI accuracy while 46% actively distrust it ([survey.stackoverflow.co/2025/ai](https://survey.stackoverflow.co/2025/ai)). [METR's RCT of 16 experienced open-source maintainers](https://metr.org/blog/2025-07-10-early-2025-ai-experienced-os-dev-study/) found that AI tooling **increased** task completion time by 19%. Developers self-reported a 20% speedup, a 39-point gap between perception and reality ([arXiv:2507.09089](https://arxiv.org/abs/2507.09089)). Static issue benchmarks such as [SWE-bench](https://www.swebench.com/) measure model ability in isolation. [SWE-bench Pro](https://scaleapi.github.io/SWE-bench_Pro-os/) ([arXiv:2509.16941](https://arxiv.org/abs/2509.16941)) addresses contamination at scale but still scores patches, not whether a workflow can ship.
 
-AWB measures whether a configured tool+workflow combination can ship correct, regression-safe, low-burden changes against pinned real-world repositories. The same model running vanilla Claude Code vs. a purpose-built setup with a tuned CLAUDE.md, hooks, and structured agents produces meaningfully different results on real engineering tasks. AWB benchmarks the full stack: **tool + configuration + workflow + model**, together, on 100 tasks drawn from real open-source repositories.
+AWB measures whether a configured tool+workflow combination can ship correct, regression-safe, low-burden changes against pinned real-world repositories. A bare configuration and a purpose-built setup can produce meaningfully different results with the same model. AWB benchmarks **tool + configuration + workflow + model** together on 100 tasks from real open-source repositories.
 
 ### How AWB relates to other benchmarks
 
-Related work measures complementary axes. [HAL](https://arxiv.org/abs/2510.11977) analyzes agent traces with LLM judges across 11 tasks at 2.5B-token scale. [Artificial Analysis](https://artificialanalysis.ai/agents/coding-agents) publishes harness-vs-harness comparisons holding the model constant. [SWE-bench Verified](https://www.swebench.com/) and [SWE-bench Pro](https://scaleapi.github.io/SWE-bench_Pro-os/) score patches against real GitHub issues. [LiveCodeBench](https://arxiv.org/abs/2403.07974) addresses contamination by time-segmenting contest problems. [METR RE-Bench](https://arxiv.org/abs/2411.15114) compares humans and agents in matched ML-engineering environments.
+Related work measures complementary axes. [HAL](https://arxiv.org/abs/2510.11977) analyzes agent traces with LLM judges across 11 tasks at 2.5B-token scale. [Artificial Analysis](https://artificialanalysis.ai/agents/coding-agents) publishes harness comparisons that hold the model constant. [SWE-bench](https://www.swebench.com/) and [SWE-bench Pro](https://scaleapi.github.io/SWE-bench_Pro-os/) score patches against real GitHub issues. [LiveCodeBench](https://arxiv.org/abs/2403.07974) addresses contamination with time-segmented contest problems. [METR RE-Bench](https://arxiv.org/abs/2411.15114) compares humans and agents in matched ML-engineering environments.
 
-AWB's distinct contribution is twofold: (1) a paired **vanilla-vs-custom** adapter pair that isolates the workflow-configuration delta for the same model, surfaced as a single Workflow Lift score with a sign-test p-value; (2) **deterministic** trace-grading rubrics (read-tests-before-edit, ran-verification-after-change, no-out-of-scope-edits, no-repeated-failing-loop, context-discipline, tool-call-efficiency) computed from OpenTelemetry-aligned `.trace.jsonl` artifacts, not LLM judges. See [METHODOLOGY.md#related-work](METHODOLOGY.md#related-work) for citation details.
+AWB makes two distinct contributions. First, a paired **vanilla-vs-custom** run isolates the configuration delta for the same model and reports Workflow Lift with a sign-test p-value. Second, deterministic trace rubrics use OpenTelemetry-aligned `.trace.jsonl` artifacts instead of LLM judges. See [METHODOLOGY.md#related-work](METHODOLOGY.md#related-work) for citation details.
 
-## What's New in v1.6.2
+## What's New in v1.7.0
 
-<img src="demos/checkup.gif" alt="awb checkup --static-only extracting promises from a CLAUDE.md, then awb checkup --from-run rendering the full harness design report from a saved run" width="820"/>
+<img src="demos/checkup.gif" alt="awb checkup auditing a Codex AGENTS.md and rendering a measured Codex harness report from a saved run" width="820"/>
 
-The full checkup flow, recorded against real probe data: the free static audit extracts the testable promises a CLAUDE.md makes, and `--from-run` renders the full report (pillar scores, the rule-integrity table, ranked fixes) from an already-recorded run in about a second.
+AWB now measures Codex CLI end to end. The demos are live recordings of a
+Codex static audit and a report regraded from an eight-task Codex probe.
 
-- **`awb checkup --from-run <run_dir>`** re-grades a saved run through the full report: zero adapter calls, zero spend. Edit your harness, fix a task scope, or update a rubric, then re-measure against recorded traces for free instead of paying for a fresh probe. This is the primitive that makes iterative harness tuning cheap: probe once, re-grade as often as you like.
-- **Four tasks no longer punish their own graded deliverables as scope violations.** FA-001 awarded points for registering a health router in `app/main.py` and then deducted scope points for editing `app/main.py`; MF-001 graded the cache module it penalized, RF-001 the service tests, DB-001 the module-state fix site. Their `files_to_examine` now include each task's own graded write-paths, while reference files a task should read but not modify stay out of scope on purpose. On recorded real-harness runs the scope pillar moved from 77 to 96.4 under the corrected oracle, with the one genuine violation (modifying the convention file) still penalized.
+- **Native Codex execution:** `codex exec --ephemeral --sandbox workspace-write --json`
+  streams token usage, command exits, file edits, model provenance, and trace
+  events into the same benchmark pipeline used by other adapters.
+- **Codex harness checkup:** `awb checkup --tool codex-cli` inventories
+  `AGENTS.md`, `config.toml`, hooks, rules, agents, skills, and plugins, then
+  grades observable behavior from the probe traces.
+- **Native usage economics:** result, submission, and cost reports retain
+  ChatGPT credits and show a dollar-equivalent estimate without replacing the
+  original credit measurement.
+- **Codex workflow comparison:** workflow export records the Codex model and
+  harness inventory, while paired A/B runs accept separate authenticated
+  `CODEX_HOME` directories.
+- **Honest file metrics:** AWB measures the pre-agent snapshot against the
+  agent patch, includes staged and untracked changes, and preserves partial
+  timeout patches before cleanup.
+- **Measured validation:** the bundled [Codex harness measurement](docs/codex-harness-measurement.md)
+  records 4/8 passing tasks, 100.0 verification discipline, 97.9 scope
+  discipline, and 101.7399 recorded credits. The credit total is a lower bound
+  because two timed-out turns did not emit final usage.
 
-From v1.6.1: the Keychain auth preflight fix (`CLAUDE_CONFIG_DIR` pointing at the default no longer breaks login detection), a 10MB stream-reader limit (JSON lines over 64KB no longer kill the trace), honest auth diagnostics, and the "Read tests before code" extractor phrasing.
-
-The 1.6.0 feature set:
-
-- **`awb checkup`: grade your harness design in one command.** Stage 0 costs nothing and runs instantly: it parses your CLAUDE.md, AGENTS.md, and settings.json, checks that hooks resolve and documented commands match the repo, and extracts the testable promises your harness makes (8 rule patterns, each tagged hook-enforced or prose-only). Stage 1 runs the 8-task fast-check probe in parallel and grades the traces. The report opens with a plain-language verdict, pillar scores, and a rule-integrity table that answers, per stated rule: HELD, BROKEN, ENFORCED, or UNTESTED. Broken prose rules get a ready-to-paste hook recommendation. `--static-only` stays free for CI; `--paired` adds the vanilla arm and a Workflow Lift number; `--format json` for machines. Exit codes: 0 clean, 1 findings, 2 tool failure.
-- **Two new trace rubrics.** `context_discipline` (did the agent read only what the task scoped) and `tool_call_efficiency` (repeated reads, edit thrash) join the four existing deterministic rubrics. gap, checkup, submit, and both submission schema copies understand the 6-rubric grades.
-- **Prescriptions cover all 11 capabilities** (was 4) and carry `est. +N pts` impact estimates, with the caveat printed in the output: estimates are independent and do not sum.
-- **The fast path is actually fast, and safe.** `awb run --fast-check` with no tool name silently dropped the flag and ran the full 100-task suite on both variants (roughly $300 of spend instead of ~$4); it now forwards correctly, runs the identical 8 tasks on both arms, preflights adapter auth before any clone, and defaults to parallel execution (-j 4). `awb warmup --fast-check` warms only the 8 probe repos.
-- **`--last-run` everywhere.** run and checkup remember their run directory; gap, cost, drift, and trace grade use it when you omit the path.
-
-Carried over from the 1.5 line (harness tuning): mine private tasks from merged PRs (`awb task from-pr`, `awb run --tasks-dir`), paired config A/B (`awb ab`), regression watch (`awb drift`), dollars per solved task (`awb cost`), and prescriptions (`awb gap --prescribe`). From v1.2.0-v1.4.0: deterministic trace grading, trust-column baselines, the public GitHub Pages leaderboard, task-set hashes, the Production Readiness Score, strict result schema v2, exact-pinned dependencies, and the documented security boundary.
+See [CHANGELOG.md](CHANGELOG.md) for the v1.6 checkup and earlier releases.
 
 ## Quick Start
 
@@ -57,10 +65,12 @@ pip install awb
 
 awb quickstart                                        # verify your setup
 awb checkup --static-only                             # instant free audit of your CLAUDE.md + hooks
+awb checkup --tool codex-cli --static-only            # instant audit of ~/.codex + repo AGENTS.md
 awb warmup --fast-check                               # warm the 8 probe repos (one-time)
 awb checkup                                           # static audit + 8-task probe + rule integrity
 awb checkup --from-run results/runs/<run_dir>         # re-grade a saved probe for free
 awb run --progressive --adaptive claude-code-custom   # full suite with early exit + smart re-runs
+awb run codex-cli --fast-check --yes                  # 8-task Codex harness measurement
 awb gap                                               # capability gaps (defaults to your last run)
 awb leaderboard --readiness --explain                 # Production Readiness Score per tool
 ```
@@ -70,7 +80,7 @@ awb leaderboard --readiness --explain                 # Production Readiness Sco
 Run this end-to-end against the published v1.4.0 fast-check baseline. Should finish in roughly 12 minutes (fast-check now runs parallel at -j 4; 12 min measured on a real 2026-07-24 run) for ~$4 of metered spend and produce a tweetable Workflow Lift number plus a capability profile.
 
 ```bash
-pip install awb==1.6.2
+pip install awb==1.7.0
 awb quickstart                                       # 1. verify environment
 awb warmup --use-uv                                  # 2. pre-build templates
 awb run --fast-check claude-code-custom              # 3. ~12 min at -j 4, real run
@@ -82,7 +92,7 @@ Compare against the published baseline at `results/baselines/claude-code-custom-
 
 Speed levers: `awb warmup` caches workspaces for 10-30x faster setup, `--fast-check` gives a quick signal, `--progressive` stops early on weak tools, `--use-uv` swaps pip for uv, and `checkup --from-run` re-grades saved runs for free. See [Execution Modes](#execution-modes) below.
 
-## How It Works
+## Benchmark execution pipeline
 
 ```
 Clone repo at pinned SHA
@@ -242,7 +252,7 @@ The lift is computed per-task (configured score minus vanilla score), averaged a
 
 ## Benchmark Your Own Setup
 
-The 100 public tasks calibrate the instrument. The point of the instrument is your own stack: your repos, your CLAUDE.md, your hooks. The tuning loop, in the order it actually runs:
+The 100 public tasks calibrate the instrument. The point of the instrument is your own stack: your repos, durable instructions, hooks, skills, and rules. The tuning loop, in the order it actually runs:
 
 ```bash
 # 1. Free static audit: what does your harness promise, and does its
@@ -259,7 +269,7 @@ awb checkup
 awb checkup --from-run results/runs/<run_dir>
 
 # 4. Turn rubric failures and weak capabilities into ready-to-paste
-#    CLAUDE.md snippets with task-level evidence.
+#    CLAUDE.md or AGENTS.md snippets with task-level evidence.
 awb gap --prescribe
 
 # 5. Mine private tasks from your own merged PRs so the probe measures
@@ -271,6 +281,8 @@ awb run claude-code-custom --tasks-dir ./tasks
 # 6. Prove a config change helped: same adapter, two config dirs,
 #    paired sign test. Vibes do not survive this step.
 awb ab claude-code-custom --config-a ~/.claude --config-b ./candidate-config
+# Codex uses separate authenticated CODEX_HOME directories:
+awb ab codex-cli --config-a ~/.codex --config-b ./candidate-codex-home
 
 # 7. Keep it won: exit code 1 on drift, built for cron/CI, plus dollars
 #    per solved task before you standardize on a config.
@@ -327,13 +339,16 @@ AWB ships four execution modes tuned for different evaluation scenarios:
 awb checkup                                   # static audit + 8-task probe + rule integrity
 awb checkup --static-only                     # stage 0 only: free, instant, CI-safe
 awb checkup --config-dir ~/.claude            # which harness to grade (default ~/.claude)
+awb checkup --tool codex-cli                   # inspect ~/.codex and run the probe through Codex
+awb checkup --tool codex-cli --config-dir DIR  # inspect and run an alternate CODEX_HOME
 awb checkup --repo-dir .                      # repo whose CLAUDE.md/AGENTS.md also count
 awb checkup --paired                          # add the vanilla arm, report Workflow Lift
+awb checkup --tool codex-cli --paired --baseline-config-dir DIR  # separate authenticated baseline
 awb checkup --format json --yes               # machine output (needs --yes, no prompt)
 awb checkup --from-run results/runs/<dir>     # full report from a saved run: free, instant
 ```
 
-Stage 0 parses the harness files with zero model calls: structural checks (hooks resolve, settings.json valid, documented commands match the repo) plus extraction of testable promises across 8 rule patterns, each tagged hook-enforced or prose-only. Stage 1 runs the fast-check probe in parallel and grades traces on the 6 deterministic rubrics. The report leads with a verdict sentence, pillar scores, and the rule-integrity table (HELD / BROKEN / ENFORCED / UNTESTED per stated rule); broken prose rules get a hook recommendation. Exit codes: 0 clean, 1 findings, 2 tool failure (including a probe that measured nothing). Rules that match no pattern are listed as not checkable, never silently dropped.
+Stage 0 parses the harness files with zero model calls: structural checks (JSON/TOML parses, hooks resolve, documented commands match the repo) plus extraction of testable promises across 8 rule patterns, each tagged hook-enforced or prose-only. Stage 1 runs the fast-check probe in parallel and grades traces on the 6 deterministic rubrics. Codex JSONL events supply token usage, command exits, and file changes to the same metric and trace pipeline. The report leads with a verdict sentence, pillar scores, and the rule-integrity table (HELD / BROKEN / ENFORCED / UNTESTED per stated rule). Exit codes: 0 clean, 1 findings, 2 tool failure.
 
 ### `awb warmup` - Pre-build workspace templates
 
@@ -349,7 +364,7 @@ Workspace templates are cached at `~/.cache/awb/templates/`. First build takes ~
 
 ### `awb gap` - Capability gap analysis
 
-Analyzes results to produce a capability radar, failure classification, systematic patterns, and ranked improvement suggestions. Add `--prescribe` to turn trace-rubric failures and weak capabilities into concrete prescriptions: each one names the trigger (for example `trace:no_out_of_scope_edits`), the tasks it fired on, and a ready-to-paste CLAUDE.md snippet.
+Analyzes results to produce a capability radar, failure classification, systematic patterns, and ranked improvement suggestions. Add `--prescribe` to turn trace-rubric failures and weak capabilities into concrete prescriptions for CLAUDE.md or AGENTS.md.
 
 ### `awb task from-pr` - Mine a private task from a merged PR
 
@@ -364,9 +379,10 @@ Fetches the PR via the `gh` CLI, pins the pre-merge SHA, splits changed files in
 
 ```bash
 awb ab claude-code-custom --config-a <dir> --config-b <dir> [--task BF-001] [--category bug-fix]
+awb ab codex-cli --config-a <codex-home-a> --config-b <codex-home-b> [--task BF-001]
 ```
 
-Runs the same adapter over the same tasks twice, once per config dir (via `CLAUDE_CONFIG_DIR` for Claude Code), then reports per-task deltas, mean lift, and a binomial sign-test p-value. Both config hashes are printed for reproducibility.
+Runs the same adapter over the same tasks twice, once per config dir (via `CLAUDE_CONFIG_DIR` or `CODEX_HOME`), then reports per-task deltas, mean lift, and a binomial sign-test p-value. Alternate Codex homes must already be authenticated. Both config hashes are printed for reproducibility.
 
 ### `awb drift` - Alert on regression against a baseline
 
@@ -382,7 +398,7 @@ Compares mean score and per-task scores against a reference (a prior single run 
 awb cost results/runs/<run_dir>/ [<more_run_dirs>...]
 ```
 
-Groups results by tool and reports the procurement numbers: total spend, spend per solved task (total spend divided by solves, so failed attempts count), wasted spend on failures, and tokens per solve.
+Groups results by tool. It reports total spend, spend per solved task, wasted spend, and tokens per solve. Failed attempts count toward spend per solved task. ChatGPT-authenticated Codex runs keep native credits and show a dollar-equivalent estimate. A timeout without a final usage event makes the reported credits a lower bound.
 
 ### `awb compare` - Compare two runs
 
@@ -493,7 +509,7 @@ Run `awb validate` to check your task before opening a PR. Full guide: [CONTRIBU
 | Claude Code (custom) | `claude-code-custom` | Full |
 | Pi | `pi` | Full |
 | Gemini CLI | `gemini-cli` | Full |
-| Codex CLI | `codex-cli` | Full |
+| Codex CLI (custom harness) | `codex-cli` | Full: run, JSONL metrics/traces, checkup, A/B, workflow export |
 | Cursor | `cursor` | Planned |
 | Aider | `aider` | Planned |
 | Windsurf | `windsurf` | Planned |
@@ -558,6 +574,13 @@ The format captures tool version, model, hardware class, and per-task run result
 - Token efficiency: sigmoid normalizer (optimal=2k tokens/iter, baseline=15k) blended 50/50 with iteration count in the efficiency dimension
 
 ## Changelog
+
+### 1.7.0 (2026-08-01)
+
+End-to-end Codex CLI support: JSONL execution and traces, token budgets, model
+provenance, native ChatGPT credit accounting, Codex checkup and workflow
+export, config A/B support, resilient file metrics, measured validation, and
+live Codex demo GIFs.
 
 ### 1.6.2 (2026-07-24)
 
@@ -667,9 +690,9 @@ If you use AWB in research, cite it via Zenodo. The concept DOI [`10.5281/zenodo
 @software{puspus_awb_2026,
   author    = {Puspus, Xavier},
   title     = {{AWB: AI Workflow Benchmark}},
-  version   = {1.5.4},
+  version   = {1.7.0},
   year      = {2026},
-  month     = may,
+  month     = aug,
   publisher = {Zenodo},
   doi       = {10.5281/zenodo.20361437},
   url       = {https://doi.org/10.5281/zenodo.20361437}

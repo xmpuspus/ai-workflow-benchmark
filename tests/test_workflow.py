@@ -143,11 +143,56 @@ class TestExportWorkflow:
         data = yaml.safe_load(out.read_text())
         assert "environment" in data
 
+    def test_codex_includes_model_hash_and_harness_inventory(self, tmp_path):
+        config_dir = tmp_path / "codex"
+        config_dir.mkdir()
+        (config_dir / "config.toml").write_text(
+            'model = "gpt-test"\n[plugins."demo@example"]\nenabled = true\n'
+        )
+        (config_dir / "AGENTS.md").write_text("Run tests before done.\n")
+        (config_dir / "hooks.json").write_text(
+            '{"hooks":{"Stop":[{"hooks":[{"type":"command","command":"true"}]}]}}'
+        )
+        rules = config_dir / "rules"
+        rules.mkdir()
+        (rules / "default.rules").write_text("prefix_rule(pattern=['git'])\n")
+        out = tmp_path / "codex.yaml"
+
+        export_workflow("codex-cli", "codex", output_path=out, config_dir=config_dir)
+        data = yaml.safe_load(out.read_text())
+
+        assert data["mode"] == "custom"
+        assert data["model"] == "gpt-test"
+        assert data["config"]["config_hash"]
+        assert data["environment"]["agents_md_hash"]
+        assert data["environment"]["hooks_count"] == 1
+        assert data["environment"]["rules_count"] == 1
+        assert data["environment"]["plugins_count"] == 1
+        assert validate_descriptor(out) == []
+
     def test_vanilla_no_environment(self, tmp_path):
         out = tmp_path / "wf.yaml"
         export_workflow("claude-code-vanilla", "vanilla", output_path=out)
         data = yaml.safe_load(out.read_text())
         assert "environment" not in data
+
+    def test_loads_codex_environment_fields(self, tmp_path):
+        path = _make_valid_yaml(
+            tmp_path,
+            {
+                "environment": {
+                    "agents_md_hash": "agents123",
+                    "rules_count": 2,
+                    "plugins_count": 3,
+                }
+            },
+        )
+
+        descriptor = load_descriptor(path)
+
+        assert descriptor.environment.agents_md_hash == "agents123"
+        assert descriptor.environment.rules_count == 2
+        assert descriptor.environment.plugins_count == 3
 
     def test_passes_validation(self, tmp_path):
         out = tmp_path / "wf.yaml"

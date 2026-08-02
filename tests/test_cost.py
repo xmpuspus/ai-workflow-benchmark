@@ -27,6 +27,7 @@ def _make_result(
     output_tokens=500,
     score=100,
     max_score=100,
+    estimated_credits=None,
 ):
     return RunResult(
         task_id=task_id,
@@ -38,7 +39,10 @@ def _make_result(
         ),
         metrics=RunMetrics(),
         cost=RunCost(
-            input_tokens=input_tokens, output_tokens=output_tokens, estimated_cost_usd=cost_usd
+            input_tokens=input_tokens,
+            output_tokens=output_tokens,
+            estimated_cost_usd=cost_usd,
+            estimated_credits=estimated_credits,
         ),
         quality=RunQuality(),
         environment=RunEnvironment(os="darwin", hardware="test"),
@@ -61,6 +65,11 @@ def _write_result_file(dir_path, result: RunResult):
             "input_tokens": result.cost.input_tokens,
             "output_tokens": result.cost.output_tokens,
             "estimated_cost_usd": result.cost.estimated_cost_usd,
+            **(
+                {"estimated_credits": result.cost.estimated_credits}
+                if result.cost.estimated_credits is not None
+                else {}
+            ),
         },
     }
     (dir_path / fname).write_text(json.dumps(data))
@@ -149,6 +158,30 @@ class TestBuildCostReport:
 
     def test_empty_results_returns_empty_list(self):
         assert build_cost_report([]) == []
+
+    def test_native_credit_totals_are_reported(self):
+        results = [
+            _make_result(
+                "BF-001",
+                "codex-cli",
+                success=True,
+                cost_usd=0.4,
+                estimated_credits=10.0,
+            ),
+            _make_result(
+                "BF-002",
+                "codex-cli",
+                success=False,
+                cost_usd=0.2,
+                estimated_credits=5.0,
+            ),
+        ]
+
+        report = build_cost_report(results)[0]
+
+        assert report.total_credits == 15.0
+        assert report.credits_per_solved == 15.0
+        assert report.wasted_credits == 5.0
 
 
 class TestCostCommand:

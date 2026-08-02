@@ -67,7 +67,12 @@ def cost(run_dirs: tuple[str, ...], fmt: str):
         console.print(
             headline_panel(
                 "Cheapest per Solved Task",
-                f"{cheapest.tool}  ${cheapest.cost_per_solved:.2f}",
+                (
+                    f"{cheapest.tool}  {cheapest.credits_per_solved:.2f} credits "
+                    f"(${cheapest.cost_per_solved:.2f} equivalent)"
+                    if cheapest.credits_per_solved is not None
+                    else f"{cheapest.tool}  ${cheapest.cost_per_solved:.2f}"
+                ),
                 subtitle=f"{cheapest.n_solved}/{cheapest.n_tasks} solved",
             )
         )
@@ -82,6 +87,8 @@ def cost(run_dirs: tuple[str, ...], fmt: str):
     table.add_column("Total Cost", justify="right")
     table.add_column("$/Solved", justify="right")
     table.add_column("Wasted", justify="right")
+    table.add_column("Credits", justify="right")
+    table.add_column("Cr/Solved", justify="right")
     table.add_column("Tokens/Solved", justify="right")
     for r in reports:
         solved_str = f"{r.n_solved}/{r.n_tasks}"
@@ -101,6 +108,16 @@ def cost(run_dirs: tuple[str, ...], fmt: str):
             f"${r.total_cost_usd:.2f}",
             cost_per_solved_str,
             f"${r.wasted_cost_usd:.2f}",
+            (
+                f"{r.total_credits:.2f}"
+                if r.total_credits is not None
+                else f"[{MUTED}]n/a[/{MUTED}]"
+            ),
+            (
+                f"{r.credits_per_solved:.2f}"
+                if r.credits_per_solved is not None
+                else f"[{MUTED}]n/a[/{MUTED}]"
+            ),
             tokens_str,
         )
     console.print(table)

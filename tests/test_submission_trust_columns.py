@@ -8,7 +8,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from awb.submission.ingest import validate_submission
+from awb.submission.ingest import parse_submission, submission_to_run_results, validate_submission
 
 _ROOT = Path(__file__).parent.parent
 
@@ -41,3 +41,13 @@ def test_null_trace_summary_validates():
     data = _load_baseline()
     data["submission"]["trace_summary"] = None
     assert validate_submission(data) == []
+
+
+def test_codex_credits_survive_submission_ingest():
+    data = _load_baseline()
+    data["results"][0]["runs"][0]["cost"]["estimated_credits"] = 12.5
+
+    assert validate_submission(data) == []
+    results = submission_to_run_results(parse_submission(data))
+
+    assert results[0].cost.estimated_credits == 12.5

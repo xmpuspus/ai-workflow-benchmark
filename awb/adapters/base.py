@@ -6,6 +6,7 @@ import abc
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import Any
 
 # A stream-event callback. The adapter calls it for every streamed event;
 # returning False signals "stop now" (used for token-budget enforcement).
@@ -97,6 +98,6 @@ class ToolAdapter(abc.ABC):
         """Return True if this adapter supports streaming output."""
         return False
 
-    def get_model_pricing(self) -> dict[str, float]:
-        """Return pricing per 1M tokens: {input_per_m, output_per_m}."""
+    def get_model_pricing(self) -> dict[str, Any]:
+        """Return the adapter's billing rates and unit per 1M tokens."""
         return {"input_per_m": 15.0, "output_per_m": 75.0}

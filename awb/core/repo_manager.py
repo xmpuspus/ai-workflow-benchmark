@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import difflib
 import hashlib
 import logging
 import shutil
@@ -164,11 +165,27 @@ class RepoManager:
             shutil.copytree(workspace, template_path, symlinks=True)
             (template_path / ".ready").touch()
 
-        # Write workspace CLAUDE.md if task defines one (always task-specific, never cached)
+        # Write task-specific instructions after the cached template is copied.
+        # Claude reads .claude/CLAUDE.md; Codex reads a root AGENTS override.
         if task.workspace_claude_md:
             claude_dir = workspace / ".claude"
             claude_dir.mkdir(exist_ok=True)
             (claude_dir / "CLAUDE.md").write_text(task.workspace_claude_md)
+
+            agents_override = workspace / "AGENTS.override.md"
+            existing_agents = agents_override
+            if not existing_agents.exists():
+                existing_agents = workspace / "AGENTS.md"
+            existing_text = existing_agents.read_text() if existing_agents.exists() else ""
+            if existing_text.strip():
+                codex_instructions = (
+                    existing_text.rstrip()
+                    + "\n\n# AWB task-specific instructions\n\n"
+                    + task.workspace_claude_md.lstrip()
+                )
+            else:
+                codex_instructions = task.workspace_claude_md
+            agents_override.write_text(codex_instructions)
 
         return workspace
 
@@ -196,34 +213,116 @@ class RepoManager:
     def get_modified_files(self, workspace: Path) -> list[str]:
         import subprocess
 
-        result = subprocess.run(
-            ["git", "diff", "--name-only"],
+        tracked = subprocess.run(
+            ["git", "diff", "--name-only", "HEAD", "--"],
             cwd=workspace,
             capture_output=True,
             text=True,
             timeout=60,
         )
-        lines = result.stdout.strip().splitlines()
-        return [line for line in lines if line]
+        untracked = subprocess.run(
+            ["git", "ls-files", "--others", "--exclude-standard"],
+            cwd=workspace,
+            capture_output=True,
+            text=True,
+            timeout=60,
+        )
+        paths = tracked.stdout.splitlines() + untracked.stdout.splitlines()
+        return sorted({path for path in paths if path})
+
+    def capture_change_snapshot(self, workspace: Path) -> dict[str, bytes | None]:
+        """Capture setup-time changes so result metrics can exclude them."""
+        snapshot: dict[str, bytes | None] = {}
+        for relative in self.get_modified_files(workspace):
+            path = workspace / relative
+            try:
+                snapshot[relative] = path.read_bytes() if path.is_file() else None
+            except OSError:
+                snapshot[relative] = None
+        return snapshot
+
+    def get_modified_files_since(
+        self, workspace: Path, baseline: dict[str, bytes | None]
+    ) -> list[str]:
+        current = self.capture_change_snapshot(workspace)
+        return sorted(
+            path for path in set(baseline) | set(current) if baseline.get(path) != current.get(path)
+        )
+
+    def get_lines_changed_since(self, workspace: Path, baseline: dict[str, bytes | None]) -> int:
+        """Count added and removed lines relative to the pre-agent snapshot."""
+        import subprocess
+
+        current = self.capture_change_snapshot(workspace)
+        total = 0
+        for relative in self.get_modified_files_since(workspace, baseline):
+            before = baseline.get(relative)
+            after = current.get(relative)
+            if before is not None:
+                total += _line_delta(before, after or b"")
+                continue
+            if after is None:
+                continue
+
+            tracked = subprocess.run(
+                ["git", "diff", "--numstat", "HEAD", "--", relative],
+                cwd=workspace,
+                capture_output=True,
+                text=True,
+                timeout=60,
+            )
+            fields = tracked.stdout.splitlines()[0].split("\t", 2) if tracked.stdout else []
+            if len(fields) >= 2:
+                with contextlib.suppress(ValueError):
+                    total += int(fields[0]) + int(fields[1])
+                    continue
+            total += len(after.splitlines())
+        return total
 
     def get_lines_changed(self, workspace: Path) -> int:
         import subprocess
 
-        result = subprocess.run(
-            ["git", "diff", "--stat"],
+        tracked = subprocess.run(
+            ["git", "diff", "--numstat", "HEAD", "--"],
             cwd=workspace,
             capture_output=True,
             text=True,
             timeout=60,
         )
         total = 0
-        for line in result.stdout.splitlines():
-            # lines like: " 3 files changed, 42 insertions(+), 7 deletions(-)"
-            if "insertion" in line or "deletion" in line:
-                parts = line.split(",")
-                for part in parts:
-                    part = part.strip()
-                    if "insertion" in part or "deletion" in part:
-                        with contextlib.suppress(ValueError, IndexError):
-                            total += int(part.split()[0])
+        for line in tracked.stdout.splitlines():
+            parts = line.split("\t", 2)
+            if len(parts) < 2:
+                continue
+            with contextlib.suppress(ValueError):
+                total += int(parts[0]) + int(parts[1])
+
+        untracked = subprocess.run(
+            ["git", "ls-files", "--others", "--exclude-standard", "-z"],
+            cwd=workspace,
+            capture_output=True,
+            timeout=60,
+        )
+        for raw_path in untracked.stdout.split(b"\0"):
+            if not raw_path:
+                continue
+            path = workspace / raw_path.decode(errors="surrogateescape")
+            if not path.is_file():
+                continue
+            with contextlib.suppress(OSError):
+                data = path.read_bytes()
+                total += len(data.splitlines()) if data else 0
         return total
+
+
+def _line_delta(before: bytes, after: bytes) -> int:
+    """Return git-style added-plus-removed line count for two snapshots."""
+    before_lines = before.decode(errors="replace").splitlines()
+    after_lines = after.decode(errors="replace").splitlines()
+    total = 0
+    for tag, i1, i2, j1, j2 in difflib.SequenceMatcher(
+        None, before_lines, after_lines, autojunk=False
+    ).get_opcodes():
+        if tag != "equal":
+            total += (i2 - i1) + (j2 - j1)
+    return total

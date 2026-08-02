@@ -2,6 +2,8 @@
 
 import time
 
+import pytest
+
 from awb.core.metrics import MODEL_PRICING, MetricCollector
 
 
@@ -196,3 +198,86 @@ def test_cost_includes_new_fields():
     assert cost.cache_read_tokens == 1000
     assert cost.cache_creation_tokens == 500
     assert cost.thinking_tokens == 200
+
+
+def test_parse_codex_turn_completed_usage_is_authoritative():
+    mc = MetricCollector()
+    mc.parse_stream_event(
+        {
+            "type": "turn.completed",
+            "usage": {
+                "input_tokens": 24_763,
+                "cached_input_tokens": 24_448,
+                "cache_write_input_tokens": 12,
+                "output_tokens": 122,
+                "reasoning_output_tokens": 9,
+            },
+        }
+    )
+
+    cost = mc.to_cost()
+    assert cost.input_tokens == 24_763
+    assert cost.cache_read_tokens == 24_448
+    assert cost.cache_creation_tokens == 12
+    assert cost.output_tokens == 122
+    assert cost.thinking_tokens == 9
+    assert mc.to_metrics().iteration_count == 1
+
+
+def test_parse_codex_completed_items_counts_tool_calls_once():
+    mc = MetricCollector()
+    mc.parse_stream_event(
+        {
+            "type": "item.completed",
+            "item": {"type": "command_execution", "status": "completed"},
+        }
+    )
+    mc.parse_stream_event(
+        {
+            "type": "item.completed",
+            "item": {"type": "file_change", "status": "completed"},
+        }
+    )
+    mc.parse_stream_event(
+        {
+            "type": "item.started",
+            "item": {"type": "command_execution", "status": "in_progress"},
+        }
+    )
+
+    mc.parse_stream_event(
+        {
+            "type": "item.completed",
+            "item": {"type": "error", "message": "non-tool diagnostic"},
+        }
+    )
+
+    assert mc.to_metrics().tool_calls == {"command_execution": 1, "file_change": 1}
+
+
+def test_codex_credit_pricing_uses_cached_rate_and_retains_usd_equivalent():
+    mc = MetricCollector(
+        pricing={
+            "billing_unit": "credits",
+            "input_per_m": 125.0,
+            "cached_input_per_m": 12.5,
+            "output_per_m": 750.0,
+            "usd_per_credit": 0.04,
+        }
+    )
+    mc.parse_stream_event(
+        {
+            "type": "turn.completed",
+            "usage": {
+                "input_tokens": 332_051,
+                "cached_input_tokens": 290_304,
+                "output_tokens": 3_628,
+                "reasoning_output_tokens": 1_703,
+            },
+        }
+    )
+
+    cost = mc.to_cost()
+
+    assert cost.estimated_credits == pytest.approx(11.5682)
+    assert cost.estimated_cost_usd == pytest.approx(0.4627)

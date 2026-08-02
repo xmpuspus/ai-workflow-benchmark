@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import logging
 import sys
 import time
@@ -309,7 +310,13 @@ class BenchmarkRunner:
             score = result.outcome.partial_credit_score
             max_score = result.outcome.partial_credit_max
             status = "[green]PASS[/green]" if success else "[red]FAIL[/red]"
-            cost = result.cost.estimated_cost_usd
+            if result.cost.estimated_credits is not None:
+                cost = (
+                    f"{result.cost.estimated_credits:.2f} cr "
+                    f"(${result.cost.estimated_cost_usd:.2f} equiv)"
+                )
+            else:
+                cost = f"${result.cost.estimated_cost_usd:.2f}"
 
             avg_time = (time.monotonic() - run_start) / completed
             remaining = total_tasks - completed
@@ -317,7 +324,7 @@ class BenchmarkRunner:
 
             _console.print(
                 f" {status}  {score}/{max_score}  "
-                f"{elapsed:.0f}s  ${cost:.2f}  "
+                f"{elapsed:.0f}s  {cost}  "
                 f"[dim](run: {run_passed}/{run_completed} | "
                 f"total: {passed}/{completed} | "
                 f"ETA: {eta_min:.0f}m)[/dim]"
@@ -431,6 +438,9 @@ class BenchmarkRunner:
             else (self.timeout_override or task.constraints.timeout_seconds)
         )
         workspace: Path | None = None
+        baseline_changes: dict[str, bytes | None] = {}
+        baseline_snapshot_captured = False
+        agent_metrics_captured = False
 
         # Fail-fast for stub adapters: refuse before provisioning a workspace
         # rather than after, which used to waste ~30s on the first task.
@@ -443,9 +453,11 @@ class BenchmarkRunner:
                 "in the adapter class to enable."
             )
 
-        collector = MetricCollector()
+        collector = MetricCollector(pricing=self._adapter.get_model_pricing())
+        tool_model = getattr(self._adapter, "model", "") or "unknown"
         outcome = RunOutcome(success=False, partial_credit_score=0, partial_credit_max=0)
         quality = RunQuality()
+        metrics = collector.to_metrics()
 
         # Trace writer — open before adapter runs, closed in finally
         run_dir = self.recorder.results_dir / run_id
@@ -490,6 +502,8 @@ class BenchmarkRunner:
         try:
             # 1. Prepare workspace (run_id scopes the path for concurrent safety)
             workspace = await self.repo_manager.prepare(task, run_id=run_id)
+            baseline_changes = self.repo_manager.capture_change_snapshot(workspace)
+            baseline_snapshot_captured = True
             # File-edit spans now relativize paths against the real workspace.
             translator.workspace_root = str(workspace)
 
@@ -510,6 +524,8 @@ class BenchmarkRunner:
                 timeout_seconds=timeout,
                 task_id=task.id,
             )
+            if tool_result.model:
+                tool_model = tool_result.model
             collector.stop()
 
             # Parse any remaining stream events not yet processed
@@ -517,6 +533,18 @@ class BenchmarkRunner:
             if not hasattr(self._adapter, "_streams_events_inline"):
                 for event in tool_result.stream_events:
                     collector.parse_stream_event(event)
+
+            # Capture only the agent's patch, before verification commands can
+            # create their own artifacts. The baseline excludes task overlays
+            # and setup output that were already present before Codex ran.
+            metrics = collector.to_metrics()
+            metrics.files_modified = len(
+                self.repo_manager.get_modified_files_since(workspace, baseline_changes)
+            )
+            metrics.lines_changed = self.repo_manager.get_lines_changed_since(
+                workspace, baseline_changes
+            )
+            agent_metrics_captured = True
 
             # 4. Verification — save outputs to run log directory
             run_dir = self.recorder.results_dir / run_id
@@ -541,11 +569,6 @@ class BenchmarkRunner:
                 security_delta=post_security - baseline_security,
                 test_regressions=0 if tests_passed else 1,
             )
-
-            # 6. File change stats
-            metrics = collector.to_metrics()
-            metrics.files_modified = len(self.repo_manager.get_modified_files(workspace))
-            metrics.lines_changed = self.repo_manager.get_lines_changed(workspace)
 
             outcome = RunOutcome(
                 success=tests_passed and earned == max_pts,
@@ -595,9 +618,27 @@ class BenchmarkRunner:
             )
 
         finally:
-            metrics = collector.to_metrics()
+            # Preserve the diff-derived file metrics populated after a
+            # successful run. Rebuilding RunMetrics here used to erase them
+            # immediately before the result was saved.
+            final_metrics = collector.to_metrics()
+            metrics.wall_clock_seconds = final_metrics.wall_clock_seconds
+            metrics.iteration_count = final_metrics.iteration_count
+            metrics.human_interventions = final_metrics.human_interventions
+            metrics.tool_calls = final_metrics.tool_calls
             trace_writer.close()
             if workspace:
+                if baseline_snapshot_captured and not agent_metrics_captured:
+                    # A timeout or adapter exception may still leave a partial
+                    # patch. Measure it before cleanup rather than reporting a
+                    # false zero for review burden.
+                    with contextlib.suppress(Exception):
+                        metrics.files_modified = len(
+                            self.repo_manager.get_modified_files_since(workspace, baseline_changes)
+                        )
+                        metrics.lines_changed = self.repo_manager.get_lines_changed_since(
+                            workspace, baseline_changes
+                        )
                 await self.repo_manager.cleanup(workspace)
 
         # Trace path is recorded relative to the run dir so result JSON stays
@@ -619,7 +660,7 @@ class BenchmarkRunner:
             task_id=task.id,
             tool=self.tool,
             tool_version=self._adapter.get_version(),
-            model=getattr(self._adapter, "model", "unknown"),
+            model=tool_model,
             run_id=run_id,
             timestamp=datetime.now(UTC).isoformat(),
             outcome=outcome,

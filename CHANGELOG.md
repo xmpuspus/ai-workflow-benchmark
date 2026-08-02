@@ -1,5 +1,32 @@
 # Changelog
 
+## 1.7.0 (2026-08-01)
+
+### Added
+
+- Full Codex CLI support through the documented `codex exec --json` event
+  stream, including live token budgets, OpenTelemetry-aligned traces, command
+  exits, file edits, model provenance, and ChatGPT credit estimates.
+- `awb checkup --tool codex-cli` inspects `AGENTS.md`, `config.toml`,
+  `hooks.json`, rules, agents, skills, and plugins. Codex workflow export and
+  config A/B runs now use authenticated `CODEX_HOME` directories.
+- AWB keeps native Codex credit totals alongside its dollar-equivalent
+  cost score. Cached input uses its distinct published credit rate.
+- Codex workflow descriptors capture model and harness inventory, and Codex
+  configuration directories can be used as either arm of a paired A/B run.
+- A measured eight-task Codex harness report and live Codex checkup demos are
+  included with the release.
+
+### Fixed
+
+- AWB mirrors task-specific Claude instructions into `AGENTS.override.md`.
+  Codex and Claude receive equivalent benchmark context.
+- File-change metrics now compare a pre-agent snapshot with the agent's patch,
+  count staged and untracked files, preserve successful diff statistics, and
+  keep partial patches after timeouts.
+- The runner records the model returned by an adapter instead of replacing it
+  with an empty adapter default.
+
 ## 1.6.2 (2026-07-24)
 
 ### Added

@@ -129,6 +129,7 @@ class RunCost:
     cache_creation_tokens: int = 0
     thinking_tokens: int = 0
     estimated_cost_usd: float = 0.0
+    estimated_credits: float | None = None
 
 
 @dataclass
@@ -278,6 +279,11 @@ class RunResult:
                 "cache_creation_tokens": self.cost.cache_creation_tokens,
                 "thinking_tokens": self.cost.thinking_tokens,
                 "estimated_cost_usd": self.cost.estimated_cost_usd,
+                **(
+                    {"estimated_credits": self.cost.estimated_credits}
+                    if self.cost.estimated_credits is not None
+                    else {}
+                ),
             },
             "quality": {
                 "lint_delta": self.quality.lint_delta,

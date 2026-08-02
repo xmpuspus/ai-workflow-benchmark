@@ -162,6 +162,11 @@ class _FakeVanillaAdapter(_FakeCustomAdapter):
     supports_config_dir = False
 
 
+class _FakeCodexAdapter(_FakeCustomAdapter):
+    name = "codex-cli"
+    display_name = "Fake Codex"
+
+
 class _UnavailableAdapter(_FakeCustomAdapter):
     def check_available(self):
         return False
@@ -178,6 +183,8 @@ def _fake_get_adapter(custom_cls=_FakeCustomAdapter, vanilla_cls=_FakeVanillaAda
             return custom_cls()
         if name == "claude-code-vanilla":
             return vanilla_cls()
+        if name == "codex-cli":
+            return _FakeCodexAdapter()
         raise ValueError(f"Unknown adapter '{name}'")
 
     return _get
@@ -590,6 +597,38 @@ class TestCheckupStaticOnlyRealHarness:
         assert "Run all tests before declaring the task done." in result.output
         assert "No structural issues" in result.output
 
+    def test_codex_static_checkup_scans_agents_and_hooks(self, tmp_path):
+        from awb.commands.checkup_cmd import checkup
+
+        config_dir = tmp_path / "codex"
+        repo_dir = tmp_path / "repo"
+        config_dir.mkdir()
+        repo_dir.mkdir()
+        (config_dir / "AGENTS.md").write_text("- Run all tests before declaring the task done.\n")
+        (config_dir / "hooks.json").write_text(json.dumps({"hooks": {}}))
+        (repo_dir / "AGENTS.md").write_text("- Fix only the requested issue.\n")
+
+        result = CliRunner().invoke(
+            checkup,
+            [
+                "--tool",
+                "codex-cli",
+                "--static-only",
+                "--format",
+                "json",
+                "--config-dir",
+                str(config_dir),
+                "--repo-dir",
+                str(repo_dir),
+            ],
+        )
+
+        assert result.exit_code == 0, result.output
+        payload = json.loads(result.output)
+        assert payload["tool"] == "codex-cli"
+        assert "config/AGENTS.md" in payload["inventory"]["files_scanned"]
+        assert "config/hooks.json" in payload["inventory"]["files_scanned"]
+
     def test_structural_error_from_missing_hook_file_exits_one(self, tmp_path):
         from awb.commands.checkup_cmd import checkup
 
@@ -869,6 +908,60 @@ class TestCheckupFullProbe:
         )
         result = CliRunner().invoke(checkup_cmd.checkup, self._base_args(tmp_path))
         assert result.exit_code == 2, result.output
+
+    def test_codex_probe_uses_codex_adapter_and_tool_label(self, monkeypatch, tmp_path):
+        from awb.commands import checkup_cmd
+
+        install_fake_harness(monkeypatch)
+        monkeypatch.setattr("awb.adapters.registry.get_adapter", _fake_get_adapter())
+        task = _make_task()
+        monkeypatch.setattr("awb.core.task_loader.load_all_tasks", lambda tasks_dir=None: [task])
+        run_dir = tmp_path / "codex_probe_run1"
+        run_dir.mkdir()
+        trace_name = _write_trace(run_dir, task.id, "codex-cli", task.files_to_examine)
+        result_obj = _make_result(task.id, tool="codex-cli", score=90, trace_path=trace_name)
+        calls = []
+
+        def _fake_run_probe(tool, adapter, tasks, tasks_dir, concurrency):
+            calls.append((tool, adapter.name))
+            return [result_obj], run_dir
+
+        monkeypatch.setattr(checkup_cmd, "_run_probe", _fake_run_probe)
+        result = CliRunner().invoke(
+            checkup_cmd.checkup,
+            [
+                "--tool",
+                "codex-cli",
+                "--config-dir",
+                str(tmp_path),
+                "--yes",
+                "--format",
+                "json",
+            ],
+        )
+
+        assert result.exit_code == 0, result.output
+        assert calls == [("codex-cli", "codex-cli")]
+        assert json.loads(result.output)["tool"] == "codex-cli"
+
+    def test_codex_paired_requires_an_authenticated_baseline_home(self, monkeypatch, tmp_path):
+        from awb.commands import checkup_cmd
+
+        install_fake_harness(monkeypatch)
+        result = CliRunner().invoke(
+            checkup_cmd.checkup,
+            [
+                "--tool",
+                "codex-cli",
+                "--config-dir",
+                str(tmp_path),
+                "--paired",
+                "--yes",
+            ],
+        )
+
+        assert result.exit_code == 2, result.output
+        assert "--baseline-config-dir" in result.output
 
     def test_auth_failure_exits_two(self, monkeypatch, tmp_path):
         from awb.commands import checkup_cmd

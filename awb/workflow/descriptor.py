@@ -39,6 +39,9 @@ class EnvironmentSpec:
     agents_count: int = 0
     skills_count: int = 0
     claude_md_hash: str = ""
+    agents_md_hash: str = ""
+    rules_count: int = 0
+    plugins_count: int = 0
 
 
 @dataclass
@@ -69,6 +72,9 @@ class WorkflowDescriptor:
                 "agents_count": self.environment.agents_count,
                 "skills_count": self.environment.skills_count,
                 "claude_md_hash": self.environment.claude_md_hash,
+                "agents_md_hash": self.environment.agents_md_hash,
+                "rules_count": self.environment.rules_count,
+                "plugins_count": self.environment.plugins_count,
             },
         }
         digest = hashlib.sha256(json.dumps(canonical, sort_keys=True).encode()).hexdigest()
@@ -110,6 +116,9 @@ def load_descriptor(path: Path) -> WorkflowDescriptor:
         agents_count=env_raw.get("agents_count", 0),
         skills_count=env_raw.get("skills_count", 0),
         claude_md_hash=env_raw.get("claude_md_hash", ""),
+        agents_md_hash=env_raw.get("agents_md_hash", ""),
+        rules_count=env_raw.get("rules_count", 0),
+        plugins_count=env_raw.get("plugins_count", 0),
     )
 
     return WorkflowDescriptor(

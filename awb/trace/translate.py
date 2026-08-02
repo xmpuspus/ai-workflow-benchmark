@@ -1,4 +1,4 @@
-"""Translate Claude Code stream-json events into rich AWB trace spans.
+"""Translate coding-agent JSONL events into rich AWB trace spans.
 
 Claude Code emits tool calls as `tool_use` blocks *nested inside* an
 `assistant` event's `message.content`, and reports their results in a later
@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import logging
 import os
+import shlex
 from pathlib import Path
 
 from awb.trace.jsonl import TraceWriter
@@ -68,6 +69,10 @@ class TraceTranslator:
                 # Legacy / fake-adapter path: a top-level tool_use event.
                 name = event.get("tool") or event.get("name") or "unknown"
                 self._write(TOOL_USE, {"gen_ai.tool.name": str(name).lower()})
+            elif etype == "turn.completed":
+                self._handle_codex_turn(event)
+            elif etype == "item.completed":
+                self._handle_codex_item(event)
         except Exception as exc:  # never crash a run on trace translation
             log.debug("Trace translation failed (non-fatal): %s", exc)
 
@@ -134,6 +139,92 @@ class TraceTranslator:
                 command = self._pending_bash.pop(tid)
                 exit_code = 1 if block.get("is_error") else 0
                 self._write(SHELL_COMMAND, {"shell.command": command, "shell.exit_code": exit_code})
+
+    def _handle_codex_turn(self, event: dict) -> None:
+        usage = event.get("usage") or {}
+        if not isinstance(usage, dict):
+            return
+        attrs = {"gen_ai.system": "openai"}
+        mapping = {
+            "input_tokens": "gen_ai.usage.input_tokens",
+            "output_tokens": "gen_ai.usage.output_tokens",
+            "cached_input_tokens": "gen_ai.usage.cache_read_input_tokens",
+            "cache_write_input_tokens": "gen_ai.usage.cache_creation_input_tokens",
+            "reasoning_output_tokens": "gen_ai.usage.reasoning_output_tokens",
+        }
+        for source, destination in mapping.items():
+            if source in usage:
+                attrs[destination] = usage[source]
+        self._write(LLM_REQUEST, attrs)
+
+    def _handle_codex_item(self, event: dict) -> None:
+        item = event.get("item") or {}
+        if not isinstance(item, dict):
+            return
+        item_type = str(item.get("type") or "")
+
+        if item_type == "command_execution":
+            command = str(item.get("command") or "")
+            self._write_explicit_reads(command)
+            exit_code = item.get("exit_code")
+            self._write(
+                SHELL_COMMAND,
+                {
+                    "shell.command": command,
+                    "shell.exit_code": int(exit_code) if isinstance(exit_code, int) else 0,
+                },
+            )
+            return
+
+        if item_type == "file_change":
+            action_map = {"add": "write", "update": "edit", "delete": "delete"}
+            changes = item.get("changes") or []
+            if not isinstance(changes, list):
+                return
+            for change in changes:
+                if not isinstance(change, dict):
+                    continue
+                kind = str(change.get("kind") or "update")
+                self._write(
+                    FILE_EDIT,
+                    {
+                        "file.path": self._rel(change.get("path")),
+                        "file.action": action_map.get(kind, kind),
+                    },
+                )
+            return
+
+        if item_type in {"mcp_tool_call", "web_search"}:
+            name = item.get("tool") or item.get("name") or item_type
+            self._write(TOOL_USE, {"gen_ai.tool.name": str(name).lower()})
+
+    def _write_explicit_reads(self, command: str) -> None:
+        """Record explicit file arguments for common shell read/search commands."""
+        try:
+            tokens = shlex.split(command)
+        except ValueError:
+            return
+        if len(tokens) >= 3 and tokens[1] in {"-c", "-lc"}:
+            try:
+                tokens = shlex.split(tokens[2])
+            except ValueError:
+                return
+        if not tokens:
+            return
+        reader = Path(tokens[0]).name.lower()
+        if reader not in {"cat", "head", "tail", "sed", "grep", "rg"}:
+            return
+        for token in tokens[1:]:
+            if token.startswith("-"):
+                continue
+            candidate = Path(token).expanduser()
+            if not candidate.is_absolute() and self.workspace_root:
+                candidate = Path(self.workspace_root) / candidate
+            if candidate.is_file():
+                self._write(
+                    TOOL_USE,
+                    {"gen_ai.tool.name": "read", "file.path": self._rel(str(candidate))},
+                )
 
     def _rel(self, path: str | None) -> str:
         if not path:

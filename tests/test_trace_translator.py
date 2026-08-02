@@ -183,3 +183,81 @@ def test_handle_never_raises_on_malformed_event(tmp_path):
     p = _drain(tmp_path, [{"type": "assistant"}, {"type": "user"}, {}, {"type": "weird"}])
     assert json.loads  # sanity; file may be empty but no exception propagated
     load_trace(p)  # does not raise
+
+
+def test_codex_turn_usage_emits_openai_llm_span(tmp_path):
+    event = {
+        "type": "turn.completed",
+        "usage": {
+            "input_tokens": 100,
+            "cached_input_tokens": 80,
+            "output_tokens": 25,
+            "reasoning_output_tokens": 4,
+        },
+    }
+    p = _drain(tmp_path, [event])
+    spans = load_trace(p)
+
+    assert spans[0]["span_name"] == LLM_REQUEST
+    assert spans[0]["attributes"]["gen_ai.system"] == "openai"
+    assert spans[0]["attributes"]["gen_ai.usage.input_tokens"] == 100
+    assert spans[0]["attributes"]["gen_ai.usage.cache_read_input_tokens"] == 80
+
+
+def test_codex_command_and_file_change_events_are_gradeable(tmp_path):
+    events = [
+        {
+            "type": "item.completed",
+            "item": {
+                "id": "cmd",
+                "type": "command_execution",
+                "command": "/bin/zsh -lc 'pytest -q'",
+                "exit_code": 0,
+                "status": "completed",
+            },
+        },
+        {
+            "type": "item.completed",
+            "item": {
+                "id": "edit",
+                "type": "file_change",
+                "changes": [{"path": "/ws/src/x.py", "kind": "update"}],
+                "status": "completed",
+            },
+        },
+    ]
+    p = _drain(tmp_path, events, workspace_root="/ws")
+    spans = load_trace(p)
+
+    assert [span["span_name"] for span in spans] == [SHELL_COMMAND, FILE_EDIT]
+    assert spans[0]["attributes"]["shell.exit_code"] == 0
+    assert spans[1]["attributes"]["file.path"] == "src/x.py"
+    assert spans[1]["attributes"]["file.action"] == "edit"
+
+
+def test_codex_read_command_records_explicit_test_path_before_edit(tmp_path):
+    workspace = tmp_path / "ws"
+    (workspace / "tests").mkdir(parents=True)
+    (workspace / "tests" / "test_x.py").write_text("def test_x(): pass\n")
+    events = [
+        {
+            "type": "item.completed",
+            "item": {
+                "type": "command_execution",
+                "command": "sed -n '1,120p' tests/test_x.py",
+                "exit_code": 0,
+                "status": "completed",
+            },
+        },
+        {
+            "type": "item.completed",
+            "item": {
+                "type": "file_change",
+                "changes": [{"path": str(workspace / "src" / "x.py"), "kind": "update"}],
+                "status": "completed",
+            },
+        },
+    ]
+    p = _drain(tmp_path, events, workspace_root=workspace)
+
+    assert grade_trace(p)["read_tests_before_edit"] == 100

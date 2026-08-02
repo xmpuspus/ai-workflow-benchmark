@@ -21,12 +21,18 @@ def workflow():
 @click.argument("tool")
 @click.option("--name", "-n", required=True, help="Workflow name")
 @click.option("--output", "-o", type=click.Path(), help="Output file path")
-def workflow_export(tool: str, name: str, output: str | None):
+@click.option("--config-dir", type=click.Path(file_okay=False), help="Alternate tool config dir")
+def workflow_export(tool: str, name: str, output: str | None, config_dir: str | None):
     """Generate a workflow descriptor YAML from current tool config."""
     from awb.workflow.exporter import export_workflow
 
     out = Path(output) if output else None
-    path = export_workflow(tool, name, output_path=out)
+    path = export_workflow(
+        tool,
+        name,
+        output_path=out,
+        config_dir=Path(config_dir) if config_dir else None,
+    )
     console.print(f"Workflow exported: [bold]{path}[/bold]")
 
 
@@ -72,6 +78,8 @@ def workflow_diff(file1: str, file2: str):
         ("hooks", str(d1.environment.hooks_count), str(d2.environment.hooks_count)),
         ("agents", str(d1.environment.agents_count), str(d2.environment.agents_count)),
         ("skills", str(d1.environment.skills_count), str(d2.environment.skills_count)),
+        ("rules", str(d1.environment.rules_count), str(d2.environment.rules_count)),
+        ("plugins", str(d1.environment.plugins_count), str(d2.environment.plugins_count)),
         ("descriptor_hash", d1.descriptor_hash(), d2.descriptor_hash()),
     ]
 
@@ -100,13 +108,13 @@ def workflow_init(output: str):
 
     import yaml
 
-    from awb.workflow.exporter import export_claude_code_config
+    from awb.workflow.exporter import export_claude_code_config, export_codex_config
 
     descriptor = {
         "spec": "awb/v1",
         "name": name,
         "tool": tool,
-        "mode": "custom" if tool == "claude-code-custom" else "vanilla",
+        "mode": "custom" if tool in {"claude-code-custom", "codex-cli"} else "vanilla",
         "config": {
             "max_turns": max_turns,
             "timeout_seconds": timeout_s,
@@ -116,6 +124,12 @@ def workflow_init(output: str):
         descriptor["model"] = model
     if tool == "claude-code-custom":
         descriptor["environment"] = export_claude_code_config()
+    elif tool == "codex-cli":
+        environment, config_hash, configured_model = export_codex_config()
+        descriptor["environment"] = environment
+        descriptor["config"]["config_hash"] = config_hash
+        if not model and configured_model:
+            descriptor["model"] = configured_model
 
     out = Path(output)
     out.write_text(yaml.dump(descriptor, default_flow_style=False, sort_keys=False))

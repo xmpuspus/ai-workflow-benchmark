@@ -193,6 +193,42 @@ def test_files_scanned_lists_only_files_that_exist(tmp_path):
     assert inventory.files_scanned == ["repo/CLAUDE.md"]
 
 
+def test_config_agents_md_promises_are_scanned(tmp_path):
+    config_dir = tmp_path / "config"
+    config_dir.mkdir()
+    (config_dir / "AGENTS.md").write_text("- Run all tests before declaring the task done.\n")
+
+    inventory = extract_promises(config_dir=config_dir, repo_dir=None)
+
+    assert inventory.promises[0].pattern == "verification_gate"
+    assert inventory.promises[0].source == "config/AGENTS.md"
+    assert "config/AGENTS.md" in inventory.files_scanned
+
+
+def test_codex_hooks_json_promises_are_hook_enforced(tmp_path):
+    hooks = {
+        "hooks": {
+            "Stop": [
+                {
+                    "hooks": [
+                        {
+                            "type": "command",
+                            "command": "scripts/run-tests-before-declaring-done.sh",
+                        }
+                    ]
+                }
+            ]
+        }
+    }
+    (tmp_path / "hooks.json").write_text(json.dumps(hooks))
+
+    inventory = extract_promises(config_dir=tmp_path, repo_dir=None)
+
+    assert inventory.promises[0].enforcement == "hook"
+    assert inventory.promises[0].source == "config/hooks.json"
+    assert "config/hooks.json" in inventory.files_scanned
+
+
 def test_both_dirs_none_returns_empty_inventory():
     inventory = extract_promises(config_dir=None, repo_dir=None)
 

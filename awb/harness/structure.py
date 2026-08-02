@@ -1,4 +1,4 @@
-"""Static structural checks over a harness (settings.json + CLAUDE.md).
+"""Static structural checks over Claude Code and Codex harness files.
 
 Zero model calls, zero task runs: every check here is a file-existence or
 JSON-parse check. This is what backs stage 0 of `awb checkup` - the free,
@@ -10,11 +10,16 @@ from __future__ import annotations
 import json
 import re
 import shlex
+import tomllib
 from dataclasses import dataclass
 from pathlib import Path
 
 CLAUDE_MD_NAME = "CLAUDE.md"
+AGENTS_MD_NAME = "AGENTS.md"
+AGENTS_OVERRIDE_NAME = "AGENTS.override.md"
 SETTINGS_NAME = "settings.json"
+HOOKS_NAME = "hooks.json"
+CONFIG_TOML_NAME = "config.toml"
 
 # Extensions worth checking when CLAUDE.md backtick-references a path. Kept
 # narrow on purpose: a bare word in backticks (`ruff`, `pytest`) is usually a
@@ -110,12 +115,14 @@ def _resolve(token: str, base: Path, repo_dir: Path | None = None) -> Path:
     return base / expanded
 
 
-def _check_settings_json(config_dir: Path | None) -> tuple[list[StructuralIssue], dict | None]:
+def _check_json_file(
+    config_dir: Path | None, filename: str
+) -> tuple[list[StructuralIssue], dict | None]:
     issues: list[StructuralIssue] = []
-    settings_path = config_dir / SETTINGS_NAME if config_dir else None
+    settings_path = config_dir / filename if config_dir else None
     text, decode_error = _read_text(settings_path)
     if decode_error:
-        issues.append(_utf8_issue(_display("config", SETTINGS_NAME)))
+        issues.append(_utf8_issue(_display("config", filename)))
     if text is None:
         return issues, None
 
@@ -125,8 +132,8 @@ def _check_settings_json(config_dir: Path | None) -> tuple[list[StructuralIssue]
         issues.append(
             StructuralIssue(
                 severity="error",
-                message=f"settings.json is not valid JSON: {exc}",
-                source=_display("config", SETTINGS_NAME),
+                message=f"{filename} is not valid JSON: {exc}",
+                source=_display("config", filename),
             )
         )
         return issues, None
@@ -134,8 +141,35 @@ def _check_settings_json(config_dir: Path | None) -> tuple[list[StructuralIssue]
     return issues, data if isinstance(data, dict) else None
 
 
+def _check_settings_json(config_dir: Path | None) -> tuple[list[StructuralIssue], dict | None]:
+    return _check_json_file(config_dir, SETTINGS_NAME)
+
+
+def _check_config_toml(config_dir: Path | None) -> tuple[list[StructuralIssue], dict | None]:
+    path = config_dir / CONFIG_TOML_NAME if config_dir else None
+    if path is None or not path.exists():
+        return [], None
+    try:
+        with path.open("rb") as handle:
+            data = tomllib.load(handle)
+    except tomllib.TOMLDecodeError as exc:
+        return [
+            StructuralIssue(
+                severity="error",
+                message=f"config.toml is not valid TOML: {exc}",
+                source=_display("config", CONFIG_TOML_NAME),
+            )
+        ], None
+    except OSError:
+        return [], None
+    return [], data if isinstance(data, dict) else None
+
+
 def _check_hook_paths(
-    config_dir: Path, settings_data: dict, repo_dir: Path | None = None
+    config_dir: Path,
+    settings_data: dict,
+    repo_dir: Path | None = None,
+    source_name: str = SETTINGS_NAME,
 ) -> list[StructuralIssue]:
     issues: list[StructuralIssue] = []
     hooks = settings_data.get("hooks", {})
@@ -160,7 +194,7 @@ def _check_hook_paths(
                         StructuralIssue(
                             severity="warn",
                             message=f"{event} hook command is not a string: {raw_command!r}",
-                            source=_display("config", SETTINGS_NAME),
+                            source=_display("config", source_name),
                         )
                     )
                     continue
@@ -177,50 +211,54 @@ def _check_hook_paths(
                             StructuralIssue(
                                 severity=severity,
                                 message=f"{event} hook references missing file: {token}",
-                                source=_display("config", SETTINGS_NAME),
+                                source=_display("config", source_name),
                             )
                         )
     return issues
 
 
-def _primary_claude_md(config_dir: Path | None, repo_dir: Path | None) -> tuple[Path | None, str]:
-    """Prefer the repo-level CLAUDE.md: it governs the repo actually being graded."""
-    if repo_dir is not None and (repo_dir / CLAUDE_MD_NAME).exists():
-        return repo_dir / CLAUDE_MD_NAME, "repo"
-    if config_dir is not None and (config_dir / CLAUDE_MD_NAME).exists():
-        return config_dir / CLAUDE_MD_NAME, "config"
+def _primary_instruction_file(
+    config_dir: Path | None, repo_dir: Path | None
+) -> tuple[Path | None, str, str]:
+    """Return the most specific active Claude/Codex instruction file."""
+    for base, label in ((repo_dir, "repo"), (config_dir, "config")):
+        if base is None:
+            continue
+        for name in (AGENTS_OVERRIDE_NAME, AGENTS_MD_NAME, CLAUDE_MD_NAME):
+            if (base / name).exists():
+                return base / name, label, name
     if repo_dir is not None:
-        return None, "repo"
+        return None, "repo", CLAUDE_MD_NAME
     if config_dir is not None:
-        return None, "config"
-    return None, "repo"
+        return None, "config", CLAUDE_MD_NAME
+    return None, "repo", CLAUDE_MD_NAME
 
 
 def _check_claude_md(config_dir: Path | None, repo_dir: Path | None) -> list[StructuralIssue]:
     issues: list[StructuralIssue] = []
-    path, label = _primary_claude_md(config_dir, repo_dir)
+    path, label, instruction_name = _primary_instruction_file(config_dir, repo_dir)
     text, decode_error = _read_text(path)
     if decode_error:
-        issues.append(_utf8_issue(_display(label, CLAUDE_MD_NAME)))
+        issues.append(_utf8_issue(_display(label, instruction_name)))
 
     if text is None or not text.strip():
         issues.append(
             StructuralIssue(
                 severity="warn",
                 message="vanilla harness, nothing to grade statically",
-                source=_display(label, CLAUDE_MD_NAME),
+                source=_display(label, instruction_name),
             )
         )
         return issues
 
-    source = _display(label, CLAUDE_MD_NAME)
+    source = _display(label, instruction_name)
 
     if repo_dir is not None:
         if NPM_TEST_RE.search(text) and not (repo_dir / "package.json").exists():
             issues.append(
                 StructuralIssue(
                     severity="warn",
-                    message="CLAUDE.md documents `npm test` but no package.json exists",
+                    message=f"{instruction_name} documents `npm test` but no package.json exists",
                     source=source,
                 )
             )
@@ -231,7 +269,7 @@ def _check_claude_md(config_dir: Path | None, repo_dir: Path | None) -> list[Str
                 StructuralIssue(
                     severity="warn",
                     message=(
-                        "CLAUDE.md documents pytest but no pyproject.toml/"
+                        f"{instruction_name} documents pytest but no pyproject.toml/"
                         "pytest.ini/setup.cfg exists"
                     ),
                     source=source,
@@ -250,7 +288,7 @@ def _check_claude_md(config_dir: Path | None, repo_dir: Path | None) -> list[Str
                 issues.append(
                     StructuralIssue(
                         severity="warn",
-                        message=f"CLAUDE.md references missing file: {token}",
+                        message=f"{instruction_name} references missing file: {token}",
                         source=source,
                     )
                 )
@@ -268,10 +306,16 @@ def check_structure(config_dir: Path | None, repo_dir: Path | None) -> list[Stru
     """
     issues: list[StructuralIssue] = []
 
-    settings_issues, settings_data = _check_settings_json(config_dir)
-    issues.extend(settings_issues)
-    if config_dir is not None and settings_data is not None:
-        issues.extend(_check_hook_paths(config_dir, settings_data, repo_dir))
+    for filename in (SETTINGS_NAME, HOOKS_NAME):
+        json_issues, json_data = _check_json_file(config_dir, filename)
+        issues.extend(json_issues)
+        if config_dir is not None and json_data is not None:
+            issues.extend(_check_hook_paths(config_dir, json_data, repo_dir, filename))
+
+    toml_issues, toml_data = _check_config_toml(config_dir)
+    issues.extend(toml_issues)
+    if config_dir is not None and toml_data is not None:
+        issues.extend(_check_hook_paths(config_dir, toml_data, repo_dir, CONFIG_TOML_NAME))
 
     issues.extend(_check_claude_md(config_dir, repo_dir))
 

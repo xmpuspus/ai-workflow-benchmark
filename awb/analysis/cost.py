@@ -1,4 +1,4 @@
-"""Cost-per-solved-task report - dollars spent per correct change, grouped by tool."""
+"""Cost-per-solved-task report grouped by tool and billing unit."""
 
 from __future__ import annotations
 
@@ -17,6 +17,10 @@ class CostReport:
     wasted_cost_usd: float
     total_tokens: int
     tokens_per_solved: float | None
+    total_credits: float | None
+    credits_per_task: float | None
+    credits_per_solved: float | None
+    wasted_credits: float | None
 
 
 def build_cost_report(results) -> list[CostReport]:
@@ -40,6 +44,16 @@ def build_cost_report(results) -> list[CostReport]:
         total_cost = sum(r.cost.estimated_cost_usd or 0.0 for r in rs)
         wasted_cost = sum(r.cost.estimated_cost_usd or 0.0 for r in rs if not r.outcome.success)
         total_tokens = sum((r.cost.input_tokens or 0) + (r.cost.output_tokens or 0) for r in rs)
+        credit_values = [
+            r.cost.estimated_credits for r in rs if r.cost.estimated_credits is not None
+        ]
+        total_credits = sum(credit_values) if credit_values else None
+        wasted_credit_values = [
+            r.cost.estimated_credits
+            for r in rs
+            if not r.outcome.success and r.cost.estimated_credits is not None
+        ]
+        wasted_credits = sum(wasted_credit_values) if credit_values else None
         cost_per_task = total_cost / n_tasks if n_tasks else 0.0
         cost_per_solved = (total_cost / n_solved) if n_solved else None
         tokens_per_solved = (total_tokens / n_solved) if n_solved else None
@@ -56,6 +70,18 @@ def build_cost_report(results) -> list[CostReport]:
                 tokens_per_solved=(
                     round(tokens_per_solved, 1) if tokens_per_solved is not None else None
                 ),
+                total_credits=round(total_credits, 4) if total_credits is not None else None,
+                credits_per_task=(
+                    round(total_credits / n_tasks, 4)
+                    if total_credits is not None and n_tasks
+                    else None
+                ),
+                credits_per_solved=(
+                    round(total_credits / n_solved, 4)
+                    if total_credits is not None and n_solved
+                    else None
+                ),
+                wasted_credits=(round(wasted_credits, 4) if wasted_credits is not None else None),
             )
         )
 

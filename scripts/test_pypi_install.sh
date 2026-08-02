@@ -84,6 +84,8 @@ echo "--- Run (dry-run modes) ---"
 check "awb run --help" awb run --help
 check "awb run -t BF-001 --dry-run -y claude-code-vanilla" \
     awb run -t BF-001 --dry-run -y claude-code-vanilla
+check "awb run -t BF-001 --dry-run -y codex-cli" \
+    awb run -t BF-001 --dry-run -y codex-cli
 check "awb run --fast-check --dry-run -y claude-code-vanilla" \
     awb run --fast-check --dry-run -y claude-code-vanilla
 check "awb run --progressive --dry-run -y claude-code-vanilla" \
@@ -141,6 +143,13 @@ check "awb workflow export" \
 check "awb workflow validate" awb workflow validate wf.yaml
 cp wf.yaml wf2.yaml
 check "awb workflow diff" awb workflow diff wf.yaml wf2.yaml
+mkdir -p fake-codex
+printf -- "model = \"gpt-5.6-sol\"\n" > fake-codex/config.toml
+printf -- "- Run tests before declaring done\n- Never edit files outside the task scope\n" \
+    > fake-codex/AGENTS.md
+check "awb workflow export codex-cli" \
+    awb workflow export codex-cli --config-dir fake-codex -n codex-smoke -o codex.yaml
+check "awb workflow validate codex-cli" awb workflow validate codex.yaml
 
 echo
 echo "--- Harness tuning (v1.5) ---"
@@ -160,6 +169,8 @@ check "awb checkup --static-only" \
     awb checkup --static-only --config-dir fake-config --repo-dir .
 check "awb checkup --static-only --format json" \
     awb checkup --static-only --config-dir fake-config --repo-dir . --format json
+check "awb checkup codex-cli --static-only" \
+    awb checkup --tool codex-cli --static-only --config-dir fake-codex --repo-dir .
 
 echo
 echo "--- Migrate ---"

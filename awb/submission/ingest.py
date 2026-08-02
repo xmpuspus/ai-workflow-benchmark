@@ -102,6 +102,7 @@ def parse_submission(data: dict) -> Submission:
                         input_tokens=cost_raw.get("input_tokens", 0),
                         output_tokens=cost_raw.get("output_tokens", 0),
                         estimated_cost_usd=cost_raw["estimated_cost_usd"],
+                        estimated_credits=cost_raw.get("estimated_credits"),
                     ),
                     quality=SubmissionRunQuality(
                         lint_delta=quality_raw.get("lint_delta", 0),
@@ -153,6 +154,7 @@ def submission_to_run_results(submission: Submission) -> list[RunResult]:
                         input_tokens=run.cost.input_tokens,
                         output_tokens=run.cost.output_tokens,
                         estimated_cost_usd=run.cost.estimated_cost_usd,
+                        estimated_credits=run.cost.estimated_credits,
                     ),
                     quality=RunQuality(
                         lint_delta=run.quality.lint_delta,

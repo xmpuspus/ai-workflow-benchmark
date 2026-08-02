@@ -93,7 +93,174 @@ def test_codex_config_hash_deterministic():
     from awb.adapters.codex_cli import CodexCliAdapter
 
     adapter = CodexCliAdapter()
-    assert adapter.get_config_hash() == adapter.get_config_hash()
+    first = adapter.get_config_hash()
+    assert len(first) == 16
+    assert first == adapter.get_config_hash()
+
+
+class TestCodexCliAdapter:
+    def test_uses_current_noninteractive_json_interface(self):
+        from awb.adapters.codex_cli import CodexCliAdapter
+
+        cmd = CodexCliAdapter()._get_cmd("fix the bug", 20)
+
+        assert cmd[:2] == ["codex", "exec"]
+        assert "--json" in cmd
+        assert "--ephemeral" in cmd
+        assert cmd[cmd.index("--sandbox") : cmd.index("--sandbox") + 2] == [
+            "--sandbox",
+            "workspace-write",
+        ]
+        assert cmd[-1] == "fix the bug"
+        assert "--output-format" not in cmd
+
+    def test_alternate_config_dir_sets_codex_home(self, tmp_path):
+        from awb.adapters.codex_cli import CodexCliAdapter
+
+        assert CodexCliAdapter(config_dir=tmp_path)._get_env()["CODEX_HOME"] == str(tmp_path)
+
+    def test_default_config_dir_does_not_override_codex_home(self):
+        from pathlib import Path
+
+        from awb.adapters.codex_cli import CodexCliAdapter
+
+        env = CodexCliAdapter(config_dir=Path.home() / ".codex")._get_env()
+        assert "CODEX_HOME" not in env
+
+    def test_config_hash_covers_codex_harness_files(self, tmp_path):
+        from awb.adapters.codex_cli import CodexCliAdapter
+
+        (tmp_path / "config.toml").write_text('model = "gpt-test"\n')
+        (tmp_path / "AGENTS.md").write_text("Run tests before done.\n")
+        adapter = CodexCliAdapter(config_dir=tmp_path)
+        before = adapter.get_config_hash()
+
+        (tmp_path / "hooks.json").write_text('{"hooks": {}}\n')
+
+        assert adapter.get_config_hash() != before
+
+    def test_chatgpt_credit_pricing_matches_configured_model(self, tmp_path):
+        from awb.adapters.codex_cli import CodexCliAdapter
+
+        (tmp_path / "config.toml").write_text('model = "gpt-5.6-sol"\nservice_tier = "default"\n')
+
+        pricing = CodexCliAdapter(config_dir=tmp_path).get_model_pricing()
+
+        assert pricing == {
+            "billing_unit": "credits",
+            "input_per_m": 125.0,
+            "cached_input_per_m": 12.5,
+            "output_per_m": 750.0,
+            "usd_per_credit": 0.04,
+        }
+
+    def test_fast_mode_applies_documented_credit_multiplier(self, tmp_path):
+        from awb.adapters.codex_cli import CodexCliAdapter
+
+        (tmp_path / "config.toml").write_text('model = "gpt-5.6-sol"\nservice_tier = "fast"\n')
+
+        pricing = CodexCliAdapter(config_dir=tmp_path).get_model_pricing()
+
+        assert pricing["input_per_m"] == pytest.approx(312.5)
+        assert pricing["cached_input_per_m"] == pytest.approx(31.25)
+        assert pricing["output_per_m"] == pytest.approx(1875.0)
+
+    def test_execute_streams_json_events_to_callback(self, tmp_path):
+        import asyncio
+        import json as _json
+        import sys
+
+        from awb.adapters.codex_cli import CodexCliAdapter
+
+        events = [
+            {"type": "thread.started", "thread_id": "t"},
+            {
+                "type": "turn.completed",
+                "usage": {
+                    "input_tokens": 100,
+                    "cached_input_tokens": 40,
+                    "output_tokens": 20,
+                    "reasoning_output_tokens": 5,
+                },
+            },
+        ]
+        script = tmp_path / "fake_codex.py"
+        script.write_text(
+            "import json\n"
+            f"events = {_json.dumps(events)!r}\n"
+            "for event in json.loads(events):\n"
+            "    print(json.dumps(event), flush=True)\n"
+        )
+        adapter = CodexCliAdapter(config_dir=tmp_path)
+        adapter._get_cmd = lambda prompt, max_turns: [sys.executable, str(script)]
+        seen = []
+
+        result = asyncio.run(
+            adapter.execute("do a thing", tmp_path, timeout_seconds=30, on_event=seen.append)
+        )
+
+        assert result.success is True
+        assert result.stream_events == events
+        assert seen == events
+        assert adapter._streams_events_inline is True
+
+    def test_execute_survives_oversized_jsonl_line(self, tmp_path):
+        import asyncio
+        import json as _json
+        import sys
+
+        from awb.adapters.codex_cli import CodexCliAdapter
+
+        oversized = _json.dumps(
+            {
+                "type": "item.completed",
+                "item": {"type": "agent_message", "text": "x" * 100_000},
+            }
+        )
+        script = tmp_path / "oversized_codex.py"
+        script.write_text(
+            "import sys\n"
+            f"sys.stdout.write({oversized!r} + chr(10))\n"
+            'sys.stdout.write(\'{"type":"turn.completed","usage":{"input_tokens":1}}\' '
+            "+ chr(10))\n"
+        )
+        adapter = CodexCliAdapter(config_dir=tmp_path)
+        adapter._get_cmd = lambda prompt, max_turns: [sys.executable, str(script)]
+
+        result = asyncio.run(adapter.execute("do a thing", tmp_path, timeout_seconds=30))
+
+        assert result.success is True
+        assert result.stream_events[-1]["type"] == "turn.completed"
+
+    def test_cancellation_terminates_process_group(self, tmp_path, monkeypatch):
+        import asyncio
+        import sys
+
+        from awb.adapters.codex_cli import CodexCliAdapter
+
+        script = tmp_path / "slow_codex.py"
+        script.write_text("import time\ntime.sleep(30)\n")
+        adapter = CodexCliAdapter(config_dir=tmp_path)
+        adapter._get_cmd = lambda prompt, max_turns: [sys.executable, str(script)]
+        kill_calls = []
+        real_killpg = __import__("os").killpg
+
+        def record_killpg(pid, sig):
+            kill_calls.append((pid, sig))
+            real_killpg(pid, sig)
+
+        monkeypatch.setattr("awb.adapters.codex_cli.os.killpg", record_killpg)
+
+        async def cancel_run():
+            task = asyncio.create_task(adapter.execute("wait", tmp_path, timeout_seconds=30))
+            await asyncio.sleep(0.05)
+            task.cancel()
+            with pytest.raises(asyncio.CancelledError):
+                await task
+
+        asyncio.run(cancel_run())
+
+        assert kill_calls
 
 
 def test_on_event_signature_is_callable_typed():

@@ -17,13 +17,29 @@
   ],
   "additionalProperties": false,
   "properties": {
-    "schema_version": {"type": "integer", "const": 2},
-    "task_id": {"type": "string"},
-    "tool": {"type": "string"},
-    "tool_version": {"type": "string"},
-    "model": {"type": "string"},
-    "run_id": {"type": "string"},
-    "timestamp": {"type": "string", "format": "date-time"},
+    "schema_version": {
+      "type": "integer",
+      "const": 2
+    },
+    "task_id": {
+      "type": "string"
+    },
+    "tool": {
+      "type": "string"
+    },
+    "tool_version": {
+      "type": "string"
+    },
+    "model": {
+      "type": "string"
+    },
+    "run_id": {
+      "type": "string"
+    },
+    "timestamp": {
+      "type": "string",
+      "format": "date-time"
+    },
     "task_set_hash": {
       "type": "string",
       "pattern": "^[a-f0-9]{64}$",
@@ -35,32 +51,61 @@
     },
     "outcome": {
       "type": "object",
-      "required": ["success", "partial_credit_score", "partial_credit_max"],
+      "required": [
+        "success",
+        "partial_credit_score",
+        "partial_credit_max"
+      ],
       "additionalProperties": false,
       "properties": {
-        "success": {"type": "boolean"},
-        "partial_credit_score": {"type": "number", "minimum": 0},
-        "partial_credit_max": {"type": "number", "minimum": 0},
+        "success": {
+          "type": "boolean"
+        },
+        "partial_credit_score": {
+          "type": "number",
+          "minimum": 0
+        },
+        "partial_credit_max": {
+          "type": "number",
+          "minimum": 0
+        },
         "breakdown": {
           "type": "array",
           "items": {
             "type": "object",
             "additionalProperties": false,
             "properties": {
-              "criterion": {"type": "string"},
-              "points_earned": {"type": "number"},
-              "points_possible": {"type": "number"},
-              "passed": {"type": "boolean"}
+              "criterion": {
+                "type": "string"
+              },
+              "points_earned": {
+                "type": "number"
+              },
+              "points_possible": {
+                "type": "number"
+              },
+              "passed": {
+                "type": "boolean"
+              }
             }
           }
         },
         "error": {
-          "type": ["object", "null"],
+          "type": [
+            "object",
+            "null"
+          ],
           "additionalProperties": false,
           "properties": {
-            "exc_type": {"type": "string"},
-            "exc_message": {"type": "string"},
-            "traceback_tail": {"type": "string"}
+            "exc_type": {
+              "type": "string"
+            },
+            "exc_message": {
+              "type": "string"
+            },
+            "traceback_tail": {
+              "type": "string"
+            }
           }
         }
       }
@@ -69,57 +114,114 @@
       "type": "object",
       "additionalProperties": false,
       "properties": {
-        "wall_clock_seconds": {"type": "number"},
-        "iteration_count": {"type": "integer"},
-        "human_interventions": {"type": "integer"},
-        "tool_calls": {"type": "object"},
-        "files_modified": {"type": "integer"},
-        "lines_changed": {"type": "integer"}
+        "wall_clock_seconds": {
+          "type": "number"
+        },
+        "iteration_count": {
+          "type": "integer"
+        },
+        "human_interventions": {
+          "type": "integer"
+        },
+        "tool_calls": {
+          "type": "object"
+        },
+        "files_modified": {
+          "type": "integer"
+        },
+        "lines_changed": {
+          "type": "integer"
+        }
       }
     },
     "cost": {
       "type": "object",
       "additionalProperties": false,
       "properties": {
-        "input_tokens": {"type": "integer"},
-        "output_tokens": {"type": "integer"},
-        "cache_read_tokens": {"type": "integer"},
-        "cache_creation_tokens": {"type": "integer"},
-        "thinking_tokens": {"type": "integer"},
-        "estimated_cost_usd": {"type": "number"}
+        "input_tokens": {
+          "type": "integer"
+        },
+        "output_tokens": {
+          "type": "integer"
+        },
+        "cache_read_tokens": {
+          "type": "integer"
+        },
+        "cache_creation_tokens": {
+          "type": "integer"
+        },
+        "thinking_tokens": {
+          "type": "integer"
+        },
+        "estimated_cost_usd": {
+          "type": "number"
+        },
+        "estimated_credits": {
+          "type": "number"
+        }
       }
     },
     "quality": {
       "type": "object",
       "additionalProperties": false,
       "properties": {
-        "lint_delta": {"type": "integer"},
-        "security_delta": {"type": "integer"},
-        "test_regressions": {"type": "integer"}
+        "lint_delta": {
+          "type": "integer"
+        },
+        "security_delta": {
+          "type": "integer"
+        },
+        "test_regressions": {
+          "type": "integer"
+        }
       }
     },
     "environment": {
       "type": "object",
       "additionalProperties": false,
       "properties": {
-        "os": {"type": "string"},
-        "hardware": {"type": "string"},
-        "python_version": {"type": "string"},
-        "awb_version": {"type": "string"},
-        "adapter_version": {"type": "string"},
-        "pip_freeze_hash": {"type": "string"}
+        "os": {
+          "type": "string"
+        },
+        "hardware": {
+          "type": "string"
+        },
+        "python_version": {
+          "type": "string"
+        },
+        "awb_version": {
+          "type": "string"
+        },
+        "adapter_version": {
+          "type": "string"
+        },
+        "pip_freeze_hash": {
+          "type": "string"
+        }
       }
     },
     "workflow": {
       "type": "object",
       "additionalProperties": false,
       "properties": {
-        "name": {"type": "string"},
-        "descriptor_hash": {"type": "string"},
-        "tool": {"type": "string"},
-        "model": {"type": "string"},
-        "mode": {"type": "string"},
-        "config_hash": {"type": "string"}
+        "name": {
+          "type": "string"
+        },
+        "descriptor_hash": {
+          "type": "string"
+        },
+        "tool": {
+          "type": "string"
+        },
+        "model": {
+          "type": "string"
+        },
+        "mode": {
+          "type": "string"
+        },
+        "config_hash": {
+          "type": "string"
+        }
       }
     }
   }

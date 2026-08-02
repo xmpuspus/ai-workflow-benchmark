@@ -50,6 +50,53 @@ def test_missing_settings_json_is_not_reported(tmp_path):
     assert not any("settings.json" in i.source and i.severity == "error" for i in issues)
 
 
+def test_codex_hooks_json_paths_are_checked(tmp_path):
+    config_dir = tmp_path / "config"
+    repo_dir = tmp_path / "repo"
+    config_dir.mkdir()
+    repo_dir.mkdir()
+    (repo_dir / "AGENTS.md").write_text("Run tests before done.\n")
+    hooks = {
+        "hooks": {
+            "PreToolUse": [
+                {
+                    "matcher": "Bash",
+                    "hooks": [{"type": "command", "command": "python3 hooks/does_not_exist.py"}],
+                }
+            ]
+        }
+    }
+    (config_dir / "hooks.json").write_text(json.dumps(hooks))
+
+    issues = check_structure(config_dir, repo_dir)
+
+    assert any(i.source == "config/hooks.json" and i.severity == "error" for i in issues)
+
+
+def test_malformed_codex_config_toml_is_structural_error(tmp_path):
+    config_dir = tmp_path / "config"
+    repo_dir = tmp_path / "repo"
+    config_dir.mkdir()
+    repo_dir.mkdir()
+    (repo_dir / "AGENTS.md").write_text("Run tests before done.\n")
+    (config_dir / "config.toml").write_text('model = "unterminated\n')
+
+    issues = check_structure(config_dir, repo_dir)
+
+    assert any(i.source == "config/config.toml" and i.severity == "error" for i in issues)
+
+
+def test_repo_agents_md_is_a_non_vanilla_instruction_file(tmp_path):
+    repo_dir = tmp_path / "repo"
+    repo_dir.mkdir()
+    (repo_dir / "AGENTS.md").write_text("Run pytest before declaring done.\n")
+    (repo_dir / "pyproject.toml").write_text("[project]\nname = 'demo'\n")
+
+    issues = check_structure(config_dir=None, repo_dir=repo_dir)
+
+    assert not any(i.message == "vanilla harness, nothing to grade statically" for i in issues)
+
+
 def test_hook_referencing_missing_script_is_an_error(tmp_path):
     config_dir = tmp_path / "config"
     _write_settings(

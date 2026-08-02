@@ -2,7 +2,18 @@
   "$schema": "http://json-schema.org/draft-07/schema#",
   "title": "AWB Task Definition",
   "type": "object",
-  "required": ["id", "category", "title", "difficulty", "estimated_minutes", "languages", "repo", "issue", "verification", "constraints"],
+  "required": [
+    "id",
+    "category",
+    "title",
+    "difficulty",
+    "estimated_minutes",
+    "languages",
+    "repo",
+    "issue",
+    "verification",
+    "constraints"
+  ],
   "additionalProperties": false,
   "properties": {
     "id": {
@@ -11,7 +22,16 @@
     },
     "category": {
       "type": "string",
-      "enum": ["bug-fix", "feature-addition", "refactoring", "code-review", "debugging", "multi-file", "legacy-code", "workflow"]
+      "enum": [
+        "bug-fix",
+        "feature-addition",
+        "refactoring",
+        "code-review",
+        "debugging",
+        "multi-file",
+        "legacy-code",
+        "workflow"
+      ]
     },
     "title": {
       "type": "string",
@@ -20,7 +40,11 @@
     },
     "difficulty": {
       "type": "string",
-      "enum": ["easy", "medium", "hard"]
+      "enum": [
+        "easy",
+        "medium",
+        "hard"
+      ]
     },
     "estimated_minutes": {
       "type": "integer",
@@ -29,44 +53,77 @@
     },
     "languages": {
       "type": "array",
-      "items": {"type": "string"},
+      "items": {
+        "type": "string"
+      },
       "minItems": 1
     },
     "tags": {
       "type": "array",
-      "items": {"type": "string"}
+      "items": {
+        "type": "string"
+      }
     },
     "capabilities": {
       "type": "array",
       "items": {
         "type": "string",
-        "enum": ["code_comprehension", "bug_diagnosis", "multi_file_reasoning", "framework_knowledge", "test_writing", "refactoring_discipline", "security_awareness", "completeness_tracking", "convention_adherence", "context_discovery", "security_methodology"]
+        "enum": [
+          "code_comprehension",
+          "bug_diagnosis",
+          "multi_file_reasoning",
+          "framework_knowledge",
+          "test_writing",
+          "refactoring_discipline",
+          "security_awareness",
+          "completeness_tracking",
+          "convention_adherence",
+          "context_discovery",
+          "security_methodology"
+        ]
       },
       "minItems": 1,
       "maxItems": 3
     },
     "repo": {
       "type": "object",
-      "required": ["url", "commit"],
+      "required": [
+        "url",
+        "commit"
+      ],
       "additionalProperties": false,
       "properties": {
-        "url": {"type": "string", "format": "uri"},
-        "commit": {"type": "string", "pattern": "^[a-f0-9]{7,40}$"},
+        "url": {
+          "type": "string",
+          "format": "uri"
+        },
+        "commit": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{7,40}$"
+        },
         "setup_commands": {
           "type": "array",
-          "items": {"type": "string"}
+          "items": {
+            "type": "string"
+          }
         }
       }
     },
     "issue": {
       "type": "object",
-      "required": ["description"],
+      "required": [
+        "description"
+      ],
       "additionalProperties": false,
       "properties": {
-        "description": {"type": "string"},
+        "description": {
+          "type": "string"
+        },
         "files_to_examine": {
           "type": "array",
-          "items": {"type": "string"}
+          "items": {
+            "type": "string"
+          }
         }
       }
     },
@@ -76,26 +133,43 @@
       "properties": {
         "test_commands": {
           "type": "array",
-          "items": {"type": "string"}
+          "items": {
+            "type": "string"
+          }
         },
         "lint_commands": {
           "type": "array",
-          "items": {"type": "string"}
+          "items": {
+            "type": "string"
+          }
         },
         "security_commands": {
           "type": "array",
-          "items": {"type": "string"}
+          "items": {
+            "type": "string"
+          }
         },
         "partial_credit": {
           "type": "array",
           "items": {
             "type": "object",
-            "required": ["criterion", "points", "check"],
+            "required": [
+              "criterion",
+              "points",
+              "check"
+            ],
             "additionalProperties": false,
             "properties": {
-              "criterion": {"type": "string"},
-              "points": {"type": "integer", "minimum": 1},
-              "check": {"type": "string"}
+              "criterion": {
+                "type": "string"
+              },
+              "points": {
+                "type": "integer",
+                "minimum": 1
+              },
+              "check": {
+                "type": "string"
+              }
             }
           }
         }
@@ -103,25 +177,44 @@
     },
     "workspace_claude_md": {
       "type": "string",
-      "description": "Optional inline CLAUDE.md content written to workspace .claude/CLAUDE.md before tool runs"
+      "description": "Optional inline project instructions written for both Claude Code and Codex before tool runs"
     },
     "provenance": {
       "type": "object",
       "additionalProperties": false,
       "properties": {
-        "source_pr_url": {"type": "string", "format": "uri"},
-        "created_at": {"type": "string", "format": "date-time"},
-        "last_verified_at": {"type": "string", "format": "date-time"}
+        "source_pr_url": {
+          "type": "string",
+          "format": "uri"
+        },
+        "created_at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "last_verified_at": {
+          "type": "string",
+          "format": "date-time"
+        }
       }
     },
     "contamination_risk": {
       "type": "string",
-      "enum": ["low", "medium", "high", "unknown"],
+      "enum": [
+        "low",
+        "medium",
+        "high",
+        "unknown"
+      ],
       "description": "Estimated likelihood that this task appears in frontier-model training corpora"
     },
     "label": {
       "type": "string",
-      "enum": ["real_pr", "synthetic_overlay", "mutated", "fresh"],
+      "enum": [
+        "real_pr",
+        "synthetic_overlay",
+        "mutated",
+        "fresh"
+      ],
       "description": "Origin of the task: harvested from a real PR, hand-crafted overlay on a real repo, mutated from a real bug, or freshly authored after a known training cutoff"
     },
     "constraints": {

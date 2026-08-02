@@ -10,7 +10,16 @@ readme = "README.md"
 license = "MIT"
 requires-python = ">=3.11"
 authors = [{name = "Xavier Puspus"}]
-keywords = ["benchmark", "ai-coding", "claude-code", "developer-tools", "workflow", "swe-bench"]
+keywords = [
+    "benchmark",
+    "ai-coding",
+    "claude-code",
+    "codex",
+    "codex-cli",
+    "developer-tools",
+    "workflow",
+    "swe-bench",
+]
 classifiers = [
     "Development Status :: 3 - Alpha",
     "Intended Audience :: Developers",

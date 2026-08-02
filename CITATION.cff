@@ -10,9 +10,6 @@ identifiers:
   - type: doi
     value: "10.5281/zenodo.20361437"
     description: "Concept DOI (always resolves to latest release)"
-  - type: doi
-    value: "10.5281/zenodo.20361438"
-    description: "Version DOI (v1.3.0)"
 repository-code: "https://github.com/xmpuspus/ai-workflow-benchmark"
 url: "https://github.com/xmpuspus/ai-workflow-benchmark"
 abstract: >
@@ -27,8 +24,10 @@ keywords:
   - ai-coding
   - llm-evaluation
   - claude-code
+  - codex
+  - codex-cli
   - workflow-evaluation
   - shipping-discipline
 license: MIT
-version: "1.5.4"
-date-released: "2026-07-08"
+version: "1.7.0"
+date-released: "2026-08-01"

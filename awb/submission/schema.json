@@ -349,6 +349,10 @@
                     "estimated_cost_usd": {
                       "type": "number",
                       "minimum": 0
+                    },
+                    "estimated_credits": {
+                      "type": "number",
+                      "minimum": 0
                     }
                   }
                 },

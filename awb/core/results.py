@@ -220,6 +220,7 @@ def _dict_to_result(data: dict) -> RunResult:
             cache_creation_tokens=cost_data.get("cache_creation_tokens", 0),
             thinking_tokens=cost_data.get("thinking_tokens", 0),
             estimated_cost_usd=cost_data.get("estimated_cost_usd", 0),
+            estimated_credits=cost_data.get("estimated_credits"),
         ),
         quality=RunQuality(
             lint_delta=quality_data.get("lint_delta", 0),
