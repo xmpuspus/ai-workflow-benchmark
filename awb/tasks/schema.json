@@ -124,6 +124,13 @@
           "items": {
             "type": "string"
           }
+        },
+        "allowed_edit_paths": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "Explicit repository-relative paths or glob patterns the agent may edit"
         }
       }
     },
@@ -178,6 +185,13 @@
     "workspace_claude_md": {
       "type": "string",
       "description": "Optional inline project instructions written for both Claude Code and Codex before tool runs"
+    },
+    "allowed_edit_paths": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "description": "Explicit repository-relative paths or glob patterns the agent may edit"
     },
     "provenance": {
       "type": "object",

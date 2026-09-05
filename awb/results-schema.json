@@ -158,6 +158,9 @@
         },
         "estimated_credits": {
           "type": "number"
+        },
+        "usage_status": {
+          "type": "string"
         }
       }
     },
@@ -173,6 +176,15 @@
         },
         "test_regressions": {
           "type": "integer"
+        },
+        "lint_status": {
+          "type": "string"
+        },
+        "security_status": {
+          "type": "string"
+        },
+        "test_regressions_status": {
+          "type": "string"
         }
       }
     },
@@ -199,6 +211,78 @@
           "type": "string"
         }
       }
+    },
+    "execution": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "status": {
+          "type": "string"
+        },
+        "stage": {
+          "type": "string"
+        },
+        "termination_reason": {
+          "type": "string"
+        },
+        "tool_success": {
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "tool_exit_code": {
+          "type": [
+            "integer",
+            "null"
+          ]
+        }
+      }
+    },
+    "task_definition_hash": {
+      "type": "string"
+    },
+    "evaluator_version": {
+      "type": "string"
+    },
+    "effective_config_hash": {
+      "type": "string"
+    },
+    "adapter_version": {
+      "type": "string"
+    },
+    "execution_mode": {
+      "type": "string"
+    },
+    "environment_fingerprint": {
+      "type": "string"
+    },
+    "budget_fingerprint": {
+      "type": "string"
+    },
+    "cohort_id": {
+      "type": "string"
+    },
+    "loaded_instruction_files": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "allowed_edit_paths": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "effective_input_manifest": {
+      "type": "object"
+    },
+    "environment_manifest": {
+      "type": "object"
+    },
+    "cohort_manifest": {
+      "type": "object"
     },
     "workflow": {
       "type": "object",

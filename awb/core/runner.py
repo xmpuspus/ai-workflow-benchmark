@@ -4,9 +4,12 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import hashlib
+import json
 import logging
 import sys
 import time
+from dataclasses import asdict
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -16,6 +19,7 @@ from rich.progress import BarColumn, MofNCompleteColumn, Progress, TextColumn, T
 from awb.core.config import (
     TASKS_DIR,
     RunEnvironment,
+    RunExecution,
     RunOutcome,
     RunQuality,
     RunResult,
@@ -29,9 +33,9 @@ from awb.core.timeout import TaskTimeoutError, run_with_timeout
 from awb.scoring.integrity import compute_task_set_hash
 from awb.trace import TraceWriter
 from awb.trace.translate import TraceTranslator
-from awb.verification.lint_checker import count_lint_issues
+from awb.verification.lint_checker import count_lint_issues, measure_lint_issues
 from awb.verification.partial_credit import evaluate_partial_credit
-from awb.verification.security_scanner import count_security_issues
+from awb.verification.security_scanner import count_security_issues, measure_security_issues
 from awb.verification.test_runner import run_tests
 
 log = logging.getLogger(__name__)
@@ -76,6 +80,11 @@ class BenchmarkRunner:
         progressive: bool = False,
         use_uv: bool = False,
         tasks_dir: Path | None = None,
+        experiment_timeout_seconds: int | None = None,
+        setup_timeout_seconds: int = 900,
+        verification_timeout_seconds: int = 600,
+        execution_mode: str = "host",
+        container_image: str = "",
     ) -> None:
         self.tool = tool
         self.tasks = tasks
@@ -87,6 +96,12 @@ class BenchmarkRunner:
         self.concurrency = concurrency
         self.adaptive = adaptive
         self.progressive = progressive
+        self.experiment_timeout_seconds = experiment_timeout_seconds
+        self.setup_timeout_seconds = setup_timeout_seconds
+        self.verification_timeout_seconds = verification_timeout_seconds
+        self.execution_mode = execution_mode
+        self.container_image = container_image
+        self._experiment_deadline: float | None = None
         self.repo_manager = RepoManager(use_uv=use_uv)
         self.recorder = ResultRecorder()
         self._environment = RunEnvironment()
@@ -100,7 +115,12 @@ class BenchmarkRunner:
 
         # Resume: try to find an incomplete run for this tool
         if self.resume:
-            existing = self.recorder.find_incomplete_run(tool, len(tasks))
+            existing = self.recorder.find_incomplete_run(
+                tool,
+                task_ids=[task.id for task in tasks],
+                requested_runs=runs,
+                task_set_hash=self._task_set_hash,
+            )
             if existing:
                 self._run_id = existing
                 _console.print(f"[bold cyan]Resuming run:[/bold cyan] {existing}")
@@ -161,12 +181,23 @@ class BenchmarkRunner:
         completed = 0
         passed = 0
         run_start = time.monotonic()
+        if self.experiment_timeout_seconds:
+            self._experiment_deadline = run_start + self.experiment_timeout_seconds
 
         # Tasks eligible for re-running in adaptive mode (populated after run 1)
         near_miss_ids: set[str] | None = None
         progressive_stopped = False
 
         for run_num in range(1, self.runs + 1):
+            if (
+                self._experiment_deadline is not None
+                and time.monotonic() >= self._experiment_deadline
+            ):
+                _console.print(
+                    "[yellow]Experiment deadline reached; "
+                    "remaining attempts are resumable.[/yellow]"
+                )
+                break
             if progressive_stopped:
                 break
 
@@ -344,6 +375,19 @@ class BenchmarkRunner:
         total_tasks: int,
         on_task_complete=None,
     ) -> list[RunResult]:
+        cached_results: list[RunResult] = []
+        pending_tasks: list[TaskDefinition] = []
+        for task in tasks:
+            cached = (
+                self.recorder.load_single(run_id, task.id, self.tool)
+                if getattr(self, "resume", False)
+                else None
+            )
+            if cached is None:
+                pending_tasks.append(task)
+            else:
+                cached_results.append(cached)
+
         sem = asyncio.Semaphore(self.concurrency)
 
         async def _run_bounded(task: TaskDefinition) -> RunResult:
@@ -357,7 +401,9 @@ class BenchmarkRunner:
             TimeElapsedColumn(),
             console=_console,
         ) as progress:
-            bar = progress.add_task(f"Run {run_num}", total=len(tasks))
+            bar = progress.add_task(
+                f"Run {run_num}", total=len(tasks), completed=len(cached_results)
+            )
 
             async def _tracked(task: TaskDefinition) -> RunResult:
                 result = await _run_bounded(task)
@@ -366,15 +412,17 @@ class BenchmarkRunner:
                     on_task_complete(result)
                 return result
 
-            gathered = await asyncio.gather(*[_tracked(t) for t in tasks], return_exceptions=True)
+            gathered = await asyncio.gather(
+                *[_tracked(t) for t in pending_tasks], return_exceptions=True
+            )
 
         # Pair each result with its task (gather preserves order) so a raised
         # exception becomes a recorded FAIL instead of vanishing. Stub/usage
         # errors abort the whole run, matching the sequential path.
         import click
 
-        valid_results: list[RunResult] = []
-        for task, r in zip(tasks, gathered, strict=True):
+        valid_results: list[RunResult] = list(cached_results)
+        for task, r in zip(pending_tasks, gathered, strict=True):
             if isinstance(r, click.UsageError | NotImplementedError):
                 raise r
             if isinstance(r, BaseException):
@@ -441,6 +489,7 @@ class BenchmarkRunner:
         baseline_changes: dict[str, bytes | None] = {}
         baseline_snapshot_captured = False
         agent_metrics_captured = False
+        identity_fields: dict = {}
 
         # Fail-fast for stub adapters: refuse before provisioning a workspace
         # rather than after, which used to waste ~30s on the first task.
@@ -457,6 +506,7 @@ class BenchmarkRunner:
         tool_model = getattr(self._adapter, "model", "") or "unknown"
         outcome = RunOutcome(success=False, partial_credit_score=0, partial_credit_max=0)
         quality = RunQuality()
+        execution = RunExecution(status="running", stage="prepare")
         metrics = collector.to_metrics()
 
         # Trace writer — open before adapter runs, closed in finally
@@ -501,17 +551,24 @@ class BenchmarkRunner:
 
         try:
             # 1. Prepare workspace (run_id scopes the path for concurrent safety)
-            workspace = await self.repo_manager.prepare(task, run_id=run_id)
+            workspace = await self._run_stage(
+                self.repo_manager.prepare(task, run_id=run_id),
+                getattr(self, "setup_timeout_seconds", 900),
+                task.id,
+                "setup_timeout",
+            )
             baseline_changes = self.repo_manager.capture_change_snapshot(workspace)
             baseline_snapshot_captured = True
             # File-edit spans now relativize paths against the real workspace.
             translator.workspace_root = str(workspace)
 
             # 2. Baseline lint/security counts
+            execution.stage = "baseline"
             baseline_lint = await _count_baseline("lint", task, workspace)
             baseline_security = await _count_baseline("security", task, workspace)
 
             # 3. Run the tool with streaming event callback
+            execution.stage = "agent"
             collector.start()
             tool_result = await run_with_timeout(
                 self._adapter.execute(
@@ -527,6 +584,13 @@ class BenchmarkRunner:
             if tool_result.model:
                 tool_model = tool_result.model
             collector.stop()
+            execution.tool_success = tool_result.success
+            execution.tool_exit_code = tool_result.exit_code
+            if not tool_result.success:
+                execution.status = "timed_out" if tool_result.exit_code == 124 else "failed"
+                execution.termination_reason = (
+                    "agent_timeout" if tool_result.exit_code == 124 else "tool_error"
+                )
 
             # Parse any remaining stream events not yet processed
             # (for adapters that don't support streaming callbacks)
@@ -550,7 +614,13 @@ class BenchmarkRunner:
             run_dir = self.recorder.results_dir / run_id
             run_dir.mkdir(parents=True, exist_ok=True)
 
-            tests_passed, test_output = await run_tests(task.verification.test_commands, workspace)
+            execution.stage = "verification"
+            tests_passed, test_output = await self._run_stage(
+                run_tests(task.verification.test_commands, workspace),
+                getattr(self, "verification_timeout_seconds", 600),
+                task.id,
+                "verification_timeout",
+            )
             if test_output:
                 log_path = run_dir / f"{task.id}_{self.tool}.log"
                 log_path.write_text(test_output)
@@ -560,14 +630,21 @@ class BenchmarkRunner:
             )
 
             # 5. Quality deltas
-            post_lint = await count_lint_issues(task.verification.lint_commands, workspace)
-            post_security = await count_security_issues(
+            post_lint, lint_status = await measure_lint_issues(
+                task.verification.lint_commands, workspace
+            )
+            post_security, security_status = await measure_security_issues(
                 task.verification.security_commands, workspace
             )
             quality = RunQuality(
                 lint_delta=post_lint - baseline_lint,
                 security_delta=post_security - baseline_security,
                 test_regressions=0 if tests_passed else 1,
+                lint_status=lint_status,
+                security_status=security_status,
+                test_regressions_status=_measurement_status(
+                    task.verification.test_commands, 0 if tests_passed else 1
+                ),
             )
 
             outcome = RunOutcome(
@@ -576,15 +653,27 @@ class BenchmarkRunner:
                 partial_credit_max=max_pts,
                 breakdown=breakdown,
             )
+            execution.stage = "complete"
+            if execution.status == "running":
+                execution.status = "completed"
 
         except TaskTimeoutError:
             collector.stop()
             log.warning("Task %s timed out after %ds", task.id, timeout)
+            execution.status = "timed_out"
+            execution.termination_reason = (
+                "experiment_timeout"
+                if getattr(self, "_experiment_deadline", None) is not None
+                and time.monotonic() >= self._experiment_deadline
+                else f"{execution.stage}_timeout"
+            )
 
         except RuntimeError as exc:
             collector.stop()
             log.error("Task %s setup failed: %s", task.id, exc)
             _console.print(f"  [red]setup_error:[/red] {exc}")
+            execution.status = "failed"
+            execution.termination_reason = "setup_error"
 
         except NotImplementedError as exc:
             collector.stop()
@@ -611,6 +700,8 @@ class BenchmarkRunner:
                     traceback_tail=tb_tail[-2000:],
                 ),
             )
+            execution.status = "failed"
+            execution.termination_reason = "unexpected_error"
             _console.print(f"  [red]error:[/red] {task.id} {type(exc).__name__}: {str(exc)[:120]}")
             print(
                 f"Task {task.id} failed: {type(exc).__name__}: {str(exc)[:200]}",
@@ -639,6 +730,8 @@ class BenchmarkRunner:
                         metrics.lines_changed = self.repo_manager.get_lines_changed_since(
                             workspace, baseline_changes
                         )
+                with contextlib.suppress(Exception):
+                    identity_fields = self._identity_fields(task, workspace)
                 await self.repo_manager.cleanup(workspace)
 
         # Trace path is recorded relative to the run dir so result JSON stays
@@ -671,10 +764,115 @@ class BenchmarkRunner:
             workflow=self.workflow,
             task_set_hash=self._task_set_hash,
             trace_path=recorded_trace_path,
+            execution=execution,
+            **(identity_fields or self._identity_fields(task, None)),
         )
 
         self.recorder.save(result)
         return result
+
+    async def _run_stage(self, coro, configured_timeout: int, task_id: str, reason: str):
+        del reason
+        timeout = float(configured_timeout)
+        deadline = getattr(self, "_experiment_deadline", None)
+        if deadline is not None:
+            timeout = min(timeout, max(0.001, deadline - time.monotonic()))
+        try:
+            return await asyncio.wait_for(coro, timeout=timeout)
+        except TimeoutError:
+            raise TaskTimeoutError(task_id, int(timeout)) from None
+
+    def _identity_fields(self, task: TaskDefinition, workspace: Path | None) -> dict:
+        task_hash = _stable_hash(asdict(task))
+        adapter_version = self._adapter.get_version()
+        config_hash = _stable_hash(
+            {
+                "adapter": self._adapter.get_config_hash(),
+                "workflow": asdict(self.workflow) if self.workflow else None,
+            }
+        )
+        budget_hash = _stable_hash(
+            {
+                "runs": getattr(self, "runs", 1),
+                "task_timeout": self.timeout_override or task.constraints.timeout_seconds,
+                "setup_timeout": getattr(self, "setup_timeout_seconds", 900),
+                "verification_timeout": getattr(self, "verification_timeout_seconds", 600),
+                "experiment_timeout": getattr(self, "experiment_timeout_seconds", None),
+                "max_iterations": task.constraints.max_iterations,
+                "max_input_tokens": task.constraints.max_input_tokens,
+                "max_output_tokens": task.constraints.max_output_tokens,
+            }
+        )
+        environment_hash = _stable_hash(
+            {
+                **asdict(self._environment),
+                "adapter_version": adapter_version,
+                "execution_mode": getattr(self, "execution_mode", "host"),
+                "container_image": getattr(self, "container_image", ""),
+            }
+        )
+        loaded = []
+        instruction_hashes = {}
+        if workspace:
+            candidates: tuple[str, ...] = ()
+            if self.tool == "codex-cli":
+                candidates = (
+                    ("AGENTS.override.md",)
+                    if (workspace / "AGENTS.override.md").is_file()
+                    else ("AGENTS.md",)
+                )
+            elif self.tool.startswith("claude-code"):
+                candidates = (".claude/CLAUDE.md", "CLAUDE.md")
+            for relative in candidates:
+                if (workspace / relative).is_file():
+                    loaded.append(relative)
+                    instruction_hashes[relative] = hashlib.sha256(
+                        (workspace / relative).read_bytes()
+                    ).hexdigest()
+        cohort_id = _stable_hash(
+            {
+                "task_definition_hash": task_hash,
+                "task_set_hash": self._task_set_hash,
+                "effective_config_hash": config_hash,
+                "environment_fingerprint": environment_hash,
+                "budget_fingerprint": budget_hash,
+            }
+        )
+        return {
+            "task_definition_hash": task_hash,
+            "evaluator_version": self._environment.awb_version,
+            "effective_config_hash": config_hash,
+            "adapter_version": adapter_version,
+            "execution_mode": getattr(self, "execution_mode", "host"),
+            "environment_fingerprint": environment_hash,
+            "budget_fingerprint": budget_hash,
+            "cohort_id": cohort_id,
+            "loaded_instruction_files": loaded,
+            "allowed_edit_paths": list(task.allowed_edit_paths),
+            "effective_input_manifest": {
+                "task_definition_hash": task_hash,
+                "prompt_hash": hashlib.sha256(task.issue_description.encode()).hexdigest(),
+                "instruction_hashes": instruction_hashes,
+                "allowed_edit_paths": list(task.allowed_edit_paths),
+            },
+            "environment_manifest": {
+                **asdict(self._environment),
+                "adapter_version": adapter_version,
+                "execution_mode": getattr(self, "execution_mode", "host"),
+                "container_image": getattr(self, "container_image", ""),
+                "ambient_credentials_forwarded": (
+                    False if getattr(self, "execution_mode", "host") == "container" else None
+                ),
+            },
+            "cohort_manifest": {
+                "cohort_id": cohort_id,
+                "task_set_hash": self._task_set_hash,
+                "task_definition_hash": task_hash,
+                "effective_config_hash": config_hash,
+                "environment_fingerprint": environment_hash,
+                "budget_fingerprint": budget_hash,
+            },
+        }
 
 
 def _get_adapter(name: str):
@@ -694,3 +892,14 @@ async def _count_baseline(kind: str, task: TaskDefinition, workspace: Path) -> i
     except Exception as exc:
         log.debug("Baseline %s count failed: %s", kind, exc)
     return 0
+
+
+def _stable_hash(value: object) -> str:
+    encoded = json.dumps(value, sort_keys=True, separators=(",", ":")).encode()
+    return hashlib.sha256(encoded).hexdigest()
+
+
+def _measurement_status(commands: list[str], findings: int) -> str:
+    if not commands:
+        return "missing"
+    return "measured_findings" if findings else "measured_clean"

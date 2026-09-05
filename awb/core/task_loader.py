@@ -92,6 +92,9 @@ def _parse_task(raw: dict) -> TaskDefinition:
         constraints=constraints,
         issue_description=issue_raw.get("description", ""),
         files_to_examine=issue_raw.get("files_to_examine") or [],
+        allowed_edit_paths=raw.get("allowed_edit_paths")
+        or issue_raw.get("allowed_edit_paths")
+        or [],
         workspace_claude_md=raw.get("workspace_claude_md", ""),
         provenance=provenance,
         contamination_risk=raw.get("contamination_risk", "unknown"),

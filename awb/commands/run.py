@@ -5,11 +5,12 @@ from __future__ import annotations
 import asyncio
 import sys
 from pathlib import Path
+from types import SimpleNamespace
 
 import click
 from rich.table import Table
 
-from awb.commands._shared import BAD, console
+from awb.commands._shared import console
 
 
 def _format_cost(cost) -> str:
@@ -26,6 +27,24 @@ def _score_style(score: float) -> str:
     elif score >= 50:
         return "yellow"
     return "red"
+
+
+def _exploratory_summary(results: list[dict]):
+    try:
+        from awb.core.fast_check import summarize_fast_check
+
+        return summarize_fast_check(results)
+    except ImportError:
+        scores = [
+            row["partial_credit_score"] / (row["partial_credit_max"] or 1) * 100 for row in results
+        ]
+        return SimpleNamespace(
+            sample_mean=sum(scores) / len(scores) if scores else 0,
+            sample_min=min(scores, default=0),
+            sample_max=max(scores, default=0),
+            n_tasks=len(scores),
+            message="This selected sample does not support a population estimate.",
+        )
 
 
 def _run_both(
@@ -45,6 +64,11 @@ def _run_both(
     fast_check=False,
     use_uv=False,
     yes=False,
+    experiment_timeout=None,
+    setup_timeout=900,
+    verification_timeout=600,
+    inside_container=False,
+    container_image=None,
 ):
     """Run vanilla and custom back-to-back then show a comparison."""
     from awb.core.runner import BenchmarkRunner
@@ -143,6 +167,11 @@ def _run_both(
             progressive=progressive,
             use_uv=use_uv,
             tasks_dir=tasks_dir,
+            experiment_timeout_seconds=experiment_timeout,
+            setup_timeout_seconds=setup_timeout,
+            verification_timeout_seconds=verification_timeout,
+            execution_mode="container" if inside_container else "host",
+            container_image=container_image or "",
         )
         all_results[variant] = asyncio.run(runner.run_all())
         runners[variant] = runner
@@ -280,6 +309,14 @@ def _run_both(
 @click.option("--progressive", is_flag=True, help="Run easy first, stop early if failing")
 @click.option("--fast-check", is_flag=True, help="Run 8 representative tasks for quick signal")
 @click.option("--use-uv", is_flag=True, help="Use uv instead of pip for faster installs")
+@click.option(
+    "--container-image",
+    help="Run the complete setup, agent, and verification pipeline in this local Docker image",
+)
+@click.option("--inside-container", is_flag=True, hidden=True)
+@click.option("--experiment-timeout", type=int, help="Hard deadline for all requested attempts")
+@click.option("--setup-timeout", type=int, default=900, show_default=True)
+@click.option("--verification-timeout", type=int, default=600, show_default=True)
 @click.option("--yes", "-y", is_flag=True, help="Skip confirmation prompt")
 @click.option(
     "--tasks-dir",
@@ -303,6 +340,11 @@ def run(
     progressive: bool,
     fast_check: bool,
     use_uv: bool,
+    container_image: str | None,
+    inside_container: bool,
+    experiment_timeout: int | None,
+    setup_timeout: int,
+    verification_timeout: int,
     yes: bool,
     tasks_dir: str | None,
 ):
@@ -312,13 +354,43 @@ def run(
 
     tasks_dir_path = Path(tasks_dir) if tasks_dir else None
 
-    # Resume matches an incomplete run by tool + task count only; mined
-    # private tasks reuse public ID prefixes (BF-001...), so resuming across
-    # task sets would silently fold cached public results into a private run.
-    if tasks_dir_path and resume:
-        console.print(f"[{BAD}]--resume cannot be combined with --tasks-dir yet[/{BAD}]")
-        console.print("Run the private task set without --resume.")
-        sys.exit(1)
+    if container_image and not inside_container:
+        from awb.core.config import RESULTS_DIR
+        from awb.core.container import launch_container
+
+        args = _rebuild_container_args(
+            tool=tool,
+            workflow=workflow,
+            task_id=task_id,
+            category=category,
+            capability=capability,
+            difficulty=difficulty,
+            runs=runs,
+            parallel=parallel,
+            dry_run=dry_run,
+            timeout=timeout,
+            resume=resume,
+            concurrency=concurrency,
+            adaptive=adaptive,
+            progressive=progressive,
+            fast_check=fast_check,
+            use_uv=use_uv,
+            yes=yes,
+            tasks_dir=tasks_dir,
+            experiment_timeout=experiment_timeout,
+            setup_timeout=setup_timeout,
+            verification_timeout=verification_timeout,
+        )
+        try:
+            code = launch_container(
+                image=container_image,
+                project_root=Path(__file__).resolve().parents[2],
+                results_dir=RESULTS_DIR,
+                cli_args=args,
+            )
+        except RuntimeError as exc:
+            raise click.ClickException(str(exc)) from exc
+        raise click.exceptions.Exit(code)
 
     # Fast-check defaults to parallel at concurrency 4, the empirically safe
     # sweet spot (git clones start failing above it). An explicit -j always
@@ -366,6 +438,11 @@ def run(
             fast_check=fast_check,
             use_uv=use_uv,
             yes=yes,
+            experiment_timeout=experiment_timeout,
+            setup_timeout=setup_timeout,
+            verification_timeout=verification_timeout,
+            inside_container=inside_container,
+            container_image=container_image,
         )
         return
 
@@ -454,6 +531,11 @@ def run(
         progressive=progressive,
         use_uv=use_uv,
         tasks_dir=tasks_dir_path,
+        experiment_timeout_seconds=experiment_timeout,
+        setup_timeout_seconds=setup_timeout,
+        verification_timeout_seconds=verification_timeout,
+        execution_mode="container" if inside_container else "host",
+        container_image=container_image or "",
     )
     try:
         results = asyncio.run(runner.run_all())
@@ -491,8 +573,6 @@ def run(
 
     # Fast-check estimate
     if fast_check:
-        from awb.core.fast_check import estimate_full_score
-
         fast_data = [
             {
                 "partial_credit_score": r.outcome.partial_credit_score,
@@ -500,8 +580,13 @@ def run(
             }
             for r in results
         ]
-        est, margin = estimate_full_score(fast_data)
-        console.print(f"\n[bold]Estimated full-suite score: {est:.0f} +/- {margin:.0f}[/bold]")
+        summary = _exploratory_summary(fast_data)
+        console.print(
+            f"\n[bold]Selected exploratory sample:[/bold] mean {summary.sample_mean:.0f}, "
+            f"range {summary.sample_min:.0f}-{summary.sample_max:.0f} "
+            f"across {summary.n_tasks} tasks"
+        )
+        console.print(f"[dim]{summary.message}[/dim]")
 
     # Integrity checks
     from awb.scoring.integrity import run_integrity_checks
@@ -525,3 +610,42 @@ def run(
         console.print(f"\nResults saved to {run_dirs[0].parent}/{runner._run_id}_run*/")
     else:
         console.print(f"\nResults saved to {results_path}/{runner._run_id}/")
+
+
+def _rebuild_container_args(**options) -> list[str]:
+    """Rebuild the run arguments while deliberately omitting container recursion."""
+    tool = options.pop("tool")
+    args = ["run"]
+    if tool:
+        args.append(tool)
+    mapping = {
+        "workflow": "--workflow",
+        "task_id": "--task",
+        "category": "--category",
+        "capability": "--capability",
+        "difficulty": "--difficulty",
+        "runs": "--runs",
+        "timeout": "--timeout",
+        "concurrency": "--concurrency",
+        "tasks_dir": "--tasks-dir",
+        "experiment_timeout": "--experiment-timeout",
+        "setup_timeout": "--setup-timeout",
+        "verification_timeout": "--verification-timeout",
+    }
+    for key, flag in mapping.items():
+        value = options.pop(key)
+        if value is not None:
+            args.extend([flag, str(value)])
+    for key, flag in {
+        "parallel": "--parallel",
+        "dry_run": "--dry-run",
+        "resume": "--resume",
+        "adaptive": "--adaptive",
+        "progressive": "--progressive",
+        "fast_check": "--fast-check",
+        "use_uv": "--use-uv",
+        "yes": "--yes",
+    }.items():
+        if options.pop(key):
+            args.append(flag)
+    return args

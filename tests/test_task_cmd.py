@@ -262,15 +262,15 @@ class TestFromPrGuards:
         assert result.exit_code == 0, result.output
         assert "Fix bug[/x]" in result.output
 
-    def test_resume_with_tasks_dir_is_refused(self, tmp_path):
+    def test_resume_with_tasks_dir_uses_task_set_identity(self, tmp_path):
         tasks_dir = tmp_path / "tasks"
         tasks_dir.mkdir()
         runner = CliRunner()
         result = runner.invoke(
             run_cmd, ["claude-code-custom", "--tasks-dir", str(tasks_dir), "--resume"]
         )
-        assert result.exit_code == 1
-        assert "--resume" in result.output
+        assert result.exit_code == 0
+        assert "No tasks matched filters" in result.output
 
 
 def test_dry_run_skips_adapter_preflight(monkeypatch, tmp_path, pr_responses):
