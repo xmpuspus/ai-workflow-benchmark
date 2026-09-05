@@ -557,28 +557,50 @@ class BenchmarkRunner:
                 task.id,
                 "setup_timeout",
             )
-            baseline_changes = self.repo_manager.capture_change_snapshot(workspace)
-            baseline_snapshot_captured = True
+            identity_fields = self._identity_fields(task, workspace)
             # File-edit spans now relativize paths against the real workspace.
             translator.workspace_root = str(workspace)
 
-            # 2. Baseline lint/security counts
+            # 2. Baseline quality measurements. Capture the change snapshot
+            # afterward so caches created by baseline checks are not agent edits.
             execution.stage = "baseline"
-            baseline_lint = await _count_baseline("lint", task, workspace)
-            baseline_security = await _count_baseline("security", task, workspace)
+            baseline_tests_passed, baseline_test_output = await self._run_stage(
+                run_tests(task.verification.test_commands, workspace),
+                getattr(self, "verification_timeout_seconds", 600),
+                task.id,
+                "baseline_test_timeout",
+            )
+            baseline_test_status = _test_measurement_status(
+                task.verification.test_commands, baseline_test_output
+            )
+            baseline_lint, baseline_lint_status = await self._run_stage(
+                measure_lint_issues(task.verification.lint_commands, workspace),
+                getattr(self, "verification_timeout_seconds", 600),
+                task.id,
+                "baseline_lint_timeout",
+            )
+            baseline_security, baseline_security_status = await self._run_stage(
+                measure_security_issues(task.verification.security_commands, workspace),
+                getattr(self, "verification_timeout_seconds", 600),
+                task.id,
+                "baseline_security_timeout",
+            )
+            baseline_changes = self.repo_manager.capture_change_snapshot(workspace)
+            baseline_snapshot_captured = True
 
             # 3. Run the tool with streaming event callback
             execution.stage = "agent"
             collector.start()
+            agent_timeout = self._stage_timeout(timeout)
             tool_result = await run_with_timeout(
                 self._adapter.execute(
                     prompt=task.issue_description,
                     workspace=workspace,
                     max_turns=task.constraints.max_iterations,
-                    timeout_seconds=timeout,
+                    timeout_seconds=agent_timeout,
                     on_event=_on_event,
                 ),
-                timeout_seconds=timeout,
+                timeout_seconds=agent_timeout,
                 task_id=task.id,
             )
             if tool_result.model:
@@ -625,25 +647,46 @@ class BenchmarkRunner:
                 log_path = run_dir / f"{task.id}_{self.tool}.log"
                 log_path.write_text(test_output)
 
-            earned, max_pts, breakdown = await evaluate_partial_credit(
-                task.verification.partial_credit, workspace, log_dir=run_dir
+            earned, max_pts, breakdown = await self._run_stage(
+                evaluate_partial_credit(
+                    task.verification.partial_credit, workspace, log_dir=run_dir
+                ),
+                getattr(self, "verification_timeout_seconds", 600),
+                task.id,
+                "partial_credit_timeout",
             )
 
             # 5. Quality deltas
-            post_lint, lint_status = await measure_lint_issues(
-                task.verification.lint_commands, workspace
+            post_lint, post_lint_status = await self._run_stage(
+                measure_lint_issues(task.verification.lint_commands, workspace),
+                getattr(self, "verification_timeout_seconds", 600),
+                task.id,
+                "lint_timeout",
             )
-            post_security, security_status = await measure_security_issues(
-                task.verification.security_commands, workspace
+            post_security, post_security_status = await self._run_stage(
+                measure_security_issues(task.verification.security_commands, workspace),
+                getattr(self, "verification_timeout_seconds", 600),
+                task.id,
+                "security_timeout",
             )
+            post_test_status = _test_measurement_status(
+                task.verification.test_commands, test_output
+            )
+            test_regressions = int(baseline_tests_passed and not tests_passed)
             quality = RunQuality(
                 lint_delta=post_lint - baseline_lint,
                 security_delta=post_security - baseline_security,
-                test_regressions=0 if tests_passed else 1,
-                lint_status=lint_status,
-                security_status=security_status,
-                test_regressions_status=_measurement_status(
-                    task.verification.test_commands, 0 if tests_passed else 1
+                test_regressions=test_regressions,
+                lint_status=_delta_measurement_status(
+                    baseline_lint_status, post_lint_status, post_lint - baseline_lint
+                ),
+                security_status=_delta_measurement_status(
+                    baseline_security_status,
+                    post_security_status,
+                    post_security - baseline_security,
+                ),
+                test_regressions_status=_delta_measurement_status(
+                    baseline_test_status, post_test_status, test_regressions
                 ),
             )
 
@@ -731,8 +774,7 @@ class BenchmarkRunner:
                             workspace, baseline_changes
                         )
                 with contextlib.suppress(Exception):
-                    identity_fields = self._identity_fields(task, workspace)
-                await self.repo_manager.cleanup(workspace)
+                    await asyncio.wait_for(self.repo_manager.cleanup(workspace), timeout=30)
 
         # Trace path is recorded relative to the run dir so result JSON stays
         # portable across machines.
@@ -773,14 +815,18 @@ class BenchmarkRunner:
 
     async def _run_stage(self, coro, configured_timeout: int, task_id: str, reason: str):
         del reason
-        timeout = float(configured_timeout)
-        deadline = getattr(self, "_experiment_deadline", None)
-        if deadline is not None:
-            timeout = min(timeout, max(0.001, deadline - time.monotonic()))
+        timeout = self._stage_timeout(configured_timeout)
         try:
             return await asyncio.wait_for(coro, timeout=timeout)
         except TimeoutError:
             raise TaskTimeoutError(task_id, int(timeout)) from None
+
+    def _stage_timeout(self, configured_timeout: int | float) -> float:
+        timeout = float(configured_timeout)
+        deadline = getattr(self, "_experiment_deadline", None)
+        if deadline is not None:
+            timeout = min(timeout, max(0.001, deadline - time.monotonic()))
+        return timeout
 
     def _identity_fields(self, task: TaskDefinition, workspace: Path | None) -> dict:
         task_hash = _stable_hash(asdict(task))
@@ -899,7 +945,18 @@ def _stable_hash(value: object) -> str:
     return hashlib.sha256(encoded).hexdigest()
 
 
-def _measurement_status(commands: list[str], findings: int) -> str:
+def _test_measurement_status(commands: list[str], output: str) -> str:
     if not commands:
         return "missing"
-    return "measured_findings" if findings else "measured_clean"
+    if "[TIMEOUT" in output or "[command not found]" in output:
+        return "failed"
+    return "measured_clean"
+
+
+def _delta_measurement_status(before: str, after: str, delta: int) -> str:
+    statuses = {before, after}
+    if "failed" in statuses:
+        return "failed"
+    if "missing" in statuses:
+        return "missing"
+    return "measured_findings" if delta > 0 else "measured_clean"

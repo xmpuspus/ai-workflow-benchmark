@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import shlex
 import sys
 from pathlib import Path
@@ -10,8 +11,8 @@ import pytest
 from awb.adapters.base import ToolAdapter, ToolResult
 from awb.core.config import RunEnvironment
 from awb.core.results import ResultRecorder
-from awb.core.runner import BenchmarkRunner
-from awb.core.subprocesses import run_shell
+from awb.core.runner import BenchmarkRunner, _delta_measurement_status
+from awb.core.subprocesses import run_shell, stop_process_group
 from awb.core.timeout import TaskTimeoutError
 from awb.verification.security_scanner import measure_security_issues
 
@@ -22,6 +23,7 @@ class _FailedAfterEditAdapter(ToolAdapter):
 
     async def execute(self, prompt, workspace, max_turns=20, timeout_seconds=1800, on_event=None):
         (workspace / "partial.py").write_text("fixed = True\n")
+        (workspace / "AGENTS.override.md").write_text("agent changed instructions\n")
         return ToolResult(success=False, raw_output="crashed", exit_code=9)
 
     def check_available(self):
@@ -93,10 +95,12 @@ async def test_tool_failure_is_preserved_separately_from_patch_verification(
         lambda *args, **kwargs: asyncio.sleep(0, result=(100, 100, [])),
     )
     monkeypatch.setattr(
-        "awb.core.runner.count_lint_issues", lambda *args: asyncio.sleep(0, result=0)
+        "awb.core.runner.measure_lint_issues",
+        lambda *args: asyncio.sleep(0, result=(0, "measured_clean")),
     )
     monkeypatch.setattr(
-        "awb.core.runner.count_security_issues", lambda *args: asyncio.sleep(0, result=0)
+        "awb.core.runner.measure_security_issues",
+        lambda *args: asyncio.sleep(0, result=(0, "missing")),
     )
 
     result = await runner.run_single(sample_task, run_id="evidence_run1")
@@ -109,9 +113,14 @@ async def test_tool_failure_is_preserved_separately_from_patch_verification(
     assert result.cost.usage_status == "unknown"
     assert result.metrics.files_modified == 1
     assert result.loaded_instruction_files == ["AGENTS.override.md"]
-    assert result.effective_input_manifest["instruction_hashes"]["AGENTS.override.md"]
+    expected_hash = hashlib.sha256(b"instructions\n").hexdigest()
+    instruction_hashes = result.effective_input_manifest["instruction_hashes"]
+    assert instruction_hashes["AGENTS.override.md"] == expected_hash
     assert result.environment_manifest["ambient_credentials_forwarded"] is None
     assert result.cohort_manifest["cohort_id"] == result.cohort_id
+    assert result.quality.security_status == "missing"
+    assert result.quality.test_regressions == 0
+    assert result.quality.test_regressions_status == "measured_clean"
 
 
 def test_result_roundtrip_preserves_execution_identity_and_measurement_statuses(
@@ -222,6 +231,20 @@ async def test_missing_security_binary_has_failed_measurement_status(tmp_path):
     assert status == "failed"
 
 
+@pytest.mark.asyncio
+async def test_masked_security_command_has_failed_measurement_status(tmp_path):
+    count, status = await measure_security_issues(["bandit -r . || true"], tmp_path)
+    assert count == 0
+    assert status == "failed"
+
+
+def test_delta_status_requires_both_measurements():
+    assert _delta_measurement_status("missing", "measured_clean", 0) == "missing"
+    assert _delta_measurement_status("failed", "measured_clean", 0) == "failed"
+    assert _delta_measurement_status("measured_clean", "measured_clean", 0) == "measured_clean"
+    assert _delta_measurement_status("measured_clean", "measured_clean", 1) == "measured_findings"
+
+
 @pytest.mark.skipif(not hasattr(__import__("os"), "killpg"), reason="POSIX process groups required")
 def test_shell_timeout_stops_descendant_process(tmp_path):
     marker = tmp_path / "descendant-survived"
@@ -234,6 +257,20 @@ def test_shell_timeout_stops_descendant_process(tmp_path):
     assert result.exit_code == 124
     asyncio.run(asyncio.sleep(1.2))
     assert not marker.exists()
+
+
+@pytest.mark.asyncio
+async def test_group_cleanup_signals_descendants_after_parent_exit(monkeypatch):
+    class ExitedParent:
+        pid = 43210
+        returncode = 0
+
+    signals = []
+    monkeypatch.setattr(
+        "awb.core.subprocesses.os.killpg", lambda pid, sig: signals.append((pid, sig))
+    )
+    await stop_process_group(ExitedParent())
+    assert len(signals) == 2
 
 
 def test_container_command_has_narrow_mounts_and_no_ambient_environment(tmp_path, monkeypatch):
@@ -251,4 +288,21 @@ def test_container_command_has_narrow_mounts_and_no_ambient_environment(tmp_path
     assert "AWS_SECRET_ACCESS_KEY" not in joined
     assert command.count("--mount") == 2
     assert "--network=none" in command
+    assert "--read-only" in command
+    assert "--cpus=2" in command
+    assert "--memory=4g" in command
+    assert "--pids-limit=256" in command
     assert command[-4:] == ["run", "fake", "--yes", "--inside-container"]
+
+
+def test_custom_task_path_is_translated_or_rejected(tmp_path):
+    import click
+
+    from awb.commands.run import _path_inside_container
+
+    project = tmp_path / "project"
+    tasks = project / "private" / "tasks"
+    tasks.mkdir(parents=True)
+    assert _path_inside_container(tasks, project) == "/opt/awb/private/tasks"
+    with pytest.raises(click.ClickException):
+        _path_inside_container(tmp_path / "outside", project)

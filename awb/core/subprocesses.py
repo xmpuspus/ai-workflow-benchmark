@@ -18,16 +18,14 @@ class ProcessResult:
     stderr: bytes
 
 
-async def _stop_group(proc: asyncio.subprocess.Process) -> None:
-    if proc.returncode is not None:
-        return
+async def stop_process_group(proc: asyncio.subprocess.Process) -> None:
+    """Terminate the whole process group, including children after parent exit."""
     with contextlib.suppress(ProcessLookupError, OSError):
         os.killpg(proc.pid, signal.SIGTERM)
-    try:
-        await asyncio.wait_for(proc.wait(), timeout=2)
-    except TimeoutError:
-        with contextlib.suppress(ProcessLookupError, OSError):
-            os.killpg(proc.pid, signal.SIGKILL)
+    await asyncio.sleep(0.2)
+    with contextlib.suppress(ProcessLookupError, OSError):
+        os.killpg(proc.pid, signal.SIGKILL)
+    if proc.returncode is None:
         await proc.wait()
 
 
@@ -50,10 +48,10 @@ async def run_shell(
         try:
             stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=timeout)
         except TimeoutError:
-            await _stop_group(proc)
+            await stop_process_group(proc)
             return ProcessResult(124, b"", b"[TIMEOUT]")
     except asyncio.CancelledError:
-        await _stop_group(proc)
+        await stop_process_group(proc)
         raise
     return ProcessResult(proc.returncode or 0, stdout, stderr or b"")
 
@@ -76,9 +74,9 @@ async def run_exec(
         try:
             stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=timeout)
         except TimeoutError:
-            await _stop_group(proc)
+            await stop_process_group(proc)
             return ProcessResult(124, b"", b"[TIMEOUT]")
     except asyncio.CancelledError:
-        await _stop_group(proc)
+        await stop_process_group(proc)
         raise
     return ProcessResult(proc.returncode or 0, stdout, stderr)

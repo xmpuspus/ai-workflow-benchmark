@@ -356,11 +356,18 @@ def run(
 
     if container_image and not inside_container:
         from awb.core.config import RESULTS_DIR
-        from awb.core.container import launch_container
+        from awb.core.container import launch_container, resolve_image_identity
 
+        project_root = Path(__file__).resolve().parents[2]
+        container_timeout = experiment_timeout or 7200
+        container_identity = resolve_image_identity(container_image)
+        container_tasks_dir = _path_inside_container(tasks_dir_path, project_root)
+        container_workflow = _path_inside_container(
+            Path(workflow) if workflow else None, project_root
+        )
         args = _rebuild_container_args(
             tool=tool,
-            workflow=workflow,
+            workflow=container_workflow,
             task_id=task_id,
             category=category,
             capability=capability,
@@ -376,17 +383,19 @@ def run(
             fast_check=fast_check,
             use_uv=use_uv,
             yes=yes,
-            tasks_dir=tasks_dir,
-            experiment_timeout=experiment_timeout,
+            tasks_dir=container_tasks_dir,
+            experiment_timeout=container_timeout,
             setup_timeout=setup_timeout,
             verification_timeout=verification_timeout,
+            container_image=container_identity,
         )
         try:
             code = launch_container(
                 image=container_image,
-                project_root=Path(__file__).resolve().parents[2],
+                project_root=project_root,
                 results_dir=RESULTS_DIR,
                 cli_args=args,
+                timeout=container_timeout + 30,
             )
         except RuntimeError as exc:
             raise click.ClickException(str(exc)) from exc
@@ -613,7 +622,7 @@ def run(
 
 
 def _rebuild_container_args(**options) -> list[str]:
-    """Rebuild the run arguments while deliberately omitting container recursion."""
+    """Rebuild run arguments; the hidden inside flag prevents container recursion."""
     tool = options.pop("tool")
     args = ["run"]
     if tool:
@@ -631,6 +640,7 @@ def _rebuild_container_args(**options) -> list[str]:
         "experiment_timeout": "--experiment-timeout",
         "setup_timeout": "--setup-timeout",
         "verification_timeout": "--verification-timeout",
+        "container_image": "--container-image",
     }
     for key, flag in mapping.items():
         value = options.pop(key)
@@ -649,3 +659,15 @@ def _rebuild_container_args(**options) -> list[str]:
         if options.pop(key):
             args.append(flag)
     return args
+
+
+def _path_inside_container(path: Path | None, project_root: Path) -> str | None:
+    if path is None:
+        return None
+    try:
+        relative = path.resolve().relative_to(project_root.resolve())
+    except ValueError as exc:
+        raise click.ClickException(
+            f"Container inputs must be inside the project directory: {path}"
+        ) from exc
+    return str(Path("/opt/awb") / relative)

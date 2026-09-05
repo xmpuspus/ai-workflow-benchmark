@@ -7,11 +7,11 @@ import contextlib
 import hashlib
 import json
 import os
-import signal
 import subprocess
 from pathlib import Path
 
 from awb.adapters.base import ToolAdapter, ToolResult
+from awb.core.subprocesses import stop_process_group
 
 
 class ClaudeCodeVanillaAdapter(ToolAdapter):
@@ -68,16 +68,9 @@ class ClaudeCodeVanillaAdapter(ToolAdapter):
         proc: asyncio.subprocess.Process | None = None
 
         async def _stop_process() -> None:
-            if proc is None or proc.returncode is not None:
+            if proc is None:
                 return
-            with contextlib.suppress(ProcessLookupError, OSError):
-                os.killpg(proc.pid, signal.SIGTERM)
-            try:
-                await asyncio.wait_for(proc.wait(), timeout=5)
-            except TimeoutError:
-                with contextlib.suppress(ProcessLookupError, OSError):
-                    os.killpg(proc.pid, signal.SIGKILL)
-                await proc.wait()
+            await stop_process_group(proc)
 
         try:
             proc = await asyncio.create_subprocess_exec(
