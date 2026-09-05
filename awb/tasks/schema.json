@@ -246,6 +246,27 @@
           "description": "Maximum output tokens allowed (0 = unlimited)"
         }
       }
+    },
+    "oracle_review": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "status": {
+          "enum": [
+            "candidate",
+            "reviewed"
+          ]
+        },
+        "evaluator_version": {
+          "type": "string"
+        },
+        "controls": {
+          "type": "string"
+        },
+        "confirmation_eligible": {
+          "type": "boolean"
+        }
+      }
     }
   }
 }

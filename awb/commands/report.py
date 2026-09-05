@@ -19,13 +19,24 @@ from awb.presentation.report import build_report, render_html, render_text
 def report(run_dir: str, fmt: str, output: str | None) -> None:
     """Summarize saved evidence. This command never executes a model or adapter."""
     path = resolve_run_dir_or_exit(run_dir, fmt)
-    payload = build_report(path)
+    try:
+        payload = build_report(path)
+    except (ValueError, OSError, KeyError, TypeError) as exc:
+        if fmt == "json":
+            emit_json({"status": "error", "error": str(exc)})
+        else:
+            click.echo(f"Cannot read saved evidence: {exc}", err=True)
+        raise click.exceptions.Exit(2) from exc
     if fmt == "json":
         emit_json(payload)
         return
     if fmt == "html":
         out = Path(output) if output else path / "awb-report.html"
-        out.write_text(render_html(payload))
+        try:
+            out.write_text(render_html(payload))
+        except OSError as exc:
+            click.echo(f"Cannot write report: {exc}", err=True)
+            raise click.exceptions.Exit(2) from exc
         click.echo(str(out))
         return
     click.echo(render_text(payload))

@@ -30,11 +30,10 @@ classifiers = [
     "Programming Language :: Python :: 3.14",
     "Topic :: Software Development :: Testing",
 ]
-# Exact pins: AWB is a reproducibility benchmark, so every install resolves
-# to the same dependency set and scores stay comparable. Install in a fresh
-# venv (the docs already recommend this) to avoid conflicts with other tools.
+# Direct dependencies are pinned. Transitive versions still depend on the
+# resolver; record the resolved environment in each experiment manifest.
 dependencies = [
-    "click==8.3.1",
+    "click==8.3.3",
     "pyyaml==6.0.3",
     "jsonschema==4.26.0",
     "jinja2==3.1.6",

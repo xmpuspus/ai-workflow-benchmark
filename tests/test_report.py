@@ -107,3 +107,38 @@ def test_quickstart_skips_auth_unless_requested(monkeypatch):
     result = CliRunner().invoke(quickstart, ["--check-auth"])
     assert result.exit_code == 0, result.output
     assert calls == [True]
+
+
+def test_report_legacy_results_mark_missing_measurements(tmp_path):
+    from awb.presentation.report import build_report, render_html, render_text
+
+    run_dir = tmp_path / "legacy"
+    _save_result(run_dir)
+    payload = build_report(run_dir)
+    assert payload["coverage"]["security"]["measured"] == 0
+    assert payload["comparison"]["eligible"] is False
+    assert payload["cost"]["complete"] is False
+    assert "unknown" in render_text(payload).lower()
+    assert "unknown" in render_html(payload).lower()
+
+
+def test_report_malformed_json_is_structured_error(tmp_path):
+    from awb.cli import cli
+
+    (tmp_path / "BF-001_test.json").write_text("{bad json")
+    result = CliRunner().invoke(cli, ["report", str(tmp_path), "--format", "json"])
+    assert result.exit_code == 2
+    assert json.loads(result.output)["status"] == "error"
+
+
+def test_report_html_escapes_task_values_and_shows_recovery(tmp_path):
+    from awb.presentation.report import build_report, render_html
+
+    run_dir = tmp_path / "failed"
+    _save_result(run_dir, success=False)
+    payload = build_report(run_dir)
+    assert "recovery_command" in payload["attempts"][0]
+    payload["attempts"][0]["task_id"] = "<script>alert(1)</script>"
+    rendered = render_html(payload)
+    assert "<script>" not in rendered
+    assert "&lt;script&gt;" in rendered
