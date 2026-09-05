@@ -15,7 +15,7 @@ from typing import Any
 
 import yaml
 
-from awb.core.task_loader import load_task
+from awb.core.task_loader import load_task, validate_task_yaml
 from awb.verification.partial_credit import evaluate_partial_credit
 
 _UNCONDITIONAL_CREDIT = re.compile(r"(?:;|\|\|)\s*true\s*$")
@@ -41,14 +41,56 @@ def _load_mapping(path: Path) -> dict[str, Any] | None:
 def _has_valid_controls(review: dict[str, Any] | None, definition_hash: str) -> bool:
     if not isinstance(review, dict) or review.get("task_definition_hash") != definition_hash:
         return False
+    if review.get("status") != "review_evidence_ready" or review.get("admission") != "not_admitted":
+        return False
+    if review.get("protocol_version") != 1 or not isinstance(review.get("evaluator"), dict):
+        return False
     controls = review.get("controls")
-    if not isinstance(controls, dict):
+    if not isinstance(controls, dict) or not isinstance(review.get("requirements"), dict):
         return False
     expected = {"gold": 100, "noop": 0, "mutation": 0}
-    return all(
-        isinstance(controls.get(name), dict) and controls[name].get("percent") == score
-        for name, score in expected.items()
-    )
+    for name, score in expected.items():
+        control = controls.get(name)
+        if not isinstance(control, dict) or control.get("percent") != score:
+            return False
+        if control.get("earned") is None or control.get("possible") is None:
+            return False
+        if (
+            not isinstance(control.get("workspace_hash"), str)
+            or len(control["workspace_hash"]) != 64
+        ):
+            return False
+        if not isinstance(control.get("criteria"), list) or not control["criteria"]:
+            return False
+    receipt = review.get("receipt_sha256")
+    return isinstance(receipt, str) and receipt == _receipt_hash(review)
+
+
+def validate_control_review(task_definition: Path) -> bool:
+    """Return whether the sibling review contains complete control evidence."""
+    try:
+        return _has_valid_controls(
+            _load_json(_review_path(task_definition)), task_definition_hash(task_definition)
+        )
+    except OSError:
+        return False
+
+
+def _receipt_hash(review: dict[str, Any]) -> str:
+    payload = {key: value for key, value in review.items() if key != "receipt_sha256"}
+    return hashlib.sha256(
+        json.dumps(payload, sort_keys=True, separators=(",", ":")).encode()
+    ).hexdigest()
+
+
+def _workspace_hash(workspace: Path) -> str:
+    hasher = hashlib.sha256()
+    for path in sorted(p for p in workspace.rglob("*") if p.is_file() and not p.is_symlink()):
+        relative = path.relative_to(workspace).as_posix().encode()
+        hasher.update(relative)
+        hasher.update(b"\0")
+        hasher.update(hashlib.sha256(path.read_bytes()).digest())
+    return hasher.hexdigest()
 
 
 def audit_tasks(tasks_dir: Path) -> dict[str, Any]:
@@ -67,6 +109,10 @@ def audit_tasks(tasks_dir: Path) -> dict[str, Any]:
             findings.append(entry)
             continue
 
+        schema_errors = validate_task_yaml(path)
+        if schema_errors:
+            entry["findings"].append("schema_validation_failed")
+
         verification = raw.get("verification")
         criteria = verification.get("partial_credit", []) if isinstance(verification, dict) else []
         unconditional = [
@@ -80,8 +126,13 @@ def audit_tasks(tasks_dir: Path) -> dict[str, Any]:
             entry["findings"].append("unconditional_credit")
             entry["unconditional_criteria"] = unconditional
 
-        if not isinstance(raw.get("provenance"), dict):
+        provenance = raw.get("provenance")
+        if not isinstance(provenance, dict) or not provenance.get("source_pr_url"):
             entry["findings"].append("missing_provenance")
+        repo = raw.get("repo")
+        commit = repo.get("commit") if isinstance(repo, dict) else ""
+        if not isinstance(commit, str) or not re.fullmatch(r"[0-9a-fA-F]{40}", commit):
+            entry["findings"].append("unpinned_repo_commit")
 
         review_path = _review_path(path)
         review = _load_json(review_path)
@@ -103,6 +154,12 @@ def audit_tasks(tasks_dir: Path) -> dict[str, Any]:
         "missing_provenance": sum("missing_provenance" in item["findings"] for item in findings),
         "invalid_task_definition": sum(
             "invalid_task_definition" in item["findings"] for item in findings
+        ),
+        "schema_validation_failed": sum(
+            "schema_validation_failed" in item["findings"] for item in findings
+        ),
+        "unpinned_repo_commit": sum(
+            "unpinned_repo_commit" in item["findings"] for item in findings
         ),
         "reviewed": 0,
     }
@@ -132,6 +189,7 @@ def _control_result(task_definition: Path, workspace: Path) -> dict[str, Any]:
     percent = 0 if possible == 0 else earned * 100 / possible
     return {
         "workspace": str(workspace),
+        "workspace_hash": _workspace_hash(workspace),
         "earned": earned,
         "possible": possible,
         "percent": percent,
@@ -167,6 +225,8 @@ def run_control_protocol(
         "admission": "not_admitted",
         "task_definition": str(task_definition),
         "task_definition_hash": task_definition_hash(task_definition),
+        "protocol_version": 1,
+        "evaluator": {"name": "awb.verification.partial_credit", "version": "1"},
         "controls": controls,
         "requirements": {
             "gold_percent": 100,
@@ -177,6 +237,7 @@ def run_control_protocol(
             "Inspect the oracle and controls before any separate holdout admission decision."
         ),
     }
+    evidence["receipt_sha256"] = _receipt_hash(evidence)
     output = review_output or _review_path(task_definition)
     output.parent.mkdir(parents=True, exist_ok=True)
     output.write_text(json.dumps(evidence, indent=2) + "\n")
@@ -207,6 +268,7 @@ def create_failure_candidate(
     candidate = {
         "status": "candidate",
         "admission": "not_admitted",
+        "confirmation_eligible": False,
         "source_result": str(result_path),
         "task_id": task_id,
         "description": description,
@@ -216,6 +278,7 @@ def create_failure_candidate(
     review: dict[str, Any] = {
         "status": "candidate",
         "admission": "not_admitted",
+        "confirmation_eligible": False,
         "description": description,
         "oracle_review": oracle_review,
         "source_result": str(result_path),

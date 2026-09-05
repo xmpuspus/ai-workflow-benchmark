@@ -116,6 +116,41 @@ def test_controls_do_not_admit_when_mutation_receives_credit(tmp_path):
     assert payload["controls"]["mutation"]["percent"] == 100
 
 
+def test_audit_rejects_forged_percent_only_control_review(tmp_path):
+    from awb.verification.task_admission import audit_tasks, task_definition_hash
+
+    task_path = _write_task(tmp_path / "BF-901.yaml")
+    (tmp_path / "BF-901.review.json").write_text(
+        json.dumps(
+            {
+                "task_definition_hash": task_definition_hash(task_path),
+                "controls": {
+                    "gold": {"percent": 100},
+                    "noop": {"percent": 0},
+                    "mutation": {"percent": 0},
+                },
+            }
+        )
+    )
+
+    payload = audit_tasks(tmp_path)
+    assert "missing_independent_controls" in payload["findings"][0]["findings"]
+
+
+def test_audit_marks_schema_and_unpinned_commit_failures(tmp_path):
+    invalid = _task_definition()
+    invalid["estimated_minutes"] = 1
+    invalid["repo"]["commit"] = "main"
+    (tmp_path / "BF-901.yaml").write_text(yaml.safe_dump(invalid))
+
+    payload = __import__("awb.verification.task_admission", fromlist=["audit_tasks"]).audit_tasks(
+        tmp_path
+    )
+    findings = payload["findings"][0]["findings"]
+    assert "schema_validation_failed" in findings
+    assert "unpinned_repo_commit" in findings
+
+
 def test_from_failure_requires_review_and_preserves_task_provenance(tmp_path):
     task_path = _write_task(tmp_path / "BF-901.yaml")
     result_path = tmp_path / "failure.json"

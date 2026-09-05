@@ -250,6 +250,7 @@ class TestFromPrGuards:
         result = runner.invoke(task, ["from-pr", self.PR_URL, "--out", str(tmp_path / "tasks")])
         assert result.exit_code == 1
         assert "failed validation" in result.output
+        assert not list((tmp_path / "tasks").glob("*.yaml"))
 
     def test_dry_run_survives_rich_markup_in_pr_title(self, monkeypatch, tmp_path, pr_responses):
         # PR-author-controlled text must never be parsed as Rich markup.

@@ -2,8 +2,11 @@
 
 from __future__ import annotations
 
+import hashlib
+import json
 import re
 import sys
+import tempfile
 from pathlib import Path
 
 import click
@@ -265,11 +268,12 @@ def from_pr(
             console.print(yaml_text, markup=False)
         return
 
-    out_dir.mkdir(parents=True, exist_ok=True)
-    out_path = out_dir / f"{chosen_id}.yaml"
-    out_path.write_text(yaml_text)
-
-    errors = validate_task_yaml(out_path)
+    # Validate a private temporary definition before publishing anything to a
+    # directory that `awb run --tasks-dir` could otherwise load.
+    with tempfile.TemporaryDirectory(prefix="awb-task-candidate-") as temp_dir:
+        candidate_path = Path(temp_dir) / f"{chosen_id}.yaml"
+        candidate_path.write_text(yaml_text)
+        errors = validate_task_yaml(candidate_path)
     if errors:
         console.print(f"[{BAD}]Generated task failed validation:[/{BAD}]")
         for e in errors:
@@ -277,8 +281,39 @@ def from_pr(
             console.print(f"  - {e}", markup=False)
         sys.exit(1)
 
+    out_dir.mkdir(parents=True, exist_ok=True)
+    out_path = out_dir / f"{chosen_id}.yaml"
+    metadata_path = out_dir / f"{chosen_id}.review.json"
+    if out_path.exists() or metadata_path.exists():
+        raise click.UsageError("Candidate task or review metadata already exists")
+    with out_path.open("x") as handle:
+        handle.write(yaml_text)
+    with metadata_path.open("x") as handle:
+        json.dump(
+            {
+                "status": "candidate",
+                "admission": "not_admitted",
+                "confirmation_eligible": False,
+                "task_id": chosen_id,
+                "task_definition_hash": hashlib.sha256(yaml_text.encode()).hexdigest(),
+                "next_step": (
+                    "Run task controls and an independent review before holdout admission."
+                ),
+            },
+            handle,
+            indent=2,
+        )
+        handle.write("\n")
+
     if fmt == "json":
-        emit_json({"task": mined.task, "written_path": str(out_path)})
+        emit_json(
+            {
+                "task": mined.task,
+                "written_path": str(out_path),
+                "review_path": str(metadata_path),
+                "admission": "not_admitted",
+            }
+        )
     else:
         console.print(f"[{OK}]Task written:[/{OK}] {out_path}")
         console.print(f"  pre-merge commit: {mined.premerge_sha[:12]}")

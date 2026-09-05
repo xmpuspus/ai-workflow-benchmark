@@ -91,6 +91,34 @@ def test_bundle_rejects_result_symlinks(tmp_path):
         build_bundle(run, tmp_path / "bundle")
 
 
+def test_bundle_preserves_nested_experiment_receipts_and_declared_attachments(tmp_path):
+    from awb.experiments.evidence import build_bundle, verify_bundle
+
+    run = tmp_path / "runs"
+    nested = run / "experiment_run1"
+    nested.mkdir(parents=True)
+    result = nested / "BF-001_claude-code-custom.json"
+    result.write_text('{"task_id":"BF-001","outcome":{"success":true}}')
+    (run / "plan.json").write_text('{"plan_hash":"abc","spec":{}}')
+    (run / "evaluator.json").write_text('{"version":"1"}')
+    (run / "environment.json").write_text('{"fingerprint":"env"}')
+    trace = nested / "BF-001_claude-code-custom.trace.jsonl"
+    trace.write_text('{"span_name":"tool"}\n')
+    (run / "auth.json").write_text('{"secret":"never-export"}')
+
+    bundle = tmp_path / "bundle"
+    manifest = build_bundle(run, bundle, attachments=[trace])
+
+    assert "experiment_run1/BF-001_claude-code-custom.json" in manifest["files"]
+    assert "attachments/experiment_run1/BF-001_claude-code-custom.trace.jsonl" in manifest["files"]
+    assert manifest["metadata"]["complete"] is True
+    assert manifest["privacy"]["attachments"] == "explicitly selected; review before sharing"
+    assert not (bundle / "auth.json").exists()
+    assert verify_bundle(bundle) == []
+    (bundle / "experiment_run1" / "BF-001_claude-code-custom.json").write_text("{}")
+    assert "checksum" in " ".join(verify_bundle(bundle)).lower()
+
+
 def test_assessment_incomplete_or_wrong_model_is_inconclusive():
     from awb.experiments.protocol import assess, create_plan
 

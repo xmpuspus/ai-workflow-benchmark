@@ -34,8 +34,9 @@ carry `admission: not_admitted`. They are not executable admission requests.
 
 Run controls against explicit local workspaces after reviewing the task's
 trusted partial-credit commands. The protocol executes those existing commands
-in the three paths supplied by the operator and writes review evidence beside
-the task definition by default.
+on the host in the three paths supplied by the operator. Treat this command as
+local-only evidence for trusted task definitions. Do not use imported or
+unreviewed task checks on a host that has credentials or sensitive files.
 
 ```bash
 awb task controls ./candidate-tasks/BF-901.yaml \
@@ -47,6 +48,7 @@ awb task controls ./candidate-tasks/BF-901.yaml \
 The gold workspace must receive 100 percent. The no-op and mutation workspaces
 must receive zero. A failing control produces `review_required`.
 Passing controls produce `review_evidence_ready`. It still has
-`admission: not_admitted`. Review the task definition hash, oracle note,
-provenance, and the recorded control output before making any separate decision
-to add a task to a holdout.
+`admission: not_admitted`. The review includes the task hash, workspace hashes,
+criterion receipts, evaluator identity, and a tamper-evident receipt hash.
+Review those records with the oracle note and provenance before making any
+separate decision to add a task to a holdout.
