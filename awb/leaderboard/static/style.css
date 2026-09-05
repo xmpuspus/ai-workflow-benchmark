@@ -126,6 +126,15 @@ header h1 {
     box-shadow: var(--shadow);
 }
 
+.scroll-cue {
+    display: none;
+    margin: 0;
+    padding: 0.5rem 0.75rem;
+    color: var(--text-muted);
+    font-size: 0.8rem;
+    background: var(--surface);
+}
+
 table {
     width: 100%;
     border-collapse: collapse;
@@ -322,5 +331,13 @@ footer a:hover {
 
     header h1 {
         font-size: 1.4rem;
+    }
+
+    .scroll-cue {
+        display: block;
+    }
+
+    #leaderboard-table {
+        min-width: 860px;
     }
 }

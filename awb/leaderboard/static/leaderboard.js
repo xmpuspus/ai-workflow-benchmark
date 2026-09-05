@@ -27,10 +27,10 @@ function initSorting() {
             th.classList.add("sort-active", "sort-" + direction);
 
             rows.sort(function (a, b) {
-                var aVal = extractValue(a.children[colIndex]);
-                var bVal = extractValue(b.children[colIndex]);
-                if (direction === "asc") return aVal - bVal;
-                return bVal - aVal;
+                var aVal = extractValue(a.children[colIndex], sortKey);
+                var bVal = extractValue(b.children[colIndex], sortKey);
+                var comparison = typeof aVal === "string" ? aVal.localeCompare(bVal) : aVal - bVal;
+                return direction === "asc" ? comparison : -comparison;
             });
 
             rows.forEach(function (row, i) {
@@ -41,8 +41,9 @@ function initSorting() {
     });
 }
 
-function extractValue(td) {
+function extractValue(td, sortKey) {
     var text = td.textContent.replace(/[$%,]/g, "").trim();
+    if (sortKey === "tool" || sortKey === "model") return text.toLocaleLowerCase();
     var num = parseFloat(text);
     return isNaN(num) ? 0 : num;
 }

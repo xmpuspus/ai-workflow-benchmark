@@ -66,6 +66,7 @@ pip install awb
 awb quickstart                                        # verify your setup
 awb checkup --static-only                             # instant free audit of your CLAUDE.md + hooks
 awb checkup --tool codex-cli --static-only            # instant audit of ~/.codex + repo AGENTS.md
+awb report last                                        # read the last saved evidence, with no model call
 awb warmup --fast-check                               # warm the 8 probe repos (one-time)
 awb checkup                                           # static audit + 8-task probe + rule integrity
 awb checkup --from-run results/runs/<run_dir>         # re-grade a saved probe for free
@@ -412,6 +413,12 @@ Shows all registered tool adapters and their availability status.
 
 Checks all 100 task YAML files against the schema, including partial credit sum-to-100 validation.
 
+### `awb report` - Read saved evidence
+
+`awb report [RUN_DIR|last]` renders a local text, JSON, or HTML summary from saved result files. It
+does not call an adapter, authenticate a CLI, or run a model. Use `awb quickstart` for the free
+local setup check; use `awb quickstart --check-auth` only when you want to verify CLI login state.
+
 ### `awb info` - Task details
 
 Displays full details for a specific task including repo, capabilities, and partial credit rubric.
@@ -450,6 +457,7 @@ Recomputes task timeouts from empirical p95 wall-clock data. Use `--apply` to wr
 | Command | Description | Demo |
 |---------|-------------|------|
 | `awb quickstart` | Verify setup: tools available, tasks load | - |
+| `awb report [RUN_DIR\|last]` | Read saved local evidence without a model call | - |
 | `awb export <run_dir> -o file.json` | Export results in submission format | - |
 | `awb submit <file.json>` | Validate an external submission | - |
 | `awb compare-submissions <a> <b>` | Cross-tool comparison with statistics | - |

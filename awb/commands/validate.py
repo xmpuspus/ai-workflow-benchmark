@@ -96,8 +96,9 @@ def info(task_id: str):
 
 
 @click.command()
-def quickstart():
-    """Verify environment setup: tool availability, auth, tasks load, results writable."""
+@click.option("--check-auth", is_flag=True, help="Also call installed tool authentication checks.")
+def quickstart(check_auth: bool):
+    """Verify free local setup; authentication checks require --check-auth."""
     from awb.adapters.registry import list_adapters
     from awb.core.config import RESULTS_DIR
     from awb.core.task_loader import load_all_tasks
@@ -121,22 +122,27 @@ def quickstart():
         console.print("  [red]No adapters available — install at least one tool[/red]")
         all_ok = False
 
-    # 2. Auth check for available adapters
+    # 2. Auth checks may invoke an installed CLI, so they are explicitly opt-in.
     console.print("\n[bold]2. Authentication[/bold]")
-    from awb.adapters.registry import get_adapter
+    if not check_auth:
+        console.print(
+            "  [dim]Authentication skipped. Re-run with --check-auth to probe installed CLIs.[/dim]"
+        )
+    else:
+        from awb.adapters.registry import get_adapter
 
-    for name, _, available in adapters:
-        if available is not True:
-            continue
-        adapter = get_adapter(name)
-        if adapter.supports_auth_check():
-            ok, msg = adapter.check_auth()
-            status = "[green]OK[/green]" if ok else f"[red]FAIL: {msg}[/red]"
-            console.print(f"  {status}  {name}")
-            if not ok:
-                all_ok = False
-        else:
-            console.print(f"  [dim]skip[/dim]  {name} (no auth check)")
+        for name, _, available in adapters:
+            if available is not True:
+                continue
+            adapter = get_adapter(name)
+            if adapter.supports_auth_check():
+                ok, msg = adapter.check_auth()
+                status = "[green]OK[/green]" if ok else f"[red]FAIL: {msg}[/red]"
+                console.print(f"  {status}  {name}")
+                if not ok:
+                    all_ok = False
+            else:
+                console.print(f"  [dim]skip[/dim]  {name} (no auth check)")
 
     # 3. Load tasks
     console.print("\n[bold]3. Task loading[/bold]")

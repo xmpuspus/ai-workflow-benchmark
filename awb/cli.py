@@ -15,6 +15,7 @@ from awb.commands.cost_cmd import cost
 from awb.commands.drift_cmd import drift
 from awb.commands.leaderboard_cmd import leaderboard
 from awb.commands.migrate import migrate_results
+from awb.commands.report import report
 from awb.commands.run import run
 from awb.commands.submit import compare_submissions_cmd, export, submit
 from awb.commands.task_cmd import task
@@ -28,12 +29,17 @@ from awb.commands.workflow_cmd import workflow
 @click.version_option(version=__version__, prog_name="awb")
 @click.option("--verbose", "-v", is_flag=True, help="Enable debug logging")
 def cli(verbose: bool):
-    """AI Workflow Benchmark - measure tool+workflow performance."""
+    """AI Workflow Benchmark - measure tool+workflow performance.
+
+    Start here: quickstart for local setup, checkup --static-only for a free
+    harness audit, then report last to read saved evidence.
+    """
     level = logging.DEBUG if verbose else logging.WARNING
     logging.basicConfig(level=level, format="%(levelname)s %(name)s: %(message)s")
 
 
 cli.add_command(run)
+cli.add_command(report)
 cli.add_command(checkup)
 cli.add_command(compare)
 cli.add_command(gap)
