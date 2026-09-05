@@ -368,3 +368,40 @@ def test_run_command_rejects_invalid_plan_before_adapter(tmp_path):
     assert result.exit_code == 2, result.output
     assert json.loads(result.output)["status"] == "error"
     assert not (tmp_path / "runs").exists()
+
+
+def test_assessment_cost_per_solve_includes_failed_attempts_and_requires_full_usage():
+    from awb.experiments.protocol import assess, create_plan
+
+    plan = create_plan(spec())
+    arms = []
+    for arm in ("a", "b"):
+        arms.append(
+            [
+                {
+                    "task_id": "BF-001",
+                    "model": plan["spec"]["model"],
+                    "effective_config_hash": plan["spec"][f"config_{arm}_hash"],
+                    "task_definition_hash": plan["spec"]["task_hashes"]["BF-001"],
+                    "experiment_plan_hash": plan["plan_hash"],
+                    "experiment_split": "development",
+                    "experiment_arm": arm,
+                    "repeat_index": repeat,
+                    "execution_status": "completed",
+                    "outcome": {
+                        "success": repeat == 1,
+                        "partial_credit_score": 100 if repeat == 1 else 0,
+                        "partial_credit_max": 100,
+                    },
+                    "cost": {"usage_status": "complete", "estimated_cost_usd": 3},
+                }
+                for repeat in (1, 2)
+            ]
+        )
+    report = assess(plan, *arms, "development")
+    assert report["cost"]["a"]["usd_per_solved_attempt"] == 6
+    arms[0][1]["cost"]["usage_status"] = "partial"
+    assert assess(plan, *arms, "development")["cost"]["a"]["usd_per_solved_attempt"] is None
+    assert assess(plan, [], [], "development")["cost"]["a"]["complete"] is False
+    arms[0][1]["cost"] = {"usage_status": "complete"}
+    assert assess(plan, *arms, "development")["cost"]["a"]["complete"] is False

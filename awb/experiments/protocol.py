@@ -172,6 +172,8 @@ def assess(
         grouped = defaultdict(list)
         known_cost = 0.0
         cost_complete = True
+        cost_rows = 0
+        solved_attempts = 0
         seen = set()
         expected = {
             (entry["task_id"], entry["repeat"])
@@ -226,6 +228,7 @@ def assess(
                 reasons.append(f"Arm {arm}/{task_id}: outcome is not a valid bounded score")
                 continue
             grouped[task_id].append(100 * score / maximum)
+            solved_attempts += int(outcome.get("success") is True)
             cost = row.get("cost", {})
             if not isinstance(cost, dict):
                 reasons.append(f"Arm {arm}/{task_id}: cost is not an object")
@@ -234,7 +237,7 @@ def assess(
             if row.get("usage_status", cost.get("usage_status")) != "complete":
                 cost_complete = False
                 reasons.append(f"Arm {arm}/{task_id}: usage measurement incomplete or unknown")
-            recorded_cost = cost.get("estimated_cost_usd", 0)
+            recorded_cost = cost.get("estimated_cost_usd")
             if (
                 type(recorded_cost) not in (int, float)
                 or not math.isfinite(recorded_cost)
@@ -244,13 +247,24 @@ def assess(
                 reasons.append(f"Arm {arm}/{task_id}: cost is not a valid nonnegative number")
                 continue
             known_cost += recorded_cost
+            cost_rows += 1
         if seen != expected:
             reasons.append(f"Arm {arm}: attempts do not match the frozen schedule")
         for task_id in sorted(wanted):
             if len(grouped[task_id]) != spec["repeats"]:
                 reasons.append(f"Arm {arm}/{task_id}: expected {spec['repeats']} attempts")
         groups.append(grouped)
-        costs.append({"recorded_usd": known_cost, "complete": cost_complete})
+        cost_complete = cost_complete and seen == expected and cost_rows == len(expected)
+        costs.append(
+            {
+                "recorded_usd": known_cost,
+                "complete": cost_complete,
+                "solved_attempts": solved_attempts,
+                "usd_per_solved_attempt": (
+                    known_cost / solved_attempts if cost_complete and solved_attempts else None
+                ),
+            }
+        )
     shared = sorted(t for t in wanted if groups[0][t] and groups[1][t])
     a = [statistics.median(groups[0][t]) for t in shared]
     b = [statistics.median(groups[1][t]) for t in shared]
