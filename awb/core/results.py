@@ -119,8 +119,16 @@ class ResultRecorder:
         task_ids: list[str] | None = None,
         requested_runs: int = 1,
         task_set_hash: str = "",
+        identity_by_task: dict[str, dict[str, object]] | None = None,
     ) -> str | None:
-        """Find the newest compatible experiment missing a task/repeat result."""
+        """Find the newest compatible experiment missing a task/repeat result.
+
+        ``identity_by_task`` is optional for callers using the legacy counting
+        API. When supplied, every recorded result must carry the exact current
+        execution identity. Empty legacy identity fields are not compatible.
+        An empty expected model means the current runner did not pin a model,
+        so the adapter's observed model is not used as a resume constraint.
+        """
         if not self.results_dir.exists():
             return None
 
@@ -159,12 +167,36 @@ class ResultRecorder:
                     if task_set_hash and result.task_set_hash != task_set_hash:
                         compatible = False
                         break
+                    expected_identity = (identity_by_task or {}).get(task_id)
+                    if identity_by_task is not None and (
+                        expected_identity is None
+                        or not _matches_resume_identity(result, expected_identity)
+                    ):
+                        compatible = False
+                        break
                 if not compatible:
                     break
             if found_any and compatible and not complete:
                 return base_id
 
         return None
+
+
+def _matches_resume_identity(result: RunResult, expected: dict[str, object]) -> bool:
+    """Return whether a saved result proves it belongs to the current cohort."""
+    for field, expected_value in expected.items():
+        if field == "model" and _unknown_identity_value(expected_value):
+            continue
+        if _unknown_identity_value(expected_value):
+            return False
+        actual_value = getattr(result, field, None)
+        if _unknown_identity_value(actual_value) or actual_value != expected_value:
+            return False
+    return True
+
+
+def _unknown_identity_value(value: object) -> bool:
+    return value is None or value == "" or value == "unknown" or value == {}
 
 
 def _dict_to_result(data: dict) -> RunResult:

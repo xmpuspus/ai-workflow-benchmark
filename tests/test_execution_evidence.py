@@ -4,6 +4,8 @@ import asyncio
 import hashlib
 import shlex
 import sys
+import time
+from dataclasses import replace
 from pathlib import Path
 
 import pytest
@@ -191,6 +193,87 @@ def test_repeat_aware_resume_requires_every_requested_identity(tmp_path, sample_
     )
 
 
+@pytest.mark.parametrize(
+    "field",
+    [
+        "task_definition_hash",
+        "evaluator_version",
+        "effective_config_hash",
+        "adapter_version",
+        "model",
+        "execution_mode",
+        "environment_fingerprint",
+        "budget_fingerprint",
+        "cohort_manifest",
+    ],
+)
+def test_resume_rejects_changed_or_unknown_execution_identity(tmp_path, sample_result, field):
+    recorder = ResultRecorder(tmp_path)
+    sample_result.run_id = "experiment_run1"
+    sample_result.task_set_hash = "a" * 64
+    sample_result.task_definition_hash = "task-v1"
+    sample_result.evaluator_version = "evaluator-v1"
+    sample_result.effective_config_hash = "config-v1"
+    sample_result.adapter_version = "adapter-v1"
+    sample_result.model = "model-v1"
+    sample_result.execution_mode = "host"
+    sample_result.environment_fingerprint = "environment-v1"
+    sample_result.budget_fingerprint = "budget-v1"
+    sample_result.cohort_manifest = {
+        "selected_task_ids": [sample_result.task_id],
+        "selected_task_definition_hashes": {sample_result.task_id: "task-v1"},
+        "requested_repeats": 2,
+    }
+    recorder.save(sample_result)
+    expected = {
+        key: getattr(sample_result, key)
+        for key in (
+            "task_definition_hash",
+            "evaluator_version",
+            "effective_config_hash",
+            "adapter_version",
+            "model",
+            "execution_mode",
+            "environment_fingerprint",
+            "budget_fingerprint",
+            "cohort_manifest",
+        )
+    }
+    expected[field] = {} if field == "cohort_manifest" else f"changed-{field}"
+
+    assert (
+        recorder.find_incomplete_run(
+            sample_result.tool,
+            task_ids=[sample_result.task_id],
+            requested_runs=2,
+            task_set_hash=sample_result.task_set_hash,
+            identity_by_task={sample_result.task_id: expected},
+        )
+        is None
+    )
+
+
+def test_resume_does_not_require_model_when_current_run_does_not_declare_one(
+    tmp_path, sample_result
+):
+    recorder = ResultRecorder(tmp_path)
+    sample_result.run_id = "experiment_run1"
+    sample_result.task_set_hash = "a" * 64
+    sample_result.model = "observed-model"
+    recorder.save(sample_result)
+
+    assert (
+        recorder.find_incomplete_run(
+            sample_result.tool,
+            task_ids=[sample_result.task_id],
+            requested_runs=2,
+            task_set_hash=sample_result.task_set_hash,
+            identity_by_task={sample_result.task_id: {"model": ""}},
+        )
+        == "experiment"
+    )
+
+
 @pytest.mark.asyncio
 async def test_stage_deadline_interrupts_work():
     runner = BenchmarkRunner.__new__(BenchmarkRunner)
@@ -220,6 +303,53 @@ async def test_whole_experiment_deadline_stops_before_next_repeat(sample_task):
     results = await runner.run_all()
     assert results == []
     assert calls == [1]
+
+
+@pytest.mark.asyncio
+async def test_expired_deadline_leaves_sequential_attempts_unstarted_and_resumable(
+    tmp_path, sample_task
+):
+    runner = _runner(tmp_path, sample_task, _FailedAfterEditAdapter())
+    runner._experiment_deadline = time.monotonic() - 1
+    calls = []
+
+    async def run_single(task, run_id=None, run_num=1):
+        calls.append(task.id)
+        raise AssertionError("expired attempts must not launch")
+
+    runner.run_single = run_single
+    results = await runner._run_sequential(
+        [sample_task], "deadline_run1", 1, 1, 0, 0, time.monotonic()
+    )
+
+    assert results == []
+    assert calls == []
+    assert not runner.recorder.has_result("deadline_run1", sample_task.id, runner.tool)
+
+
+@pytest.mark.asyncio
+async def test_parallel_waiter_does_not_launch_after_deadline(tmp_path, sample_task, sample_result):
+    runner = _runner(tmp_path, sample_task, _FailedAfterEditAdapter())
+    second = replace(sample_task, id="BF-999")
+    runner.tasks = [sample_task, second]
+    runner.concurrency = 1
+    runner._experiment_deadline = time.monotonic() + 60
+    calls = []
+
+    async def run_single(task, run_id=None, run_num=1):
+        calls.append(task.id)
+        runner._experiment_deadline = time.monotonic() - 1
+        await asyncio.sleep(0)
+        return replace(sample_result, task_id=task.id, run_id=run_id)
+
+    runner.run_single = run_single
+    results = await runner._run_parallel(
+        runner.tasks, run_id="deadline_run1", run_num=1, total_tasks=2
+    )
+
+    assert calls == [sample_task.id]
+    assert [result.task_id for result in results] == [sample_task.id]
+    assert not runner.recorder.has_result("deadline_run1", second.id, runner.tool)
 
 
 @pytest.mark.asyncio
@@ -357,6 +487,10 @@ def test_selected_tasks_share_cohort_budget_but_keep_individual_definitions(tmp_
     assert first_identity["cohort_manifest"]["selected_task_ids"] == sorted(
         [sample_task.id, second.id]
     )
+    assert first_identity["cohort_manifest"]["selected_task_definition_hashes"] == {
+        sample_task.id: first_identity["task_definition_hash"],
+        second.id: second_identity["task_definition_hash"],
+    }
     assert first_identity["cohort_manifest"]["requested_repeats"] == 2
     runner.runs = 3
     assert (

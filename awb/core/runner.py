@@ -115,11 +115,31 @@ class BenchmarkRunner:
 
         # Resume: try to find an incomplete run for this tool
         if self.resume:
+            declared_model = (self.workflow.model if self.workflow else "") or getattr(
+                self._adapter, "model", ""
+            )
+            if declared_model == "unknown":
+                declared_model = ""
+            identity_by_task = {}
+            for task in tasks:
+                identity = self._identity_fields(task, None)
+                identity_by_task[task.id] = {
+                    "task_definition_hash": identity["task_definition_hash"],
+                    "evaluator_version": identity["evaluator_version"],
+                    "effective_config_hash": identity["effective_config_hash"],
+                    "adapter_version": identity["adapter_version"],
+                    "model": declared_model,
+                    "execution_mode": identity["execution_mode"],
+                    "environment_fingerprint": identity["environment_fingerprint"],
+                    "budget_fingerprint": identity["budget_fingerprint"],
+                    "cohort_manifest": identity["cohort_manifest"],
+                }
             existing = self.recorder.find_incomplete_run(
                 tool,
                 task_ids=[task.id for task in tasks],
                 requested_runs=runs,
                 task_set_hash=self._task_set_hash,
+                identity_by_task=identity_by_task,
             )
             if existing:
                 self._run_id = existing
@@ -322,6 +342,9 @@ class BenchmarkRunner:
                 results.append(cached)
                 continue
 
+            if self._deadline_reached():
+                break
+
             _console.print(
                 f"  [{completed + 1}/{total_tasks}] {task.id} ({task.difficulty}) ...",
                 end="",
@@ -390,8 +413,10 @@ class BenchmarkRunner:
 
         sem = asyncio.Semaphore(self.concurrency)
 
-        async def _run_bounded(task: TaskDefinition) -> RunResult:
+        async def _run_bounded(task: TaskDefinition) -> RunResult | None:
             async with sem:
+                if self._deadline_reached():
+                    return None
                 return await self.run_single(task, run_id=run_id, run_num=run_num)
 
         with Progress(
@@ -405,10 +430,11 @@ class BenchmarkRunner:
                 f"Run {run_num}", total=len(tasks), completed=len(cached_results)
             )
 
-            async def _tracked(task: TaskDefinition) -> RunResult:
+            async def _tracked(task: TaskDefinition) -> RunResult | None:
                 result = await _run_bounded(task)
-                progress.advance(bar)
-                if on_task_complete:
+                if result is not None:
+                    progress.advance(bar)
+                if result is not None and on_task_complete:
                     on_task_complete(result)
                 return result
 
@@ -423,6 +449,8 @@ class BenchmarkRunner:
 
         valid_results: list[RunResult] = list(cached_results)
         for task, r in zip(pending_tasks, gathered, strict=True):
+            if r is None:
+                continue
             if isinstance(r, click.UsageError | NotImplementedError):
                 raise r
             if isinstance(r, BaseException):
@@ -432,6 +460,10 @@ class BenchmarkRunner:
                 valid_results.append(r)
 
         return valid_results
+
+    def _deadline_reached(self) -> bool:
+        deadline = getattr(self, "_experiment_deadline", None)
+        return deadline is not None and time.monotonic() >= deadline
 
     def _failed_result(self, task: TaskDefinition, exc: BaseException) -> RunResult:
         """Build (and persist) a FAIL result for a task that raised in parallel.
@@ -838,6 +870,9 @@ class BenchmarkRunner:
             }
         )
         selected_tasks = sorted(getattr(self, "tasks", [task]), key=lambda item: item.id)
+        selected_task_definition_hashes = {
+            item.id: _stable_hash(asdict(item)) for item in selected_tasks
+        }
         task_budgets = {
             item.id: {
                 "timeout_seconds": self.timeout_override or item.constraints.timeout_seconds,
@@ -888,6 +923,7 @@ class BenchmarkRunner:
             {
                 "task_set_hash": self._task_set_hash,
                 "selected_task_ids": [item.id for item in selected_tasks],
+                "selected_task_definition_hashes": selected_task_definition_hashes,
                 "effective_config_hash": config_hash,
                 "environment_fingerprint": environment_hash,
                 "budget_fingerprint": budget_hash,
@@ -923,6 +959,7 @@ class BenchmarkRunner:
             "cohort_manifest": {
                 "cohort_id": cohort_id,
                 "selected_task_ids": [item.id for item in selected_tasks],
+                "selected_task_definition_hashes": selected_task_definition_hashes,
                 "requested_repeats": getattr(self, "runs", 1),
                 "task_set_hash": self._task_set_hash,
                 "task_definition_hash": task_hash,
