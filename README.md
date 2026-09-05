@@ -21,13 +21,13 @@
 
 The 2025 Stack Overflow Developer Survey shows 84% of professional developers using AI in their workflow, up from 76% the year before. Yet only 33% trust AI accuracy while 46% actively distrust it ([survey.stackoverflow.co/2025/ai](https://survey.stackoverflow.co/2025/ai)). [METR's RCT of 16 experienced open-source maintainers](https://metr.org/blog/2025-07-10-early-2025-ai-experienced-os-dev-study/) found that AI tooling **increased** task completion time by 19%. Developers self-reported a 20% speedup, a 39-point gap between perception and reality ([arXiv:2507.09089](https://arxiv.org/abs/2507.09089)). Static issue benchmarks such as [SWE-bench](https://www.swebench.com/) measure model ability in isolation. [SWE-bench Pro](https://scaleapi.github.io/SWE-bench_Pro-os/) ([arXiv:2509.16941](https://arxiv.org/abs/2509.16941)) addresses contamination at scale but still scores patches, not whether a workflow can ship.
 
-AWB measures whether a configured tool+workflow combination can ship correct, regression-safe, low-burden changes against pinned real-world repositories. A bare configuration and a purpose-built setup can produce meaningfully different results with the same model. AWB benchmarks **tool + configuration + workflow + model** together on 100 tasks from real open-source repositories.
+AWB records task outcomes, execution traces, usage, and available quality checks for a **tool + configuration + workflow + model**. Its 100 bundled tasks form a development corpus built on pinned open-source repositories. Missing measurements stay unknown. Reviewed tasks, complete comparable evidence, and independent replay are needed before making broader performance claims.
 
 ### How AWB relates to other benchmarks
 
 Related work measures complementary axes. [HAL](https://arxiv.org/abs/2510.11977) analyzes agent traces with LLM judges across 11 tasks at 2.5B-token scale. [Artificial Analysis](https://artificialanalysis.ai/agents/coding-agents) publishes harness comparisons that hold the model constant. [SWE-bench](https://www.swebench.com/) and [SWE-bench Pro](https://scaleapi.github.io/SWE-bench_Pro-os/) score patches against real GitHub issues. [LiveCodeBench](https://arxiv.org/abs/2403.07974) addresses contamination with time-segmented contest problems. [METR RE-Bench](https://arxiv.org/abs/2411.15114) compares humans and agents in matched ML-engineering environments.
 
-AWB makes two distinct contributions. First, a paired **vanilla-vs-custom** run isolates the configuration delta for the same model and reports Workflow Lift with a sign-test p-value. Second, deterministic trace rubrics use OpenTelemetry-aligned `.trace.jsonl` artifacts instead of LLM judges. See [METHODOLOGY.md#related-work](METHODOLOGY.md#related-work) for citation details.
+AWB combines local configuration experiments with deterministic trace rubrics over OpenTelemetry-aligned `.trace.jsonl` artifacts. Default vanilla-versus-custom runs and `awb ab` provide exploratory paired summaries. The [controlled experiment workflow](docs/evidence-workflow.md) freezes inputs and checks a separate holdout before confirmation. See [METHODOLOGY.md#related-work](METHODOLOGY.md#related-work) for citation details.
 
 ## What's New in v1.7.0
 
@@ -107,7 +107,7 @@ Clone repo at pinned SHA
 
 Each task starts from a fresh `git clone` at a pinned commit. Every tool gets the same prompt, the same timeout, and the same verification suite. Results are scored with sigmoid normalization so scores are never negative and never collapse at the boundary.
 
-> **Security:** AWB clones third-party repos and runs their setup/test code plus the AI tool with no sandbox. Treat task sets and their repos as trusted input and run in a disposable environment. See [docs/SECURITY.md](docs/SECURITY.md) for the trust boundary and the planned per-task Docker isolation.
+> **Execution boundary:** Host runs execute trusted repository and task code with your permissions. `awb run --container-image IMAGE` adds an explicit offline Docker boundary for prepared images. Controlled experiments and task controls remain host execution. See [docs/SECURITY.md](docs/SECURITY.md) for the exact limits.
 
 ## Scoring System
 
@@ -225,11 +225,11 @@ AWB ships two Claude Code adapters that run the same model with different config
 | Auto-memory | Disabled | Active |
 | System prompt | Generic | Default (loads CLAUDE.md) |
 
-Both use the same model, same API, same task prompts. The only difference is whether your workflow automation (hooks, skills, memory) is active. This isolates the contribution of workflow configuration from model capability.
+These adapters are intended to use the same model and task prompts, with different configuration handling. Default runs do not control all environment and state differences. Treat their comparison as exploratory and inspect the recorded model and configuration identities.
 
 ## Workflow Lift Score
 
-When `awb run` executes both vanilla and custom (the default), it produces a **Workflow Lift**, a single number measuring how much your workflow configuration improves over the baseline:
+When `awb run` executes both vanilla and custom, it produces an exploratory **Workflow Lift** summary. The following numbers illustrate the output format; they are not current benchmark evidence:
 
 ```
 Workflow Lift: +4.2 pts  (p=0.031, significant)
@@ -249,7 +249,7 @@ Workflow Lift: +4.2 pts  (p=0.031, significant)
     LC-012   +15  (V=65 C=80)
 ```
 
-The lift is computed per-task (configured score minus vanilla score), averaged across all tasks, and tested for statistical significance. Capability-level breakdowns show where your workflow configuration actually helps vs. adds overhead.
+Lift uses repeated results within each task, then averages paired task differences. Small samples and uneven repeats remain inconclusive. Capability breakdowns describe the selected tasks. A p-value alone does not establish that a configuration caused an improvement. Use `awb experiment` for a frozen comparison and reviewed holdout.
 
 ## Benchmark Your Own Setup
 
@@ -264,9 +264,8 @@ awb checkup --static-only
 #    says which of your stated rules HELD, BROKE, or went UNTESTED.
 awb checkup
 
-# 3. Fix ONE thing (the report ranks fixes by estimated impact; a broken
-#    prose rule usually becomes a hook). Then re-grade the SAME run for
-#    free to re-measure anything that does not need new behavior:
+# 3. Inspect an observed deficit. Re-grade saved evidence for free;
+#    a changed configuration needs a new run to establish new behavior:
 awb checkup --from-run results/runs/<run_dir>
 
 # 4. Turn rubric failures and weak capabilities into ready-to-paste
@@ -274,8 +273,7 @@ awb checkup --from-run results/runs/<run_dir>
 awb gap --prescribe
 
 # 5. Mine private tasks from your own merged PRs so the probe measures
-#    YOUR work distribution. No contamination: nobody trained on your
-#    repo's future.
+#    your work distribution. Review provenance and contamination risk.
 awb task from-pr https://github.com/you/repo/pull/123 --out ./tasks
 awb run claude-code-custom --tasks-dir ./tasks
 
@@ -328,7 +326,7 @@ AWB ships four execution modes tuned for different evaluation scenarios:
 | Progressive | ~150 on weak tools | ~1 hr | ~$40-75 | Unknown/mediocre tools |
 | Fast-check | 8 | ~12 min (-j 4) | ~$4 | PR gates, iterating on config |
 
-**Fast-check** (8 representative tasks, 1 per category, reports estimated full-suite score ± margin):
+**Fast-check** (8 selected tasks, 1 per category; descriptive results for this sample):
 
 **Progressive** (easy → medium → hard, stops if easy pass rate < 40% or medium < 20%):
 
@@ -412,6 +410,10 @@ Shows all registered tool adapters and their availability status.
 ### `awb validate` - Validate task YAMLs
 
 Checks all 100 task YAML files against the schema, including partial credit sum-to-100 validation.
+
+### `awb experiment` - Freeze and check a comparison
+
+Create a plan without model calls, run its declared schedule explicitly, and check complete paired evidence before a holdout decision. The current executor supports instruction changes for `claude-code-custom`. See the [configuration comparison guide](docs/evidence-workflow.md) for supported inputs, costs, task controls, and replay requirements.
 
 ### `awb report` - Read saved evidence
 

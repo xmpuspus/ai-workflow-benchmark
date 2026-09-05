@@ -52,3 +52,27 @@ Passing controls produce `review_evidence_ready`. It still has
 criterion receipts, evaluator identity, and a tamper-evident receipt hash.
 Review those records with the oracle note and provenance before making any
 separate decision to add a task to a holdout.
+
+## Holdout admission needs a separate declaration
+
+After reviewing the controls, create a sibling `TASK-ID.admission.json` with
+these fields. Copy the hashes from the current task definition and review
+receipt. Do not reuse hashes after changing either file.
+
+```json
+{
+  "admission": "holdout",
+  "task_definition_hash": "EXACT_TASK_SHA256",
+  "control_receipt_sha256": "EXACT_CONTROL_RECEIPT_SHA256",
+  "reviewed_by": "Reviewer identity",
+  "reviewed_at": "2026-09-05T12:00:00Z",
+  "independent_oracle_review": true,
+  "contamination_review": "Record sources checked, exposure, and remaining risks."
+}
+```
+
+The example is a schema guide, not an admission record. Holdout execution needs
+both valid controls and this separate declaration. AWB checks their structure
+and consistency. The declaration is an unauthenticated local operator record;
+it does not prove reviewer independence. Keep the review evidence available for
+external scrutiny before making a public claim.
