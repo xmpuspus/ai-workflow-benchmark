@@ -12,7 +12,17 @@ from collections import defaultdict
 
 _ENV_NAME = re.compile(r"[A-Za-z_][A-Za-z0-9_]*")
 _MODEL_NAME = re.compile(r"[A-Za-z0-9][A-Za-z0-9._:/-]{0,199}")
-_RESERVED_ENV = {"AWB_BENCHMARK", "CLAUDE_CONFIG_DIR", "CLAUDE_SKIP_HOOKS"}
+_RESERVED_ENV = {
+    "AWB_BENCHMARK",
+    "CLAUDE_CONFIG_DIR",
+    "CLAUDE_SKIP_HOOKS",
+    "HOME",
+    "TMPDIR",
+    "XDG_CACHE_HOME",
+    "XDG_CONFIG_HOME",
+    "XDG_RUNTIME_DIR",
+    "XDG_STATE_HOME",
+}
 
 
 def fingerprint(value: object) -> str:
@@ -22,6 +32,8 @@ def fingerprint(value: object) -> str:
 
 
 def create_plan(spec: dict) -> dict:
+    if not isinstance(spec, dict):
+        raise ValueError("Plan specification must be a JSON object")
     spec = json.loads(json.dumps(spec))
     for field in (
         "tool",
@@ -127,20 +139,33 @@ def create_plan(spec: dict) -> dict:
 
 
 def validate_plan(plan: dict) -> None:
+    if not isinstance(plan, dict) or not isinstance(plan.get("spec"), dict):
+        raise ValueError("Plan must be a JSON object with a specification")
     if create_plan(plan["spec"]) != plan:
         raise ValueError("Plan changed after registration or has an invalid schedule")
 
 
-def assess(plan: dict, arm_a: list[dict], arm_b: list[dict], split: str) -> dict:
-    """Conservative decision from corresponding, complete saved attempts."""
+def assess(
+    plan: dict,
+    arm_a: list[dict],
+    arm_b: list[dict],
+    split: str,
+    *,
+    execution_verified: bool = False,
+) -> dict:
+    """Assess corresponding saved attempts; local receipt checks are not attestation."""
     from awb.scoring.statistics import compare_tools_paired
 
     validate_plan(plan)
     if split not in {"development", "holdout"}:
         raise ValueError("Unknown split")
+    if not isinstance(arm_a, list) or not isinstance(arm_b, list):
+        raise ValueError("Assessment arms must be JSON arrays")
     spec = plan["spec"]
     wanted = set(spec[f"{split}_tasks"])
     reasons = []
+    if split == "holdout" and not execution_verified:
+        reasons.append("Unverified imported evidence cannot confirm a holdout result")
     groups = []
     costs = []
     for arm, rows in (("a", arm_a), ("b", arm_b)):
@@ -154,6 +179,9 @@ def assess(plan: dict, arm_a: list[dict], arm_b: list[dict], split: str) -> dict
             if entry["split"] == split and entry["arm"] == arm
         }
         for row in rows:
+            if not isinstance(row, dict):
+                reasons.append(f"Arm {arm}: attempt receipt is not an object")
+                continue
             task_id = row.get("task_id")
             if task_id not in wanted:
                 reasons.append(f"Arm {arm}: unexpected task {task_id}")
@@ -176,19 +204,46 @@ def assess(plan: dict, arm_a: list[dict], arm_b: list[dict], split: str) -> dict
             seen.add(identity)
             if row.get("experiment_split") != split or row.get("experiment_arm") != arm:
                 reasons.append(f"Arm {arm}/{task_id}: receipt arm or split differs")
-            if row.get("execution", {}).get("status", row.get("execution_status")) != "completed":
+            execution = row.get("execution", {})
+            if not isinstance(execution, dict):
+                reasons.append(f"Arm {arm}/{task_id}: execution is not an object")
+            elif execution.get("status", row.get("execution_status")) != "completed":
                 reasons.append(f"Arm {arm}/{task_id}: execution incomplete or unknown")
             outcome = row.get("outcome", {})
-            maximum = outcome.get("partial_credit_max", 0)
-            if maximum <= 0:
-                reasons.append(f"Arm {arm}/{task_id}: no gradeable outcome")
+            if not isinstance(outcome, dict):
+                reasons.append(f"Arm {arm}/{task_id}: outcome is not an object")
                 continue
-            grouped[task_id].append(100 * outcome.get("partial_credit_score", 0) / maximum)
+            maximum = outcome.get("partial_credit_max")
+            score = outcome.get("partial_credit_score")
+            if (
+                type(maximum) not in (int, float)
+                or type(score) not in (int, float)
+                or not math.isfinite(maximum)
+                or not math.isfinite(score)
+                or maximum <= 0
+                or not 0 <= score <= maximum
+            ):
+                reasons.append(f"Arm {arm}/{task_id}: outcome is not a valid bounded score")
+                continue
+            grouped[task_id].append(100 * score / maximum)
             cost = row.get("cost", {})
+            if not isinstance(cost, dict):
+                reasons.append(f"Arm {arm}/{task_id}: cost is not an object")
+                cost_complete = False
+                continue
             if row.get("usage_status", cost.get("usage_status")) != "complete":
                 cost_complete = False
                 reasons.append(f"Arm {arm}/{task_id}: usage measurement incomplete or unknown")
-            known_cost += cost.get("estimated_cost_usd", 0) or 0
+            recorded_cost = cost.get("estimated_cost_usd", 0)
+            if (
+                type(recorded_cost) not in (int, float)
+                or not math.isfinite(recorded_cost)
+                or recorded_cost < 0
+            ):
+                cost_complete = False
+                reasons.append(f"Arm {arm}/{task_id}: cost is not a valid nonnegative number")
+                continue
+            known_cost += recorded_cost
         if seen != expected:
             reasons.append(f"Arm {arm}: attempts do not match the frozen schedule")
         for task_id in sorted(wanted):

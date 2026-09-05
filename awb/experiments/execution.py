@@ -26,7 +26,7 @@ _ROOT_FILES = {"settings.json", "hooks.json", "CLAUDE.md", "AGENTS.md", "AGENTS.
 _SAFETY_FILES = {"settings.json", "hooks.json"}
 _FORBIDDEN_PARTS = {"auth.json", "credentials.json", "sessions", "state", "history.jsonl"}
 _INSTRUCTION_ROOTS = {"CLAUDE.md", "AGENTS.md", "AGENTS.override.md"}
-_BASE_ENV = ("PATH", "HOME", "TMPDIR")
+_BASE_ENV = ("PATH",)
 _MAX_CONFIG_FILE_BYTES = 1024 * 1024
 
 
@@ -107,17 +107,40 @@ def _reject_credential_environment(content: bytes, relative: Path) -> None:
     visit(data)
 
 
+def _materialize_config(snapshot: dict[str, Any], destination: Path) -> None:
+    """Write only reviewed configuration bytes into an empty directory."""
+    destination.mkdir()
+    for relative, content in snapshot["entries"]:
+        path = destination / relative
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(content)
+
+
 @contextlib.contextmanager
 def _isolated_config(snapshot: dict[str, Any], parent: Path):
     """Materialize only reviewed config bytes into a fresh temporary directory."""
     parent.mkdir(parents=True, exist_ok=True)
     with tempfile.TemporaryDirectory(prefix="attempt-", dir=parent) as directory:
         destination = Path(directory)
-        for relative, content in snapshot["entries"]:
-            path = destination / relative
-            path.parent.mkdir(parents=True, exist_ok=True)
-            path.write_bytes(content)
+        _materialize_config(snapshot, destination)
         yield destination
+
+
+@contextlib.contextmanager
+def _isolated_attempt(snapshot: dict[str, Any], parent: Path):
+    """Create one private config, home, and temporary state tree for a try."""
+    parent.mkdir(parents=True, exist_ok=True)
+    with tempfile.TemporaryDirectory(prefix="attempt-", dir=parent) as directory:
+        root = Path(directory)
+        config_dir = root / "config"
+        home_dir = root / "home"
+        tmp_dir = root / "tmp"
+        _materialize_config(snapshot, config_dir)
+        home_dir.mkdir(mode=0o700)
+        tmp_dir.mkdir(mode=0o700)
+        for name in ("cache", "config", "state", "runtime"):
+            (home_dir / name).mkdir(mode=0o700)
+        yield config_dir, home_dir, tmp_dir
 
 
 def _task_paths(tasks_dir: Path, wanted: set[str]) -> dict[str, Path]:
@@ -197,7 +220,15 @@ def _existing_attempts(runs_dir: Path, plan: dict, split: str) -> dict[tuple[str
 class _ModelPinnedClaudeAdapter:
     """Create a fresh Claude adapter whose command always declares the plan model."""
 
-    def __new__(cls, config_dir: Path, model: str, allowed_env: tuple[str, ...] = ()):
+    def __new__(
+        cls,
+        config_dir: Path,
+        model: str,
+        allowed_env: tuple[str, ...] = (),
+        *,
+        home_dir: Path | None = None,
+        tmp_dir: Path | None = None,
+    ):
         from awb.adapters.claude_code import ClaudeCodeCustomAdapter
 
         class ModelPinnedAdapter(ClaudeCodeCustomAdapter):
@@ -207,8 +238,16 @@ class _ModelPinnedClaudeAdapter:
                     for name in (*_BASE_ENV, *allowed_env)
                     if name in os.environ
                 }
+                if home_dir is None or tmp_dir is None:
+                    raise ValueError("Controlled adapter requires private HOME and TMPDIR")
                 environment["AWB_BENCHMARK"] = "1"
                 environment["CLAUDE_CONFIG_DIR"] = str(self.config_dir)
+                environment["HOME"] = str(home_dir)
+                environment["TMPDIR"] = str(tmp_dir)
+                environment["XDG_CACHE_HOME"] = str(home_dir / "cache")
+                environment["XDG_CONFIG_HOME"] = str(home_dir / "config")
+                environment["XDG_STATE_HOME"] = str(home_dir / "state")
+                environment["XDG_RUNTIME_DIR"] = str(home_dir / "runtime")
                 return environment
 
             def _get_cmd(self, prompt: str, max_turns: int) -> list[str]:
@@ -239,6 +278,8 @@ def _execute_attempt(
     verification_timeout_seconds: int,
     attempt_timeout_seconds: int,
     allowed_env: tuple[str, ...],
+    home_dir: Path,
+    tmp_dir: Path,
     runs_dir: Path,
     run_id: str,
     tasks_dir: Path,
@@ -247,7 +288,9 @@ def _execute_attempt(
     from awb.core.results import ResultRecorder
     from awb.core.runner import BenchmarkRunner
 
-    adapter = _ModelPinnedClaudeAdapter(config_dir, model, allowed_env)
+    adapter = _ModelPinnedClaudeAdapter(
+        config_dir, model, allowed_env, home_dir=home_dir, tmp_dir=tmp_dir
+    )
     runner = BenchmarkRunner(
         tool="claude-code-custom",
         tasks=[task],
@@ -279,8 +322,11 @@ def _preflight_runtime(
     if missing:
         raise ValueError(f"Allowed environment variable is not set: {', '.join(missing)}")
     for snapshot in snapshots:
-        with _isolated_config(snapshot, runs_dir / ".experiment-preflight") as config_dir:
-            adapter = _ModelPinnedClaudeAdapter(config_dir, model, allowed_env)
+        with _isolated_attempt(snapshot, runs_dir / ".experiment-preflight") as attempt:
+            config_dir, home_dir, tmp_dir = attempt
+            adapter = _ModelPinnedClaudeAdapter(
+                config_dir, model, allowed_env, home_dir=home_dir, tmp_dir=tmp_dir
+            )
             environment = adapter._get_env()
             if shutil.which("claude", path=environment.get("PATH", "")) is None:
                 raise ValueError("claude command is not available in the allowed PATH")
@@ -378,8 +424,12 @@ def _holdout_identity(plan: dict) -> str:
     )
 
 
+def _holdout_claim_path(runs_dir: Path, plan: dict) -> Path:
+    return runs_dir / ".experiment-holdouts" / f"{_holdout_identity(plan)}.json"
+
+
 def _claim_holdout(runs_dir: Path, plan: dict) -> Path:
-    claim = runs_dir / ".experiment-holdouts" / f"{_holdout_identity(plan)}.json"
+    claim = _holdout_claim_path(runs_dir, plan)
     claim.parent.mkdir(parents=True, exist_ok=True)
     payload = {"plan_hash": plan["plan_hash"], "holdout_identity": _holdout_identity(plan)}
     try:
@@ -396,6 +446,43 @@ def _claim_holdout(runs_dir: Path, plan: dict) -> Path:
                 "This holdout cohort was already consumed by a different plan"
             ) from None
     return claim
+
+
+def _validate_assessment_tasks(plan: dict, tasks_dir: Path, split: str) -> dict[str, Path]:
+    """Check the local task corpus used for a receipt assessment."""
+    paths = _task_paths(tasks_dir, set(plan["spec"][f"{split}_tasks"]))
+    for task_id, path in paths.items():
+        _load_frozen_task(path, task_id, plan["spec"]["task_hashes"][task_id])
+    if split == "holdout":
+        _validate_holdout_controls(paths)
+    return paths
+
+
+def _validate_holdout_claim(runs_dir: Path, plan: dict) -> None:
+    claim = _holdout_claim_path(runs_dir, plan)
+    expected = {"plan_hash": plan["plan_hash"], "holdout_identity": _holdout_identity(plan)}
+    try:
+        actual = json.loads(claim.read_text())
+    except (OSError, json.JSONDecodeError) as exc:
+        raise ValueError("Holdout consumption record is missing or invalid") from exc
+    if actual != expected:
+        raise ValueError("Holdout consumption record does not match this plan")
+
+
+def assess_run(plan: dict, runs_dir: Path, tasks_dir: Path, split: str) -> dict:
+    """Assess locally stored receipts; this checks consistency, not independent attestation."""
+    validate_plan(plan)
+    if split not in {"development", "holdout"}:
+        raise ValueError("split must be development or holdout")
+    runs_dir, tasks_dir = Path(runs_dir), Path(tasks_dir)
+    _validate_assessment_tasks(plan, tasks_dir, split)
+    if split == "holdout":
+        _validate_assessment_tasks(plan, tasks_dir, "development")
+        _require_development_confirmation(runs_dir, plan)
+        _validate_holdout_claim(runs_dir, plan)
+    existing = _existing_attempts(runs_dir, plan, split)
+    arms = {arm: [row for key, row in existing.items() if key[1] == arm] for arm in ("a", "b")}
+    return assess(plan, arms["a"], arms["b"], split, execution_verified=True)
 
 
 def execute_plan(
@@ -454,7 +541,8 @@ def execute_plan(
             snapshot = snapshot_a if arm == "a" else snapshot_b
             task_id, repeat = entry["task_id"], entry["repeat"]
             run_id = f"experiment_{plan['plan_hash'][:12]}_{split}_{arm}_{repeat}_{task_id}"
-            with _isolated_config(snapshot, runs_dir / ".experiment-configs") as isolated_config:
+            with _isolated_attempt(snapshot, runs_dir / ".experiment-configs") as attempt:
+                isolated_config, home_dir, tmp_dir = attempt
                 marker = _attempt_marker(runs_dir, plan["plan_hash"], split, *key)
                 _create_marker(marker, key)
                 result_path = _execute_attempt(
@@ -468,6 +556,8 @@ def execute_plan(
                     verification_timeout_seconds=spec["verification_timeout_seconds"],
                     attempt_timeout_seconds=spec["attempt_timeout_seconds"],
                     allowed_env=allowed_env,
+                    home_dir=home_dir,
+                    tmp_dir=tmp_dir,
                     runs_dir=runs_dir,
                     run_id=run_id,
                     tasks_dir=effective_tasks_dir,

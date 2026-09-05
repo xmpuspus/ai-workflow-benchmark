@@ -314,7 +314,10 @@ def test_config_snapshot_rejects_credential_environment_key_without_echoing_valu
 def test_model_is_explicitly_pinned_in_each_adapter_command(tmp_path):
     from awb.experiments.execution import _ModelPinnedClaudeAdapter
 
-    adapter = _ModelPinnedClaudeAdapter(tmp_path, "claude-test-model")
+    home, temp = tmp_path / "home", tmp_path / "tmp"
+    home.mkdir()
+    temp.mkdir()
+    adapter = _ModelPinnedClaudeAdapter(tmp_path, "claude-test-model", home_dir=home, tmp_dir=temp)
     command = adapter._get_cmd("prompt", 3)
     assert command[-2:] == ["--model", "claude-test-model"]
     assert "--dangerously-skip-permissions" not in command
@@ -325,11 +328,26 @@ def test_experiment_adapter_forwards_only_named_environment(monkeypatch, tmp_pat
 
     monkeypatch.setenv("UNRELATED_PRIVATE_TOKEN", "do-not-forward")
     monkeypatch.setenv("DECLARED_API_TOKEN", "forward")
-    adapter = _ModelPinnedClaudeAdapter(tmp_path, "claude-test-model", ("DECLARED_API_TOKEN",))
+    ambient_home, home, temp = "/private/home", tmp_path / "home", tmp_path / "tmp"
+    monkeypatch.setenv("HOME", ambient_home)
+    home.mkdir()
+    temp.mkdir()
+    for name in ("cache", "config", "state", "runtime"):
+        (home / name).mkdir()
+    adapter = _ModelPinnedClaudeAdapter(
+        tmp_path,
+        "claude-test-model",
+        ("DECLARED_API_TOKEN",),
+        home_dir=home,
+        tmp_dir=temp,
+    )
     environment = adapter._get_env()
     assert "UNRELATED_PRIVATE_TOKEN" not in environment
     assert environment["DECLARED_API_TOKEN"] == "forward"
     assert environment["CLAUDE_CONFIG_DIR"] == str(tmp_path)
+    assert environment["HOME"] == str(home)
+    assert environment["HOME"] != ambient_home
+    assert environment["TMPDIR"] == str(temp)
     assert set(environment) <= {
         "PATH",
         "HOME",
@@ -337,7 +355,129 @@ def test_experiment_adapter_forwards_only_named_environment(monkeypatch, tmp_pat
         "AWB_BENCHMARK",
         "CLAUDE_CONFIG_DIR",
         "DECLARED_API_TOKEN",
+        "XDG_CACHE_HOME",
+        "XDG_CONFIG_HOME",
+        "XDG_RUNTIME_DIR",
+        "XDG_STATE_HOME",
     }
+
+
+def test_isolated_attempt_uses_private_home_and_temp_state(monkeypatch, tmp_path):
+    from awb.experiments.execution import _isolated_attempt, _ModelPinnedClaudeAdapter
+
+    monkeypatch.setenv("HOME", "/ambient/home")
+    monkeypatch.setenv("TMPDIR", "/ambient/tmp")
+    snapshot = {"entries": [("CLAUDE.md", b"# instructions")]}
+    with _isolated_attempt(snapshot, tmp_path) as (config_dir, home_dir, temp_dir):
+        environment = _ModelPinnedClaudeAdapter(
+            config_dir, "claude-test-model", home_dir=home_dir, tmp_dir=temp_dir
+        )._get_env()
+        assert environment["HOME"] == str(home_dir)
+        assert environment["TMPDIR"] == str(temp_dir)
+        assert environment["XDG_STATE_HOME"] == str(home_dir / "state")
+        assert config_dir.joinpath("CLAUDE.md").read_text() == "# instructions"
+        assert home_dir != Path("/ambient/home")
+        assert temp_dir != Path("/ambient/tmp")
+    assert not home_dir.exists()
+    assert not temp_dir.exists()
+
+
+def test_assess_rejects_malformed_imported_rows_and_unverified_holdout(tmp_path):
+    from awb.experiments.protocol import assess, create_plan
+
+    plan, _, _, _ = _plan(tmp_path)
+    malformed = assess(plan, [[]], [{}], "development")
+    assert malformed["decision"] == "inconclusive"
+    assert any("not an object" in reason for reason in malformed["reasons"])
+
+    holdout = assess(plan, [], [], "holdout")
+    assert holdout["decision"] == "inconclusive"
+    assert any("Unverified imported evidence" in reason for reason in holdout["reasons"])
+    with pytest.raises(ValueError, match="JSON arrays"):
+        assess(plan, {}, [], "development")
+    with pytest.raises(ValueError, match="specification"):
+        create_plan([])
+
+
+def test_assess_rejects_nonfinite_scores_and_negative_costs(tmp_path):
+    from awb.experiments.protocol import assess
+
+    plan, _, _, _ = _plan(tmp_path)
+
+    def receipt(arm, score, cost):
+        return {
+            "task_id": "BF-001",
+            "model": "claude-test-model",
+            "effective_config_hash": plan["spec"][f"config_{arm}_hash"],
+            "task_definition_hash": plan["spec"]["task_hashes"]["BF-001"],
+            "experiment_plan_hash": plan["plan_hash"],
+            "experiment_split": "development",
+            "experiment_arm": arm,
+            "repeat_index": 1,
+            "execution_status": "completed",
+            "usage_status": "complete",
+            "outcome": {"partial_credit_score": score, "partial_credit_max": 100},
+            "cost": {"estimated_cost_usd": cost},
+        }
+
+    result = assess(plan, [receipt("a", float("nan"), 0)], [receipt("b", 100, -1)], "development")
+    assert result["decision"] == "inconclusive"
+    assert any("bounded score" in reason for reason in result["reasons"])
+    assert any("nonnegative" in reason for reason in result["reasons"])
+
+
+def test_assess_run_loads_local_development_receipts(tmp_path):
+    from awb.experiments.execution import assess_run
+
+    plan, _, _, tasks_dir = _plan(tmp_path)
+    runs_dir = tmp_path / "runs"
+    for arm, score in (("a", 0), ("b", 100)):
+        run = runs_dir / arm
+        run.mkdir(parents=True)
+        (run / f"{arm}.json").write_text(
+            json.dumps(
+                {
+                    "task_id": "BF-001",
+                    "model": "claude-test-model",
+                    "effective_config_hash": plan["spec"][f"config_{arm}_hash"],
+                    "task_definition_hash": plan["spec"]["task_hashes"]["BF-001"],
+                    "experiment_plan_hash": plan["plan_hash"],
+                    "experiment_split": "development",
+                    "experiment_arm": arm,
+                    "repeat_index": 1,
+                    "execution_status": "completed",
+                    "usage_status": "complete",
+                    "outcome": {"partial_credit_score": score, "partial_credit_max": 100},
+                }
+            )
+        )
+    result = assess_run(plan, runs_dir, tasks_dir, "development")
+    assert result["paired_tasks"] == 1
+    assert not any("Unverified imported evidence" in reason for reason in result["reasons"])
+
+
+def test_assess_run_requires_matching_holdout_consumption_record(monkeypatch, tmp_path):
+    from awb.experiments.execution import assess_run
+
+    plan, _, _, tasks_dir = _plan(tmp_path)
+    holdout = tasks_dir / "BF-002.yaml"
+    _task(holdout, "BF-002")
+    plan = create_plan(
+        {
+            **plan["spec"],
+            "holdout_tasks": ["BF-002"],
+            "task_hashes": {
+                **plan["spec"]["task_hashes"],
+                "BF-002": __import__("hashlib").sha256(holdout.read_bytes()).hexdigest(),
+            },
+        }
+    )
+    monkeypatch.setattr("awb.experiments.execution._validate_holdout_controls", lambda paths: None)
+    monkeypatch.setattr(
+        "awb.experiments.execution._require_development_confirmation", lambda runs_dir, plan: None
+    )
+    with pytest.raises(ValueError, match="consumption record"):
+        assess_run(plan, tmp_path / "runs", tasks_dir, "holdout")
 
 
 def test_runtime_preflight_rejects_missing_allowed_environment(monkeypatch, tmp_path):
@@ -413,6 +553,8 @@ def test_attempt_passes_stage_and_whole_attempt_deadlines(monkeypatch, tmp_path)
         verification_timeout_seconds=40,
         attempt_timeout_seconds=190,
         allowed_env=(),
+        home_dir=tmp_path / "home",
+        tmp_dir=tmp_path / "tmp",
         runs_dir=tmp_path / "runs",
         run_id="run",
         tasks_dir=tmp_path / "tasks",
@@ -434,7 +576,10 @@ def test_adapter_marks_unobserved_model_unknown(monkeypatch, tmp_path):
         return ToolResult(success=True, model="")
 
     monkeypatch.setattr(ClaudeCodeCustomAdapter, "execute", empty_model)
-    adapter = _ModelPinnedClaudeAdapter(tmp_path, "claude-test-model")
+    home, temp = tmp_path / "home", tmp_path / "tmp"
+    home.mkdir()
+    temp.mkdir()
+    adapter = _ModelPinnedClaudeAdapter(tmp_path, "claude-test-model", home_dir=home, tmp_dir=temp)
     result = asyncio.run(adapter.execute("prompt", tmp_path))
     assert result.model == "unknown"
 
