@@ -125,6 +125,32 @@
         "task_set_hash": {
           "type": "string"
         },
+        "comparison_eligibility": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "eligible",
+            "reasons",
+            "identity"
+          ],
+          "properties": {
+            "eligible": {
+              "type": "boolean"
+            },
+            "reasons": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "identity": {
+              "type": "object",
+              "additionalProperties": {
+                "type": "string"
+              }
+            }
+          }
+        },
         "readiness": {
           "type": "object",
           "additionalProperties": false,
@@ -133,7 +159,10 @@
           ],
           "properties": {
             "composite": {
-              "type": "number",
+              "type": [
+                "number",
+                "null"
+              ],
               "minimum": 0,
               "maximum": 100
             },
@@ -143,12 +172,18 @@
               "maximum": 100
             },
             "regression_safety": {
-              "type": "number",
+              "type": [
+                "number",
+                "null"
+              ],
               "minimum": 0,
               "maximum": 100
             },
             "security": {
-              "type": "number",
+              "type": [
+                "number",
+                "null"
+              ],
               "minimum": 0,
               "maximum": 100
             },
@@ -175,6 +210,34 @@
             "n_results": {
               "type": "integer",
               "minimum": 0
+            },
+            "coverage": {
+              "type": "object",
+              "additionalProperties": {
+                "type": "object",
+                "required": [
+                  "measured",
+                  "total",
+                  "statuses"
+                ],
+                "properties": {
+                  "measured": {
+                    "type": "integer",
+                    "minimum": 0
+                  },
+                  "total": {
+                    "type": "integer",
+                    "minimum": 0
+                  },
+                  "statuses": {
+                    "type": "object",
+                    "additionalProperties": {
+                      "type": "integer",
+                      "minimum": 0
+                    }
+                  }
+                }
+              }
             }
           }
         },
@@ -368,6 +431,12 @@
                     "test_regressions": {
                       "type": "integer",
                       "minimum": 0
+                    },
+                    "security_status": {
+                      "type": "string"
+                    },
+                    "test_regressions_status": {
+                      "type": "string"
                     }
                   }
                 },

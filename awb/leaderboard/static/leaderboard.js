@@ -105,6 +105,7 @@ function drawRadarChart() {
     // Aggregate by tool
     var toolData = {};
     RESULTS_DATA.forEach(function (r) {
+        if (!r.comparison_eligible) return;
         if (!toolData[r.tool]) {
             toolData[r.tool] = {
                 count: 0, success: 0, score: 0, maxScore: 0,

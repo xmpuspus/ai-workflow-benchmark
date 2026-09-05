@@ -54,6 +54,7 @@ def parse_submission(data: dict) -> Submission:
     tool_raw = sub["tool"]
     model_raw = sub.get("model", {})
     env_raw = sub.get("environment", {})
+    eligibility_raw = sub.get("comparison_eligibility", {})
     pricing = model_raw.get("pricing", {})
 
     tool = SubmissionTool(
@@ -108,6 +109,10 @@ def parse_submission(data: dict) -> Submission:
                         lint_delta=quality_raw.get("lint_delta", 0),
                         security_delta=quality_raw.get("security_delta", 0),
                         test_regressions=quality_raw.get("test_regressions", 0),
+                        security_status=quality_raw.get("security_status", "missing"),
+                        test_regressions_status=quality_raw.get(
+                            "test_regressions_status", "missing"
+                        ),
                     ),
                 )
             )
@@ -122,6 +127,9 @@ def parse_submission(data: dict) -> Submission:
         task_set_hash=sub.get("task_set_hash", ""),
         submitter=sub.get("submitter", "anonymous"),
         results=results,
+        comparison_eligible=eligibility_raw.get("eligible", False),
+        ineligibility_reasons=eligibility_raw.get("reasons", ["legacy export lacks identity"]),
+        comparison_identity=eligibility_raw.get("identity", {}),
     )
 
 
@@ -130,43 +138,48 @@ def submission_to_run_results(submission: Submission) -> list[RunResult]:
     run_results = []
     for task_result in submission.results:
         for run in task_result.runs:
-            run_results.append(
-                RunResult(
-                    task_id=task_result.task_id,
-                    tool=submission.tool.name,
-                    run_id=f"submission_{run.run_number}",
-                    timestamp=run.timestamp,
-                    tool_version=submission.tool.version,
-                    model=submission.model.name,
-                    outcome=RunOutcome(
-                        success=run.outcome.success,
-                        partial_credit_score=run.outcome.partial_credit_score,
-                        partial_credit_max=run.outcome.partial_credit_max,
-                    ),
-                    metrics=RunMetrics(
-                        wall_clock_seconds=run.metrics.wall_clock_seconds,
-                        iteration_count=run.metrics.iteration_count,
-                        human_interventions=run.metrics.human_interventions,
-                        files_modified=run.metrics.files_modified,
-                        lines_changed=run.metrics.lines_changed,
-                    ),
-                    cost=RunCost(
-                        input_tokens=run.cost.input_tokens,
-                        output_tokens=run.cost.output_tokens,
-                        estimated_cost_usd=run.cost.estimated_cost_usd,
-                        estimated_credits=run.cost.estimated_credits,
-                    ),
-                    quality=RunQuality(
-                        lint_delta=run.quality.lint_delta,
-                        security_delta=run.quality.security_delta,
-                        test_regressions=run.quality.test_regressions,
-                    ),
-                    environment=RunEnvironment(
-                        os=submission.environment.os,
-                        hardware=submission.environment.hardware_detail,
-                    ),
-                )
+            result = RunResult(
+                task_id=task_result.task_id,
+                tool=submission.tool.name,
+                run_id=f"submission_{run.run_number}",
+                timestamp=run.timestamp,
+                tool_version=submission.tool.version,
+                model=submission.model.name,
+                outcome=RunOutcome(
+                    success=run.outcome.success,
+                    partial_credit_score=run.outcome.partial_credit_score,
+                    partial_credit_max=run.outcome.partial_credit_max,
+                ),
+                metrics=RunMetrics(
+                    wall_clock_seconds=run.metrics.wall_clock_seconds,
+                    iteration_count=run.metrics.iteration_count,
+                    human_interventions=run.metrics.human_interventions,
+                    files_modified=run.metrics.files_modified,
+                    lines_changed=run.metrics.lines_changed,
+                ),
+                cost=RunCost(
+                    input_tokens=run.cost.input_tokens,
+                    output_tokens=run.cost.output_tokens,
+                    estimated_cost_usd=run.cost.estimated_cost_usd,
+                    estimated_credits=run.cost.estimated_credits,
+                ),
+                quality=RunQuality(
+                    lint_delta=run.quality.lint_delta,
+                    security_delta=run.quality.security_delta,
+                    test_regressions=run.quality.test_regressions,
+                ),
+                environment=RunEnvironment(
+                    os=submission.environment.os,
+                    hardware=submission.environment.hardware_detail,
+                ),
+                task_set_hash=submission.task_set_hash,
             )
+            result.quality.security_status = run.quality.security_status
+            result.quality.test_regressions_status = run.quality.test_regressions_status
+            for field_name, value in submission.comparison_identity.items():
+                if value:
+                    setattr(result, field_name, value)
+            run_results.append(result)
     return run_results
 
 

@@ -57,19 +57,28 @@ def _looks_like_test_command(cmd: str) -> bool:
     )
 
 
-def grade_trace(path: Path, files_to_examine: list[str] | None = None) -> dict[str, int]:
+def grade_trace(
+    path: Path,
+    files_to_examine: list[str] | None = None,
+    *,
+    allowed_edit_paths: list[str] | None = None,
+) -> dict[str, int]:
     """Score a trace.jsonl across up to 6 behavior dimensions, each 0-100."""
     spans = load_trace(path)
-    return _grade_spans(spans, files_to_examine or [])
+    context_paths = files_to_examine or []
+    return _grade_spans(spans, context_paths, allowed_edit_paths or [])
 
 
-def _grade_spans(spans: list[dict], files_to_examine: list[str]) -> dict[str, int]:
+def _grade_spans(
+    spans: list[dict], files_to_examine: list[str], allowed_edit_paths: list[str]
+) -> dict[str, int]:
     scores = {
         "read_tests_before_edit": _grade_read_tests_before_edit(spans),
         "ran_verification_after_change": _grade_ran_verification_after_change(spans),
-        "no_out_of_scope_edits": _grade_no_out_of_scope_edits(spans, files_to_examine),
         "no_repeated_failing_command_loop": _grade_no_repeated_failing_loop(spans),
     }
+    if allowed_edit_paths:
+        scores["no_out_of_scope_edits"] = _grade_no_out_of_scope_edits(spans, allowed_edit_paths)
     # The next two rubrics are only meaningful when the trace/task context
     # actually supplies the signal they need; omit rather than fake a score.
     context_discipline = _grade_context_discipline(spans, files_to_examine)
@@ -98,7 +107,10 @@ def _has_gradeable_spans(spans: list[dict]) -> bool:
 
 
 def grade_trace_or_none(
-    path: Path, files_to_examine: list[str] | None = None
+    path: Path,
+    files_to_examine: list[str] | None = None,
+    *,
+    allowed_edit_paths: list[str] | None = None,
 ) -> dict[str, int] | None:
     """Grade a trace, or return None when it has no gradeable behavior.
 
@@ -108,7 +120,8 @@ def grade_trace_or_none(
     spans = load_trace(path)
     if not _has_gradeable_spans(spans):
         return None
-    return _grade_spans(spans, files_to_examine or [])
+    context_paths = files_to_examine or []
+    return _grade_spans(spans, context_paths, allowed_edit_paths or [])
 
 
 def _grade_read_tests_before_edit(spans: Iterable[dict]) -> int:

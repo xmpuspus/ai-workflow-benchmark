@@ -207,7 +207,7 @@ def _make_task(task_id="BF-001", capabilities=None, files_to_examine=None):
 
 
 def _make_result(task_id="BF-001", tool="claude-code-custom", score=80, trace_path=""):
-    return RunResult(
+    result = RunResult(
         task_id=task_id,
         tool=tool,
         run_id="probe_run1",
@@ -221,6 +221,9 @@ def _make_result(task_id="BF-001", tool="claude-code-custom", score=80, trace_pa
         environment=RunEnvironment(os="test", hardware="test"),
         trace_path=trace_path,
     )
+    result.loaded_instruction_files = ["CLAUDE.md", "AGENTS.md"]
+    result.allowed_edit_paths = ["src/x.py"]
+    return result
 
 
 # ----- Pure helper unit tests -------------------------------------------------
@@ -434,7 +437,7 @@ class TestRankFixes:
         top = _rank_fixes(prescriptions, verdicts=[])
         assert [p.id for p in top] == ["b", "c", "a"]
 
-    def test_prefers_estimated_score_delta_when_present(self):
+    def test_prefers_observed_deficit_when_present(self):
         from awb.analysis.prescriptions import Prescription
         from awb.commands.checkup_cmd import _rank_fixes
 
@@ -447,7 +450,7 @@ class TestRankFixes:
             snippet="## X\n",
             rationale="x",
         )
-        low_severity_high_delta.estimated_score_delta = 20
+        low_severity_high_delta.observed_deficit = 20
         high_severity_no_delta = Prescription(
             id="high-sev",
             trigger="t",
@@ -460,12 +463,7 @@ class TestRankFixes:
         top = _rank_fixes([high_severity_no_delta, low_severity_high_delta], verdicts=[])
         assert top[0].id == "low-sev"
 
-    def test_delta_bearing_item_outranks_higher_severity_no_delta_item(self):
-        """estimated_score_delta (a points scale) and severity (a raw broken-
-        rule count) are not the same unit; sorting -delta against -severity
-        in one key would let a severity=10 no-delta item outrank a delta=1
-        item. A single comparable key (has_delta, delta, severity) must
-        always rank delta-bearing items first, regardless of magnitude."""
+    def test_deficit_item_outranks_higher_severity_no_deficit_item(self):
         from awb.analysis.prescriptions import Prescription
         from awb.commands.checkup_cmd import _rank_fixes
 
@@ -477,7 +475,7 @@ class TestRankFixes:
             severity=1,
             snippet="## A\n",
             rationale="a",
-            estimated_score_delta=1.0,
+            observed_deficit=1.0,
         )
         large_severity_no_delta = Prescription(
             id="large-severity",
@@ -728,6 +726,36 @@ class TestCheckupStaticOnlyRealHarness:
         assert result.exit_code == 0, result.output
         assert "Rule Integrity" in result.output
         assert "HELD" in result.output
+
+    def test_rule_is_untested_when_attempt_did_not_record_loading_source(self, tmp_path):
+        from awb.commands.checkup_cmd import _rule_verdicts_with_provenance
+        from awb.harness.integrity import rule_integrity
+        from awb.harness.promises import HarnessInventory, HarnessPromise
+
+        task = _make_task()
+        run_dir = tmp_path / "probe_run1"
+        run_dir.mkdir()
+        trace_name = _write_trace(run_dir, task.id, "claude-code-custom", task.files_to_examine)
+        result = _make_result(task.id, score=90, trace_path=trace_name)
+        result.loaded_instruction_files = []
+        inventory = HarnessInventory(
+            promises=[
+                HarnessPromise(
+                    text="Run tests before declaring done.",
+                    pattern="verification_gate",
+                    enforcement="prose",
+                    source="AGENTS.md",
+                    line=1,
+                )
+            ]
+        )
+
+        verdicts = _rule_verdicts_with_provenance(
+            inventory, [result], run_dir, {task.id: task}, rule_integrity
+        )
+
+        assert verdicts[0].status == "UNTESTED"
+        assert "not recorded as loaded" in verdicts[0].evidence
 
 
 # ----- CLI: --static-only -----------------------------------------------------
@@ -1192,7 +1220,7 @@ class TestCheckupFullProbe:
         result = CliRunner().invoke(checkup_cmd.checkup, self._base_args(tmp_path))
         assert result.exit_code == 1, result.output
         assert "Top fixes" in result.output
-        assert "not additive" in result.output
+        assert "do not predict improvement" in result.output
 
 
 class TestFinalStateAdversaryFindings:

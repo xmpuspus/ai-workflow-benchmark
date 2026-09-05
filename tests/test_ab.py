@@ -41,6 +41,44 @@ def _result(task_id: str, tool: str, score: float, max_score: float = 100) -> Ru
 
 
 class TestBuildABReport:
+    def test_repeats_are_meaned_per_task_and_input_order_does_not_change_result(self):
+        results_a = [
+            _result("T1", "tool", 0),
+            _result("T1", "tool", 50),
+            _result("T1", "tool", 100),
+            _result("T2", "tool", 20),
+            _result("T2", "tool", 40),
+        ]
+        results_b = [
+            _result("T1", "tool", 100),
+            _result("T1", "tool", 50),
+            _result("T1", "tool", 0),
+            _result("T2", "tool", 60),
+            _result("T2", "tool", 80),
+        ]
+
+        report = build_ab_report(results_a, results_b, "A", "B")
+        reversed_report = build_ab_report(list(reversed(results_a)), results_b, "A", "B")
+
+        assert report.mean_delta == reversed_report.mean_delta == pytest.approx(20.0)
+        assert report.aggregation == "mean_per_task"
+        assert report.per_task[0].attempts_a == 2
+        assert report.per_task[0].attempts_b == 2
+        assert report.total_attempts_a == 5
+        assert report.total_attempts_b == 5
+
+    def test_small_sample_keeps_observed_delta_without_claiming_significance(self):
+        report = build_ab_report(
+            [_result("T1", "tool", 20)],
+            [_result("T1", "tool", 80)],
+            "A",
+            "B",
+        )
+
+        assert report.mean_delta == 60.0
+        assert report.p_value is None
+        assert report.significant is False
+
     def test_pairs_by_task_id_and_computes_delta(self):
         # Deterministic: B beats A on every task by a shrinking margin.
         results_a = [
@@ -264,10 +302,9 @@ class TestABCommandHappyPath:
         assert result.exit_code == 0, result.output
         data = json.loads(result.output)
         assert data["n_tasks"] == 1
-        # A single shared task is below compare_tools_paired's n>=5
-        # significance floor, so mean_delta is forced to 0.0 even though the
-        # per-task delta below is real - same convention as workflow_lift.py.
-        assert data["mean_delta"] == pytest.approx(0.0, abs=1e-9)
+        # A single shared task cannot establish significance, but its observed
+        # descriptive delta must not be erased.
+        assert data["mean_delta"] == pytest.approx(-30.0)
         assert data["per_task"][0]["task_id"] == sample_task.id
         assert data["per_task"][0]["delta"] == pytest.approx(-30.0)
         assert len(seen_run_ids) == 2

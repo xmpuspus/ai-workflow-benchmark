@@ -44,12 +44,85 @@ def _result(task_id, *, success, trace_path=""):
 
 def test_submission_includes_readiness_block(tmp_path):
     results = [_result("BF-001", success=True), _result("BF-002", success=False)]
+    for result in results:
+        result.quality.test_regressions_status = "measured_clean"
+        result.quality.security_status = "measured_clean"
     sub = build_submission(results, run_dir=tmp_path, task_defs={}, submitter="me")
     assert "readiness" in sub["submission"]
     r = sub["submission"]["readiness"]
     assert 0 <= r["composite"] <= 100
     # One of two passed -> correctness 50.
     assert r["correctness"] == 50.0
+
+
+def test_submission_preserves_one_consistent_task_set_hash(tmp_path):
+    results = [_result("BF-001", success=True), _result("BF-002", success=True)]
+    for result in results:
+        result.task_set_hash = "ab" * 32
+
+    sub = build_submission(results, run_dir=tmp_path, task_defs={}, submitter="me")
+
+    assert sub["submission"]["task_set_hash"] == "ab" * 32
+
+
+def test_submission_marks_mixed_task_sets_ineligible(tmp_path):
+    results = [_result("BF-001", success=True), _result("BF-002", success=True)]
+    results[0].task_set_hash = "ab" * 32
+    results[1].task_set_hash = "cd" * 32
+
+    sub = build_submission(results, run_dir=tmp_path, task_defs={}, submitter="me")
+
+    assert "task_set_hash" not in sub["submission"]
+    assert sub["submission"]["comparison_eligibility"]["eligible"] is False
+    assert "mixed task_set_hash" in sub["submission"]["comparison_eligibility"]["reasons"]
+
+
+def test_export_with_missing_measurements_still_validates(tmp_path):
+    from awb.submission.ingest import validate_submission
+
+    sub = build_submission(
+        [_result("BF-001", success=False)], run_dir=tmp_path, task_defs={}, submitter="me"
+    )
+
+    assert sub["submission"]["readiness"]["composite"] is None
+    assert validate_submission(sub) == []
+
+
+def test_complete_matching_submission_identity_is_comparison_eligible(tmp_path):
+    from awb.submission.compare import compare_submissions
+    from awb.submission.ingest import parse_submission
+
+    result = _result("BF-001", success=True)
+    result.task_set_hash = "ab" * 32
+    result.model = "model-a"
+    result.tool_version = "1.2.3"
+    result.effective_config_hash = "config-a"
+    result.evaluator_version = "evaluator-a"
+    result.execution_mode = "local"
+    result.environment_fingerprint = "env-a"
+    result.budget_fingerprint = "budget-a"
+    data = build_submission([result], run_dir=tmp_path, task_defs={}, submitter="me")
+    submission = parse_submission(data)
+
+    comparison = compare_submissions(submission, submission)
+
+    assert submission.comparison_eligible is True
+    assert comparison.comparison_eligible is True
+    assert comparison.eligibility_warning == ""
+
+
+def test_quality_measurement_status_survives_submission_ingest(tmp_path):
+    from awb.submission.ingest import parse_submission, submission_to_run_results
+
+    result = _result("BF-001", success=True)
+    result.quality.security_status = "measured_clean"
+    result.quality.test_regressions_status = "measured_clean"
+    data = build_submission([result], run_dir=tmp_path, task_defs={}, submitter="me")
+
+    [loaded] = submission_to_run_results(parse_submission(data))
+
+    assert loaded.quality.security_status == "measured_clean"
+    assert loaded.quality.test_regressions_status == "measured_clean"
 
 
 def test_run_carries_trace_grade_when_spans_present(tmp_path):

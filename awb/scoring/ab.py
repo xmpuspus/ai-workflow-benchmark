@@ -8,6 +8,7 @@ running the existing paired sign test.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from statistics import mean
 
 from awb.core.config import RunResult
 from awb.scoring.statistics import compare_tools_paired
@@ -19,6 +20,8 @@ class ABTaskDelta:
     score_a: float
     score_b: float
     delta: float  # score_b - score_a; positive means config B scored higher
+    attempts_a: int = 1
+    attempts_b: int = 1
 
 
 @dataclass
@@ -35,6 +38,11 @@ class ABReport:
     config_hash_a: str = ""
     config_hash_b: str = ""
     message: str = ""
+    aggregation: str = "mean_per_task"
+    total_attempts_a: int = 0
+    total_attempts_b: int = 0
+    unpaired_attempts_a: int = 0
+    unpaired_attempts_b: int = 0
 
 
 def _task_score(result: RunResult) -> float:
@@ -67,8 +75,12 @@ def build_ab_report(
     Pairing is by task_id; tasks present in only one of the two result sets
     are dropped. Score per task is partial_credit_score/max scaled to 0-100.
     """
-    a_by_task = {r.task_id: r for r in results_a}
-    b_by_task = {r.task_id: r for r in results_b}
+    a_by_task: dict[str, list[RunResult]] = {}
+    b_by_task: dict[str, list[RunResult]] = {}
+    for result in results_a:
+        a_by_task.setdefault(result.task_id, []).append(result)
+    for result in results_b:
+        b_by_task.setdefault(result.task_id, []).append(result)
     common = sorted(set(a_by_task) & set(b_by_task))
 
     tool = results_a[0].tool if results_a else (results_b[0].tool if results_b else "")
@@ -87,14 +99,20 @@ def build_ab_report(
             config_hash_a=config_hash_a,
             config_hash_b=config_hash_b,
             message="No shared tasks between config A and config B runs",
+            total_attempts_a=len(results_a),
+            total_attempts_b=len(results_b),
+            unpaired_attempts_a=len(results_a),
+            unpaired_attempts_b=len(results_b),
         )
 
     scores_a = []
     scores_b = []
     per_task = []
     for tid in common:
-        sa = _task_score(a_by_task[tid])
-        sb = _task_score(b_by_task[tid])
+        attempts_a = a_by_task[tid]
+        attempts_b = b_by_task[tid]
+        sa = mean(_task_score(result) for result in attempts_a)
+        sb = mean(_task_score(result) for result in attempts_b)
         scores_a.append(sa)
         scores_b.append(sb)
         per_task.append(
@@ -103,6 +121,8 @@ def build_ab_report(
                 score_a=round(sa, 1),
                 score_b=round(sb, 1),
                 delta=round(sb - sa, 1),
+                attempts_a=len(attempts_a),
+                attempts_b=len(attempts_b),
             )
         )
 
@@ -123,4 +143,8 @@ def build_ab_report(
         config_hash_a=config_hash_a,
         config_hash_b=config_hash_b,
         message=_verdict_message(label_a, label_b, stat.mean_difference, stat),
+        total_attempts_a=len(results_a),
+        total_attempts_b=len(results_b),
+        unpaired_attempts_a=sum(len(v) for k, v in a_by_task.items() if k not in common),
+        unpaired_attempts_b=sum(len(v) for k, v in b_by_task.items() if k not in common),
     )

@@ -43,6 +43,8 @@ def _make_tool_stats(**overrides) -> dict:
         "total_lint_delta": 0,
         "total_security_delta": 0,
         "total_regressions": 0,
+        "security_measurements": 10,
+        "regression_measurements": 10,
     }
     base.update(overrides)
     return base
@@ -58,7 +60,7 @@ def _make_result(
     iterations=5,
     **kwargs,
 ) -> RunResult:
-    return RunResult(
+    result = RunResult(
         task_id=task_id,
         tool="test-tool",
         run_id="test-run",
@@ -71,6 +73,9 @@ def _make_result(
         quality=RunQuality(),
         environment=RunEnvironment(os="test", hardware="test"),
     )
+    result.quality.security_status = "measured_clean"
+    result.quality.test_regressions_status = "measured_clean"
+    return result
 
 
 def _make_task(
@@ -161,6 +166,17 @@ class TestNormalize:
 
 
 class TestCompositeScore:
+    def test_missing_security_and_regression_measurements_suppress_composite(self):
+        result = _make_result()
+        result.quality.security_status = "missing"
+        result.quality.test_regressions_status = "failed"
+
+        score = compute_task_score(result, _make_task())
+
+        assert score.per_metric["security"] is None
+        assert score.per_metric["reliability"] is None
+        assert score.composite is None
+
     def test_legacy_mid_range(self):
         stats = _make_tool_stats()
         score = compute_composite_score(stats)
@@ -356,6 +372,8 @@ def test_report_metric_keys_match_weights():
         "total_lint_delta": 2,
         "total_security_delta": 1,
         "total_regressions": 0,
+        "security_measurements": 10,
+        "regression_measurements": 10,
     }
     report = generate_report(tool_stats)
     assert set(report.per_metric_normalized.keys()) == set(weights.keys())

@@ -97,11 +97,14 @@ class TestRubricPrescriptions:
         scores = {"read_tests_before_edit": [("BF-001", 0)]}
         assert _rubric_prescriptions(scores) == []
 
-    def test_estimated_score_delta_is_mean_shortfall_below_threshold(self):
+    def test_observed_deficit_is_mean_shortfall_below_threshold(self):
         scores = {"read_tests_before_edit": [("BF-001", 40), ("BF-003", 50)]}
         prescriptions = _rubric_prescriptions(scores)
         # threshold 60, mean of [40, 50] is 45 -> shortfall 15.0
-        assert prescriptions[0].estimated_score_delta == pytest.approx(15.0)
+        assert prescriptions[0].observed_deficit == pytest.approx(15.0)
+        assert prescriptions[0].estimated_score_delta is None
+        assert prescriptions[0].proposed_comparison
+        assert prescriptions[0].competing_explanations
 
     def test_threshold_boundary_exactly_60_does_not_fire(self):
         scores = {"no_out_of_scope_edits": [("BF-001", 60), ("BF-003", 60)]}
@@ -150,7 +153,7 @@ class TestCapabilityPrescriptions:
         assert prescriptions[0].affected_tasks == ["BF-001", "BF-003"]
         assert prescriptions[0].evidence == ["BF-001: scored 40.0", "BF-003: scored 50.0"]
         # threshold 60, mean of [40.0, 50.0] is 45.0 -> shortfall 15.0
-        assert prescriptions[0].estimated_score_delta == pytest.approx(15.0)
+        assert prescriptions[0].observed_deficit == pytest.approx(15.0)
 
     def test_single_task_does_not_fire(self):
         task_defs = {"BF-001": _make_task("BF-001", capabilities=["security_awareness"])}
@@ -342,10 +345,11 @@ class TestPrescriptionDataclasses:
         assert report.n_traces_graded == 0
         assert report.n_traces_missing == 0
 
-    def test_prescription_report_carries_the_non_additivity_caveat(self):
+    def test_prescription_report_carries_the_no_predicted_lift_caveat(self):
         report = PrescriptionReport(tool="claude-code")
         assert report.caveat == (
-            "Impact estimates are independent; applying several fixes will not sum cleanly."
+            "Observed deficits prioritize investigation; they do not predict improvement. "
+            "Run the proposed comparison to measure lift."
         )
 
     def test_prescription_fields(self):
@@ -359,9 +363,10 @@ class TestPrescriptionDataclasses:
             rationale="because",
         )
         assert p.id == "rubric-x"
+        assert p.observed_deficit is None
         assert p.estimated_score_delta is None
 
-    def test_prescription_estimated_score_delta_accepts_explicit_value(self):
+    def test_prescription_observed_deficit_accepts_explicit_value(self):
         p = Prescription(
             id="rubric-x",
             trigger="trace:x",
@@ -370,9 +375,9 @@ class TestPrescriptionDataclasses:
             severity=1,
             snippet="## X\n",
             rationale="because",
-            estimated_score_delta=15.0,
+            observed_deficit=15.0,
         )
-        assert p.estimated_score_delta == pytest.approx(15.0)
+        assert p.observed_deficit == pytest.approx(15.0)
 
 
 def _real_task_pair():
@@ -426,12 +431,7 @@ class TestGapPrescribeCli:
         assert "Prescriptions" in result.output
         assert "Read Tests Before Editing" in result.output
 
-    def test_prescribe_text_renders_impact_estimate_and_caveat(self, tmp_path: Path):
-        """The impact-estimate line and its non-additivity caveat are only
-        pinned today via checkup_cmd.py's analogous 'Top fixes' block (see
-        test_checkup.py::test_top_fixes_include_rule_integrity_escalation_
-        when_broken asserting 'not additive'); gap --prescribe renders the
-        same fields through a different call site with no regression test."""
+    def test_prescribe_text_renders_observed_deficit_and_comparison(self, tmp_path: Path):
         run_dir = tmp_path / "run1"
         run_dir.mkdir()
         _build_cli_run_dir(run_dir)
@@ -439,9 +439,10 @@ class TestGapPrescribeCli:
         runner = CliRunner()
         result = runner.invoke(gap, [str(run_dir), "--prescribe"])
         assert result.exit_code == 0, result.output
-        assert "est. +" in result.output
-        assert "Impact estimates are independent" in result.output
-        assert "sum cleanly" in result.output
+        assert "observed deficit" in result.output
+        assert "do not predict improvement" in result.output
+        assert "Proposed comparison" in result.output
+        assert "est. +" not in result.output
 
     def test_prescribe_json_includes_prescriptions_key(self, tmp_path: Path):
         run_dir = tmp_path / "run1"

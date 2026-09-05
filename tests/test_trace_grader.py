@@ -96,7 +96,7 @@ def test_no_out_of_scope_edits_with_files_to_examine(tmp_path: Path):
         new_span(FILE_EDIT, attributes={"file.path": "src/a.py", "file.action": "write"}),
         new_span(FILE_EDIT, attributes={"file.path": "src/b.py", "file.action": "write"}),
     )
-    scores = grade_trace(p, files_to_examine=["src/a.py"])
+    scores = grade_trace(p, allowed_edit_paths=["src/a.py"])
     assert scores["no_out_of_scope_edits"] == 50
 
 
@@ -105,7 +105,7 @@ def test_no_out_of_scope_edits_perfect_when_all_in_scope(tmp_path: Path):
         tmp_path,
         new_span(FILE_EDIT, attributes={"file.path": "src/a.py", "file.action": "write"}),
     )
-    scores = grade_trace(p, files_to_examine=["src/a.py"])
+    scores = grade_trace(p, allowed_edit_paths=["src/a.py"])
     assert scores["no_out_of_scope_edits"] == 100
 
 
@@ -115,7 +115,7 @@ def test_no_out_of_scope_edits_skipped_when_no_scope_set(tmp_path: Path):
         new_span(FILE_EDIT, attributes={"file.path": "src/wherever.py", "file.action": "write"}),
     )
     scores = grade_trace(p)  # no files_to_examine
-    assert scores["no_out_of_scope_edits"] == 100
+    assert "no_out_of_scope_edits" not in scores
 
 
 def test_no_repeated_failing_command_loop_clean(tmp_path: Path):
@@ -143,7 +143,6 @@ def test_grade_returns_all_four_keys(tmp_path: Path):
     assert set(scores.keys()) == {
         "read_tests_before_edit",
         "ran_verification_after_change",
-        "no_out_of_scope_edits",
         "no_repeated_failing_command_loop",
     }
 
@@ -256,7 +255,7 @@ def test_grade_returns_six_keys_when_context_and_efficiency_gradeable(tmp_path: 
         new_span(TOOL_USE, attributes={"gen_ai.tool.name": "Read", "file.path": "a.py"}),
         new_span(FILE_EDIT, attributes={"file.path": "a.py", "file.action": "write"}),
     )
-    scores = grade_trace(p, files_to_examine=["a.py"])
+    scores = grade_trace(p, files_to_examine=["a.py"], allowed_edit_paths=["a.py"])
     assert set(scores.keys()) == {
         "read_tests_before_edit",
         "ran_verification_after_change",

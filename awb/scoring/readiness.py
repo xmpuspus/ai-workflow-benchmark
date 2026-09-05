@@ -31,13 +31,13 @@ SPEED_SECONDS_TO_ZERO = 1800.0  # 30 min -> ~0 speed score
 def compute_readiness_score(
     *,
     correctness: float,
-    regression_safety: float,
-    security: float,
+    regression_safety: float | None,
+    security: float | None,
     review_burden: float,
     maintainability: float,
     cost: float,
     speed: float,
-) -> float:
+) -> float | None:
     """Weighted composite over 7 dimensions, each expressed as 0-100."""
     inputs = {
         "correctness": correctness,
@@ -48,8 +48,38 @@ def compute_readiness_score(
         "cost": cost,
         "speed": speed,
     }
-    total = sum(inputs[name] * w for name, w in READINESS_DIMENSIONS)
+    if any(inputs[name] is None for name, _ in READINESS_DIMENSIONS):
+        return None
+    total = sum(inputs[name] * w for name, w in READINESS_DIMENSIONS)  # type: ignore[operator]
     return round(total, 1)
+
+
+def quality_measurement_status(result, field: str) -> str:
+    quality = result.quality
+    direct = getattr(quality, f"{field}_status", None)
+    if direct:
+        return str(direct)
+    for container_name in ("measurement_status", "evidence_status"):
+        container = getattr(result, container_name, None)
+        if isinstance(container, dict) and container.get(field):
+            return str(container[field])
+    return "missing"
+
+
+def _measured_quality_values(results: list, field: str) -> tuple[list[float], dict]:
+    values = []
+    statuses: dict[str, int] = {}
+    for result in results:
+        status = quality_measurement_status(result, field)
+        statuses[status] = statuses.get(status, 0) + 1
+        if status not in {"measured", "measured_clean", "measured_findings"}:
+            continue
+        if field == "security":
+            raw = result.quality.security_delta
+        else:
+            raw = result.quality.test_regressions
+        values.append(100.0 if raw <= 0 else 0.0)
+    return values, {"measured": len(values), "total": len(results), "statuses": statuses}
 
 
 def readiness_from_results(results: list) -> dict:
@@ -65,8 +95,18 @@ def readiness_from_results(results: list) -> dict:
         return sum(fn(r) for r in results) / n
 
     correctness = 100.0 * sum(1 for r in results if r.outcome.success) / n
-    regression_safety = 100.0 * sum(1 for r in results if r.quality.test_regressions == 0) / n
-    security = 100.0 * sum(1 for r in results if r.quality.security_delta <= 0) / n
+    regression_values, regression_coverage = _measured_quality_values(results, "test_regressions")
+    security_values, security_coverage = _measured_quality_values(results, "security")
+    regression_safety = (
+        sum(regression_values) / len(regression_values)
+        if len(regression_values) == len(results) and results
+        else None
+    )
+    security = (
+        sum(security_values) / len(security_values)
+        if len(security_values) == len(results) and results
+        else None
+    )
     review_burden = max(
         0.0, 100.0 - 100.0 * _mean(lambda r: r.metrics.files_modified) / REVIEW_BURDEN_FILES_TO_ZERO
     )
@@ -91,11 +131,15 @@ def readiness_from_results(results: list) -> dict:
     return {
         "composite": composite,
         "correctness": round(correctness, 1),
-        "regression_safety": round(regression_safety, 1),
-        "security": round(security, 1),
+        "regression_safety": round(regression_safety, 1) if regression_safety is not None else None,
+        "security": round(security, 1) if security is not None else None,
         "review_burden": round(review_burden, 1),
         "maintainability": round(maintainability, 1),
         "cost": round(cost, 1),
         "speed": round(speed, 1),
         "n_results": len(results),
+        "coverage": {
+            "regression_safety": regression_coverage,
+            "security": security_coverage,
+        },
     }

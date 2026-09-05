@@ -24,9 +24,9 @@ from awb.scoring.normalize import (
 @dataclass
 class ScoreReport:
     tool: str
-    composite_score: float
+    composite_score: float | None
     per_metric_scores: dict[str, float] = field(default_factory=dict)
-    per_metric_normalized: dict[str, float] = field(default_factory=dict)
+    per_metric_normalized: dict[str, float | None] = field(default_factory=dict)
     capability_profile: CapabilityProfile | None = None
 
 
@@ -50,8 +50,16 @@ def generate_report(tool_stats: dict) -> ScoreReport:
         "cost_efficiency": normalize_cost(tool_stats["avg_cost"]),
         "speed": normalize_speed(tool_stats["avg_time"]),
         "code_quality": normalize_quality(tool_stats["total_lint_delta"], n),
-        "reliability": normalize_regressions(tool_stats["total_regressions"], n),
-        "security": normalize_security(tool_stats["total_security_delta"], n),
+        "reliability": (
+            normalize_regressions(tool_stats["total_regressions"], n)
+            if tool_stats.get("regression_measurements", 0) >= n
+            else None
+        ),
+        "security": (
+            normalize_security(tool_stats["total_security_delta"], n)
+            if tool_stats.get("security_measurements", 0) >= n
+            else None
+        ),
         "efficiency": normalize_iterations(tool_stats["avg_iterations"]),
     }
     composite = compute_composite_score(tool_stats)
@@ -83,7 +91,7 @@ def print_report(report: ScoreReport) -> None:
         table.add_row(
             metric,
             f"{raw:.2f}" if isinstance(raw, float) else str(raw),
-            f"{norm:.1f}",
+            f"{norm:.1f}" if norm is not None else "n/a",
             f"{weight:.0%}",
         )
 

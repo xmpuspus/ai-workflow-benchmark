@@ -36,16 +36,18 @@ def grade(run_dir: str | None):
 
     rows: list[tuple[str, dict[str, int]]] = []
     for tp in trace_files:
-        # Best-effort: pull files_to_examine from the matching result.json
+        # Scope is gradeable only from the explicit serialized edit contract.
         result_path = tp.with_name(tp.name.replace(".trace.jsonl", ".json"))
-        files_to_examine: list[str] = []
+        allowed_edit_paths: list[str] = []
         if result_path.exists():
             try:
                 data = json.loads(result_path.read_text())
-                files_to_examine = (data.get("task") or {}).get("files_to_examine") or []
+                allowed_edit_paths = data.get("allowed_edit_paths") or (
+                    data.get("task_contract") or {}
+                ).get("allowed_edit_paths", [])
             except (OSError, json.JSONDecodeError):
-                files_to_examine = []
-        scores = grade_trace(tp, files_to_examine=files_to_examine)
+                allowed_edit_paths = []
+        scores = grade_trace(tp, allowed_edit_paths=allowed_edit_paths)
         rows.append((tp.stem.replace(".trace", ""), scores))
 
     console.print("\n[bold]Trace Behavior Scores[/bold] (0-100)\n")
@@ -67,7 +69,7 @@ def grade(run_dir: str | None):
             f"  {name[:28]:<28} "
             f"{sc['read_tests_before_edit']:>10} "
             f"{sc['ran_verification_after_change']:>9} "
-            f"{sc['no_out_of_scope_edits']:>8} "
+            f"{str(sc.get('no_out_of_scope_edits', '-')):>8} "
             f"{sc['no_repeated_failing_command_loop']:>7} "
             f"{ctx_str} {eff_str}"
         )

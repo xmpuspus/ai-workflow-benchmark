@@ -240,12 +240,55 @@ def _grade_probe(results, run_dir: Path, task_defs: dict) -> dict[str, list]:
             continue
         task = task_defs.get(r.task_id)
         files_to_examine = task.files_to_examine if task else []
-        scores = grade_trace_or_none(trace_path, files_to_examine=files_to_examine)
+        allowed_edit_paths = getattr(r, "allowed_edit_paths", None) or []
+        scores = grade_trace_or_none(
+            trace_path,
+            files_to_examine=files_to_examine,
+            allowed_edit_paths=allowed_edit_paths,
+        )
         if scores is None:
             continue
         for name, score in scores.items():
             rubric_scores.setdefault(name, []).append(score)
     return rubric_scores
+
+
+def _source_was_loaded(source: str, loaded_files: list[str]) -> bool:
+    normalized = source.replace("\\", "/").lstrip("./")
+    for candidate in loaded_files:
+        loaded = candidate.replace("\\", "/").lstrip("./")
+        if loaded == normalized or loaded.endswith(f"/{normalized}"):
+            return True
+        if normalized.endswith(f"/{loaded}"):
+            return True
+    return False
+
+
+def _rule_verdicts_with_provenance(inventory, results, run_dir, task_defs, rule_integrity):
+    """Grade each promise only on attempts that recorded loading its source."""
+    from copy import copy
+
+    verdicts = []
+    for promise in inventory.promises:
+        eligible = [
+            result
+            for result in results
+            if _source_was_loaded(
+                promise.source, getattr(result, "loaded_instruction_files", None) or []
+            )
+        ]
+        if not eligible:
+            verdict = rule_integrity(inventory, {})
+            match = next(v for v in verdict if v.promise is promise)
+            match.status = "UNTESTED"
+            match.evidence = "rule source was not recorded as loaded for any attempt"
+            verdicts.append(match)
+            continue
+        one_promise = copy(inventory)
+        one_promise.promises = [promise]
+        scores = _grade_probe(eligible, run_dir, task_defs)
+        verdicts.extend(rule_integrity(one_promise, scores))
+    return verdicts
 
 
 # ----- Pillar / rule-integrity / verdict computation --------------------------
@@ -395,12 +438,9 @@ def _escalations(verdicts: list) -> list:
 
 
 def _fix_sort_key(p) -> tuple[bool, float, int]:
-    """estimated_score_delta (a 0-100 points scale) and severity (a raw
-    broken-rule count) are not the same unit, so they can't be compared by
-    sign-flipping into one number. A delta-bearing prescription always ranks
-    above a severity-only one; severity only breaks ties within a tier."""
-    delta = getattr(p, "estimated_score_delta", None)
-    return (delta is not None, delta or 0, p.severity)
+    """Rank measured deficits separately from the raw affected-task count."""
+    deficit = getattr(p, "observed_deficit", None)
+    return (deficit is not None, deficit or 0, p.severity)
 
 
 def _rank_fixes(prescriptions: list, verdicts: list) -> list:
@@ -415,10 +455,13 @@ def _rank_fixes(prescriptions: list, verdicts: list) -> list:
 def _render_stage1_text(
     tool, n_tasks, pillars, rule_stats, verdicts, lift_report, top_fixes, verdict_line
 ):
-    confidence = _probe_confidence(n_tasks)
     console.print(
         f"\n[bold]Harness Design Report[/bold]  "
-        f"{tool}, {n_tasks}/{_FULL_SUITE_SIZE} tasks, confidence: {confidence}"
+        f"{tool}, {n_tasks}/{_FULL_SUITE_SIZE} selected tasks, exploratory"
+    )
+    console.print(
+        f"[{MUTED}]This hand-picked probe describes these tasks only; "
+        f"it does not estimate full-suite performance.[/{MUTED}]"
     )
     console.print(verdict_line)
     console.print()
@@ -464,19 +507,17 @@ def _render_stage1_text(
         console.print(table)
 
     if top_fixes:
-        console.print(
-            "\n[bold]Top fixes[/bold] (estimated impact, independent estimates, not additive)"
-        )
+        console.print("\n[bold]Top fixes[/bold] (ranked by observed deficits)")
         for i, fix in enumerate(top_fixes, 1):
-            delta = getattr(fix, "estimated_score_delta", None)
-            delta_str = f"  est. +{delta:.0f} pts" if delta is not None else ""
+            deficit = getattr(fix, "observed_deficit", None)
+            deficit_str = f"  observed deficit {deficit:.0f} pts" if deficit is not None else ""
             # A rule-integrity escalation's rationale embeds the broken
             # promise's own text (see _escalations); a prescriptions.py
             # rationale is a fixed string with nothing to escape either way.
-            console.print(f"  {i}. {escape(fix.rationale)}{delta_str}")
+            console.print(f"  {i}. {escape(fix.rationale)}{deficit_str}")
         console.print(
-            f"[{MUTED}]Impact estimates are independent; applying several fixes "
-            f"will not sum cleanly.[/{MUTED}]"
+            f"[{MUTED}]Observed deficits do not predict improvement. "
+            f"Run each proposed comparison to measure lift.[/{MUTED}]"
         )
 
 
@@ -668,7 +709,15 @@ def checkup(
 
     from awb.harness.integrity import rule_integrity
 
-    verdicts = rule_integrity(inventory, rubric_scores)
+    if from_run:
+        verdicts = rule_integrity(inventory, {})
+        for verdict in verdicts:
+            verdict.status = "UNTESTED"
+            verdict.evidence = "retrospective regrade does not prove the current rule was loaded"
+    else:
+        verdicts = _rule_verdicts_with_provenance(
+            inventory, custom_results, custom_run_dir, task_defs, rule_integrity
+        )
     pillars = _compute_pillars(rubric_scores)
     rule_stats = _rule_stats(verdicts)
 
@@ -690,6 +739,14 @@ def checkup(
                 "rule_integrity": rule_stats,
                 "verdicts": verdicts,
                 "workflow_lift": lift_report,
+                "sampling": {
+                    "design": "exploratory_hand_picked",
+                    "population_inference": False,
+                    "n_selected_tasks": n_tasks,
+                },
+                "rule_attribution": (
+                    "retrospective_unverified" if from_run else "recorded_loaded_inputs"
+                ),
                 "prescriptions": top_fixes,
                 "verdict": verdict_line,
                 "exit_code": exit_code,
