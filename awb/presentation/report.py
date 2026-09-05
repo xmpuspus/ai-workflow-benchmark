@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import html
-import json
 import shlex
 from collections import Counter
 from pathlib import Path
@@ -79,6 +78,7 @@ def build_report(run_dir: Path) -> dict:
                 "elapsed_seconds": r.metrics.wall_clock_seconds,
                 "loaded_instruction_files": getattr(r, "loaded_instruction_files", []),
                 "allowed_edit_paths": getattr(r, "allowed_edit_paths", []),
+                "trace_path": r.trace_path or None,
                 "recovery_command": shlex.join(
                     ["awb", "run", r.tool, "--task", r.task_id, "--runs", "1", "--dry-run"]
                 ),
@@ -175,10 +175,27 @@ def render_html(report: dict) -> str:
         evidence += f"<p>{html.escape(report['comparison']['reason'])}</p>"
         evidence += f"<p>Cost: {html.escape(report['cost']['interpretation'])}</p>"
         for attempt in report["attempts"]:
+            fields = (
+                ("Tool", attempt["tool"]),
+                ("Execution", attempt["execution_status"].replace("_", " ")),
+                ("Last stage", attempt["stage"]),
+                ("Partial credit", f"{attempt['partial_credit']}/{attempt['partial_credit_max']}"),
+                ("Elapsed time", f"{attempt['elapsed_seconds']:.1f} seconds"),
+                ("Termination", attempt["termination_reason"] or "Not recorded"),
+                ("Error", attempt["error"] or "None recorded"),
+                ("Trace", attempt["trace_path"] or "Not recorded"),
+            )
             evidence += (
                 f"<details><summary>{html.escape(attempt['task_id'])}: "
-                f"{html.escape(attempt['correctness'])}</summary><pre>"
-                f"{html.escape(json.dumps(attempt, indent=2))}</pre></details>"
+                f"{html.escape(attempt['correctness'])}</summary><div class='attempt'><dl>"
+                + "".join(
+                    f"<dt>{label}</dt><dd>{html.escape(str(value))}</dd>" for label, value in fields
+                )
+                + "</dl><p>Preview a new attempt:</p><pre>"
+                + html.escape(attempt["recovery_command"])
+                + "</pre><p>"
+                + html.escape(attempt["recovery_note"])
+                + "</p></div></details>"
             )
     style = (
         "body{font:16px system-ui;max-width:720px;margin:3rem auto;padding:0 1rem;color:#17202a}"
@@ -187,6 +204,8 @@ def render_html(report: dict) -> str:
         "details{margin:1rem 0;border:1px solid #d8dee4}"
         "summary{min-height:44px;box-sizing:border-box;padding:.75rem;cursor:pointer}"
         "details pre{padding:0 .75rem}code{overflow-wrap:anywhere}"
+        ".attempt{padding:0 .75rem}dt{font-weight:600;margin-top:.6rem}"
+        "dd{margin:0;overflow-wrap:anywhere}"
     )
     return (
         '<!doctype html><html lang="en"><meta charset="utf-8">'

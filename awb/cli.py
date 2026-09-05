@@ -26,7 +26,30 @@ from awb.commands.warmup import warmup
 from awb.commands.workflow_cmd import workflow
 
 
-@click.group()
+class WorkflowCommands(click.Group):
+    """Organize discovery around the next action while keeping command names stable."""
+
+    def format_commands(self, ctx, formatter):
+        sections = {
+            "Start here (free)": ["quickstart", "report", "validate", "info", "tools"],
+            "Audit and compare": ["checkup", "run", "experiment", "ab", "compare", "drift"],
+            "Inspect evidence": ["gap", "cost", "stability", "trace", "leaderboard"],
+            "Prepare and share": ["task", "workflow", "warmup", "export", "submit"],
+        }
+        known = {name for names in sections.values() for name in names}
+        sections["Other commands"] = [name for name in self.list_commands(ctx) if name not in known]
+        for heading, names in sections.items():
+            rows = []
+            for name in names:
+                command = self.get_command(ctx, name)
+                if command is not None and not command.hidden:
+                    rows.append((name, command.get_short_help_str()))
+            if rows:
+                with formatter.section(heading):
+                    formatter.write_dl(rows)
+
+
+@click.group(cls=WorkflowCommands)
 @click.version_option(version=__version__, prog_name="awb")
 @click.option("--verbose", "-v", is_flag=True, help="Enable debug logging")
 def cli(verbose: bool):

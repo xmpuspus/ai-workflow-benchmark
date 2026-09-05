@@ -837,16 +837,25 @@ class BenchmarkRunner:
                 "workflow": asdict(self.workflow) if self.workflow else None,
             }
         )
+        selected_tasks = sorted(getattr(self, "tasks", [task]), key=lambda item: item.id)
+        task_budgets = {
+            item.id: {
+                "timeout_seconds": self.timeout_override or item.constraints.timeout_seconds,
+                "max_iterations": item.constraints.max_iterations,
+                "max_input_tokens": item.constraints.max_input_tokens,
+                "max_output_tokens": item.constraints.max_output_tokens,
+            }
+            for item in selected_tasks
+        }
         budget_hash = _stable_hash(
             {
                 "runs": getattr(self, "runs", 1),
-                "task_timeout": self.timeout_override or task.constraints.timeout_seconds,
+                "tasks": task_budgets,
                 "setup_timeout": getattr(self, "setup_timeout_seconds", 900),
                 "verification_timeout": getattr(self, "verification_timeout_seconds", 600),
                 "experiment_timeout": getattr(self, "experiment_timeout_seconds", None),
-                "max_iterations": task.constraints.max_iterations,
-                "max_input_tokens": task.constraints.max_input_tokens,
-                "max_output_tokens": task.constraints.max_output_tokens,
+                "adaptive": getattr(self, "adaptive", False),
+                "progressive": getattr(self, "progressive", False),
             }
         )
         environment_hash = _stable_hash(
@@ -877,8 +886,8 @@ class BenchmarkRunner:
                     ).hexdigest()
         cohort_id = _stable_hash(
             {
-                "task_definition_hash": task_hash,
                 "task_set_hash": self._task_set_hash,
+                "selected_task_ids": [item.id for item in selected_tasks],
                 "effective_config_hash": config_hash,
                 "environment_fingerprint": environment_hash,
                 "budget_fingerprint": budget_hash,
@@ -900,6 +909,7 @@ class BenchmarkRunner:
                 "prompt_hash": hashlib.sha256(task.issue_description.encode()).hexdigest(),
                 "instruction_hashes": instruction_hashes,
                 "allowed_edit_paths": list(task.allowed_edit_paths),
+                "task_budget": task_budgets[task.id],
             },
             "environment_manifest": {
                 **asdict(self._environment),
@@ -912,6 +922,8 @@ class BenchmarkRunner:
             },
             "cohort_manifest": {
                 "cohort_id": cohort_id,
+                "selected_task_ids": [item.id for item in selected_tasks],
+                "requested_repeats": getattr(self, "runs", 1),
                 "task_set_hash": self._task_set_hash,
                 "task_definition_hash": task_hash,
                 "effective_config_hash": config_hash,

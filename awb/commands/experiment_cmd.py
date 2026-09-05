@@ -106,10 +106,16 @@ def assess_cmd(plan_file: Path, arm_a: Path, arm_b: Path, split: str):
 @experiment.command("bundle")
 @click.argument("run_dir", type=click.Path(path_type=Path))
 @click.option("--out", required=True, type=click.Path(path_type=Path))
-def bundle_cmd(run_dir: Path, out: Path):
-    """Copy task result JSON only. Review private metadata before sharing."""
+@click.option("--attach", multiple=True, type=click.Path(path_type=Path))
+def bundle_cmd(run_dir: Path, out: Path, attach: tuple[Path, ...]):
+    """Copy receipts, declared metadata, and explicit traces or patches."""
     try:
-        emit_json({"status": "created", "manifest": build_bundle(run_dir, out)})
+        emit_json(
+            {
+                "status": "created",
+                "manifest": build_bundle(run_dir, out, attachments=list(attach)),
+            }
+        )
     except (ValueError, OSError, KeyError, TypeError) as exc:
         _error(exc)
 

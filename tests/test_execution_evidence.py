@@ -334,3 +334,32 @@ def test_container_rejects_home_as_task_input(tmp_path):
             cli_args=["run"],
             input_mounts=[(Path.home(), "/inputs/tasks")],
         )
+
+
+def test_selected_tasks_share_cohort_budget_but_keep_individual_definitions(tmp_path, sample_task):
+    from dataclasses import replace
+
+    second = replace(
+        sample_task,
+        id="BF-999",
+        constraints=replace(
+            sample_task.constraints, timeout_seconds=sample_task.constraints.timeout_seconds + 10
+        ),
+    )
+    runner = _runner(tmp_path, sample_task, _FailedAfterEditAdapter())
+    runner.tasks = [sample_task, second]
+    runner.runs = 2
+    first_identity = runner._identity_fields(sample_task, None)
+    second_identity = runner._identity_fields(second, None)
+    assert first_identity["budget_fingerprint"] == second_identity["budget_fingerprint"]
+    assert first_identity["cohort_id"] == second_identity["cohort_id"]
+    assert first_identity["task_definition_hash"] != second_identity["task_definition_hash"]
+    assert first_identity["cohort_manifest"]["selected_task_ids"] == sorted(
+        [sample_task.id, second.id]
+    )
+    assert first_identity["cohort_manifest"]["requested_repeats"] == 2
+    runner.runs = 3
+    assert (
+        runner._identity_fields(sample_task, None)["budget_fingerprint"]
+        != first_identity["budget_fingerprint"]
+    )
