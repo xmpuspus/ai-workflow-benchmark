@@ -167,8 +167,8 @@ def quickstart(check_auth: bool):
 
     if all_ok:
         console.print(
-            "\n[green]Setup verified.[/green] Run [bold]awb run --runs 1[/bold]"
-            " for the full 100-task suite."
+            "\n[green]Setup verified.[/green] Next, run "
+            "[bold]awb checkup --static-only[/bold] for a free local audit."
         )
     else:
         console.print("\n[red]Some checks failed — fix the issues above before running.[/red]")

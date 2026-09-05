@@ -103,6 +103,8 @@ def test_quickstart_skips_auth_unless_requested(monkeypatch):
     assert result.exit_code == 0, result.output
     assert calls == []
     assert "Authentication skipped" in result.output
+    assert "awb checkup --static-only" in result.output
+    assert "awb run --runs 1" not in result.output
 
     result = CliRunner().invoke(quickstart, ["--check-auth"])
     assert result.exit_code == 0, result.output
