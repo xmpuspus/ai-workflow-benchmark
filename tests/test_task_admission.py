@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 import json
 
+import pytest
 import yaml
 from click.testing import CliRunner
 
@@ -39,7 +40,7 @@ def test_audit_marks_unconditional_credit_and_missing_review_controls(tmp_path):
 
     result = CliRunner().invoke(task, ["audit", "--tasks-dir", str(tmp_path), "--format", "json"])
 
-    assert result.exit_code == 0, result.output
+    assert result.exit_code == 1, result.output
     payload = json.loads(result.output)
     assert payload["tasks_scanned"] == 1
     assert payload["status"] == "review_required"
@@ -108,7 +109,7 @@ def test_controls_do_not_admit_when_mutation_receives_credit(tmp_path):
         ],
     )
 
-    assert result.exit_code == 0, result.output
+    assert result.exit_code == 1, result.output
     payload = json.loads(result.output)
     assert payload["status"] == "review_required"
     assert payload["admission"] == "not_admitted"
@@ -156,3 +157,35 @@ def test_from_failure_requires_review_and_preserves_task_provenance(tmp_path):
     assert review["status"] == "candidate"
     assert review["task_definition_hash"] == hashlib.sha256(task_path.read_bytes()).hexdigest()
     assert review["task_provenance"]["source_pr_url"] == "https://example.invalid/pr/1"
+
+
+@pytest.mark.parametrize("task_id", ["../escape", "/tmp/escape", "bad-id"])
+def test_failure_candidate_rejects_unsafe_task_id(tmp_path, task_id):
+    from awb.verification.task_admission import create_failure_candidate
+
+    source = tmp_path / "result.json"
+    source.write_text(json.dumps({"task_id": task_id, "outcome": {"success": False}}))
+    with pytest.raises(ValueError, match="task ID"):
+        create_failure_candidate(source, tmp_path / "out", "description", "review")
+
+
+def test_candidate_does_not_overwrite_prior_review(tmp_path):
+    from awb.verification.task_admission import create_failure_candidate
+
+    source = tmp_path / "result.json"
+    source.write_text(json.dumps({"task_id": "BF-901", "outcome": {"success": False}}))
+    out = tmp_path / "out"
+    create_failure_candidate(source, out, "first", "review")
+    with pytest.raises(ValueError, match="exists"):
+        create_failure_candidate(source, out, "second", "review")
+    assert json.loads((out / "BF-901.candidate.json").read_text())["description"] == "first"
+
+
+def test_candidate_rejects_mismatched_definition(tmp_path):
+    from awb.verification.task_admission import create_failure_candidate
+
+    source = tmp_path / "result.json"
+    source.write_text(json.dumps({"task_id": "BF-902", "outcome": {"success": False}}))
+    definition = _write_task(tmp_path / "BF-901.yaml")
+    with pytest.raises(ValueError, match="match"):
+        create_failure_candidate(source, tmp_path / "out", "description", "review", definition)

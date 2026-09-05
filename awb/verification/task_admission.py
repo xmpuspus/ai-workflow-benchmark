@@ -196,9 +196,14 @@ def create_failure_candidate(
     if result is None:
         raise ValueError(f"Could not read a JSON result from {result_path}")
     task_id = str(result.get("task_id") or "candidate")
-    out_dir.mkdir(parents=True, exist_ok=True)
+    if not re.fullmatch(r"[A-Z]{2}-[0-9]{3}", task_id):
+        raise ValueError("Invalid task ID in result")
+    if result.get("outcome", {}).get("success") is not False:
+        raise ValueError("A failure candidate needs an explicitly failed outcome")
     candidate_path = out_dir / f"{task_id}.candidate.json"
     review_path = out_dir / f"{task_id}.review.json"
+    if candidate_path.exists() or review_path.exists():
+        raise ValueError("Candidate or review already exists; choose a new output directory")
     candidate = {
         "status": "candidate",
         "admission": "not_admitted",
@@ -220,14 +225,19 @@ def create_failure_candidate(
         task_raw = _load_mapping(task_definition)
         if task_raw is None:
             raise ValueError(f"Could not read task definition from {task_definition}")
+        if task_raw.get("id") != task_id:
+            raise ValueError("Task definition does not match the failed task")
         review["task_definition"] = str(task_definition)
         review["task_definition_hash"] = task_definition_hash(task_definition)
         review["task_id"] = task_raw.get("id", task_id)
         review["task_repo"] = task_raw.get("repo")
         review["task_provenance"] = task_raw.get("provenance")
         candidate["task_definition_hash"] = review["task_definition_hash"]
-    candidate_path.write_text(json.dumps(candidate, indent=2) + "\n")
-    review_path.write_text(json.dumps(review, indent=2) + "\n")
+    out_dir.mkdir(parents=True, exist_ok=True)
+    with candidate_path.open("x") as handle:
+        handle.write(json.dumps(candidate, indent=2) + "\n")
+    with review_path.open("x") as handle:
+        handle.write(json.dumps(review, indent=2) + "\n")
     return {
         "status": "candidate",
         "admission": "not_admitted",

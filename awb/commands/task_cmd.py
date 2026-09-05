@@ -85,6 +85,8 @@ def audit(tasks_dir: Path | None, fmt: str):
     else:
         _emit_admission_text(payload)
         console.print(f"  findings: {sum(len(item['findings']) for item in payload['findings'])}")
+    if any(item["findings"] for item in payload["findings"]):
+        raise click.exceptions.Exit(1)
 
 
 @task.command("controls")
@@ -118,11 +120,17 @@ def controls(
             task_definition, gold_workspace, noop_workspace, mutation_workspace, review_output
         )
     except Exception as exc:
-        raise click.ClickException(str(exc)) from exc
+        if fmt == "json":
+            emit_json({"status": "error", "error": str(exc)})
+        else:
+            console.print(str(exc), markup=False)
+        raise click.exceptions.Exit(2) from exc
     if fmt == "json":
         emit_json(payload)
     else:
         _emit_admission_text(payload)
+    if payload["status"] != "review_evidence_ready":
+        raise click.exceptions.Exit(1)
 
 
 @task.command("from-failure")
@@ -149,8 +157,12 @@ def from_failure(
 
     try:
         payload = create_failure_candidate(result, out, description, oracle_review, task_definition)
-    except ValueError as exc:
-        raise click.ClickException(str(exc)) from exc
+    except (ValueError, OSError) as exc:
+        if fmt == "json":
+            emit_json({"status": "error", "error": str(exc)})
+        else:
+            console.print(str(exc), markup=False)
+        raise click.exceptions.Exit(2) from exc
     if fmt == "json":
         emit_json(payload)
     else:
