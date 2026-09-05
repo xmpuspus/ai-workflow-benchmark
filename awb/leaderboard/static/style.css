@@ -28,7 +28,7 @@ body {
 
 header {
     background: var(--surface);
-    padding: 2rem 0;
+    padding: 2rem 1rem;
     text-align: center;
     border-bottom: 1px solid var(--border);
 }
@@ -90,6 +90,7 @@ header h1 {
 }
 
 .filter-input {
+    min-height: 44px;
     background: var(--surface);
     border: 1px solid var(--border);
     color: var(--text);
@@ -107,6 +108,7 @@ header h1 {
 }
 
 .export-btn {
+    min-height: 44px;
     background: var(--accent);
     color: var(--bg);
     border: none;

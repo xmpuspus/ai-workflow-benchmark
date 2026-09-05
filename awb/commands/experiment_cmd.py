@@ -120,6 +120,24 @@ def bundle_cmd(run_dir: Path, out: Path, attach: tuple[Path, ...]):
         _error(exc)
 
 
+@experiment.command("assess-run")
+@click.argument("plan_file", type=click.Path(path_type=Path))
+@click.option("--runs-dir", required=True, type=click.Path(path_type=Path))
+@click.option("--tasks-dir", required=True, type=click.Path(path_type=Path))
+@click.option("--split", type=click.Choice(["development", "holdout"]), default="development")
+def assess_run_cmd(plan_file: Path, runs_dir: Path, tasks_dir: Path, split: str):
+    """Check a local run store and task controls before assessing its receipts."""
+    from awb.experiments.execution import assess_run
+
+    try:
+        result = assess_run(json.loads(plan_file.read_text()), runs_dir, tasks_dir, split)
+        emit_json(result)
+        if result["decision"] in {"inconclusive", "baseline_better"}:
+            raise click.exceptions.Exit(1)
+    except (ValueError, OSError, KeyError, TypeError) as exc:
+        _error(exc)
+
+
 @experiment.command("verify-bundle")
 @click.argument("directory", type=click.Path(path_type=Path))
 def verify_bundle_cmd(directory: Path):

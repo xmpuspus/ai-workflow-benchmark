@@ -1,10 +1,11 @@
 """Independent arithmetic oracle for the opt-in container integration check."""
 
-import sys
+import runpy
 from pathlib import Path
 
-sys.path.insert(0, str(Path.cwd()))
-from solution import add  # noqa: E402
+# Baseline and repaired files can have equal sizes and sub-second timestamps.
+# Read the current source instead of reusing the baseline's timestamp-based pyc.
+add = runpy.run_path(str(Path.cwd() / "solution.py"))["add"]
 
 assert add(2, 3) == 5
 assert add(-8, 4) == -4

@@ -238,6 +238,10 @@ def _run_both(
 
     # Headline
     sig = "[green]significant[/green]" if report.significant else "[yellow]not significant[/yellow]"
+    if not getattr(report, "comparison_eligible", True):
+        sig = "[yellow]inconclusive: unequal repeat coverage[/yellow]"
+    elif report.p_value is None:
+        sig = "[yellow]descriptive evidence only[/yellow]"
     p_str = f"p={report.p_value:.3f}" if report.p_value is not None else "n/a"
     sign = "+" if report.lift >= 0 else ""
     lift_color = "green" if report.lift > 0 else ("red" if report.lift < 0 else "yellow")
@@ -269,7 +273,7 @@ def _run_both(
             console.print(f"    {label:<24} [red]{c.lift:>5.1f} pts[/red]  ({c.tasks} tasks)")
 
     if not helps and not hurts:
-        console.print("\n  No significant capability-level differences.")
+        console.print("\n  No capability-level differences above 0.5 points in this sample.")
 
     # Top movers
     movers = [t for t in report.per_task if abs(t["lift"]) > 5]

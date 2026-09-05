@@ -69,7 +69,9 @@ def _render(report) -> None:
     color = OK if report.mean_delta > 0 else (BAD if report.mean_delta < 0 else MUTED)
     p_str = f"p={report.p_value:.3f}" if report.p_value is not None else "n/a"
 
-    if report.n_tasks == 0:
+    if not getattr(report, "comparison_eligible", True):
+        verdict = "inconclusive: unequal repeat coverage"
+    elif report.n_tasks == 0:
         verdict = "no shared tasks between the two configs"
     elif report.p_value is None:
         # The sign test needs 5+ pairs; "no significant difference" would

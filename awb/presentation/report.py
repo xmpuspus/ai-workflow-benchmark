@@ -8,6 +8,7 @@ from collections import Counter
 from pathlib import Path
 
 from awb.core.results import ResultRecorder
+from awb.scoring.cohorts import assess_cohort_coverage
 
 EMPTY_NEXT_STEP = "Run an explicit benchmark, then render this saved evidence with awb report last."
 
@@ -46,21 +47,7 @@ def build_report(run_dir: Path) -> dict:
             "total": len(results),
             "statuses": dict(statuses),
         }
-    identity_fields = (
-        "task_set_hash",
-        "evaluator_version",
-        "effective_config_hash",
-        "adapter_version",
-        "model",
-        "execution_mode",
-        "environment_fingerprint",
-        "budget_fingerprint",
-    )
-    identities = {tuple(getattr(r, key, "") for key in identity_fields) for r in results}
-    missing_identity = any(
-        any(v in {None, "", "unknown"} for v in identity) for identity in identities
-    )
-    eligible = not missing_identity and len(identities) == 1
+    cohort = assess_cohort_coverage(results)
     attempts = []
     for r in results:
         error = r.outcome.error
@@ -96,11 +83,14 @@ def build_report(run_dir: Path) -> dict:
         "failed_tasks": failed,
         "coverage": coverage,
         "comparison": {
-            "eligible": eligible,
+            "eligible": cohort.eligible,
+            "reasons": cohort.reasons,
+            "selected_task_ids": cohort.selected_task_ids,
+            "requested_repeats": cohort.requested_repeats,
             "reason": (
-                "One complete recorded cohort"
-                if eligible
-                else "Unknown legacy identity or mixed cohorts; do not rank together"
+                "One complete recorded cohort. Check measurement coverage before comparing scores."
+                if cohort.eligible
+                else "Comparison unavailable. This run lacks complete identity or repeat coverage."
             ),
         },
         "cost": {
@@ -173,6 +163,13 @@ def render_html(report: dict) -> str:
             + "</ul>"
         )
         evidence += f"<p>{html.escape(report['comparison']['reason'])}</p>"
+        reasons = report["comparison"].get("reasons", [])
+        if reasons:
+            evidence += (
+                "<details><summary>Why this run cannot be compared</summary><ul class='reasons'>"
+                + "".join(f"<li>{html.escape(reason.replace('_', ' '))}</li>" for reason in reasons)
+                + "</ul></details>"
+            )
         evidence += f"<p>Cost: {html.escape(report['cost']['interpretation'])}</p>"
         for attempt in report["attempts"]:
             fields = (
@@ -206,6 +203,7 @@ def render_html(report: dict) -> str:
         "details pre{padding:0 .75rem}code{overflow-wrap:anywhere}"
         ".attempt{padding:0 .75rem}dt{font-weight:600;margin-top:.6rem}"
         "dd{margin:0;overflow-wrap:anywhere}"
+        ".reasons{padding:0 2rem 1rem}"
     )
     return (
         '<!doctype html><html lang="en"><meta charset="utf-8">'
