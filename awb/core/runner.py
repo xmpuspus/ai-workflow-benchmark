@@ -711,6 +711,16 @@ class BenchmarkRunner:
                 lint_delta=post_lint - baseline_lint,
                 security_delta=post_security - baseline_security,
                 test_regressions=test_regressions,
+                baseline_security_issues=(
+                    baseline_security
+                    if baseline_security_status in {"measured_clean", "measured_findings"}
+                    else None
+                ),
+                post_security_issues=(
+                    post_security
+                    if post_security_status in {"measured_clean", "measured_findings"}
+                    else None
+                ),
                 lint_status=_delta_measurement_status(
                     baseline_lint_status, post_lint_status, post_lint - baseline_lint
                 ),

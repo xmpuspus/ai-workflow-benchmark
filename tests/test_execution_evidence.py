@@ -121,6 +121,8 @@ async def test_tool_failure_is_preserved_separately_from_patch_verification(
     assert result.environment_manifest["ambient_credentials_forwarded"] is None
     assert result.cohort_manifest["cohort_id"] == result.cohort_id
     assert result.quality.security_status == "missing"
+    assert result.quality.baseline_security_issues is None
+    assert result.quality.post_security_issues is None
     assert result.quality.test_regressions == 0
     assert result.quality.test_regressions_status == "measured_clean"
 
@@ -133,6 +135,8 @@ def test_result_roundtrip_preserves_execution_identity_and_measurement_statuses(
     sample_result.cost.usage_status = "partial"
     sample_result.quality.lint_status = "missing"
     sample_result.quality.security_status = "failed"
+    sample_result.quality.baseline_security_issues = 4
+    sample_result.quality.post_security_issues = 4
     sample_result.quality.test_regressions_status = "measured_findings"
     sample_result.task_definition_hash = "1" * 64
     sample_result.effective_config_hash = "2" * 64
@@ -153,9 +157,41 @@ def test_result_roundtrip_preserves_execution_identity_and_measurement_statuses(
     assert loaded.execution.status == "timed_out"
     assert loaded.cost.usage_status == "partial"
     assert loaded.quality.security_status == "failed"
+    assert loaded.quality.baseline_security_issues == 4
+    assert loaded.quality.post_security_issues == 4
     assert loaded.cohort_id == "5" * 64
     assert loaded.loaded_instruction_files == ["AGENTS.override.md"]
     assert loaded.allowed_edit_paths == ["src/**"]
+
+
+@pytest.mark.asyncio
+async def test_runner_preserves_unchanged_nonzero_security_counts(
+    tmp_path, sample_task, monkeypatch
+):
+    runner = _runner(tmp_path, sample_task, _FailedAfterEditAdapter())
+    monkeypatch.setattr("awb.core.runner._count_baseline", lambda *args: asyncio.sleep(0, result=0))
+    monkeypatch.setattr(
+        "awb.core.runner.run_tests", lambda *args: asyncio.sleep(0, result=(True, ""))
+    )
+    monkeypatch.setattr(
+        "awb.core.runner.evaluate_partial_credit",
+        lambda *args, **kwargs: asyncio.sleep(0, result=(100, 100, [])),
+    )
+    monkeypatch.setattr(
+        "awb.core.runner.measure_lint_issues",
+        lambda *args: asyncio.sleep(0, result=(0, "measured_clean")),
+    )
+    monkeypatch.setattr(
+        "awb.core.runner.measure_security_issues",
+        lambda *args: asyncio.sleep(0, result=(4, "measured_findings")),
+    )
+
+    result = await runner.run_single(sample_task, run_id="security_counts_run1")
+
+    assert result.quality.security_delta == 0
+    assert result.quality.security_status == "measured_clean"
+    assert result.quality.baseline_security_issues == 4
+    assert result.quality.post_security_issues == 4
 
 
 def test_repeat_aware_resume_requires_every_requested_identity(tmp_path, sample_result):

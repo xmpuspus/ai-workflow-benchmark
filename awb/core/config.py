@@ -139,6 +139,8 @@ class RunQuality:
     lint_delta: int = 0
     security_delta: int = 0
     test_regressions: int = 0
+    baseline_security_issues: int | None = None
+    post_security_issues: int | None = None
     lint_status: str = "missing"
     security_status: str = "missing"
     test_regressions_status: str = "missing"
@@ -342,6 +344,8 @@ class RunResult:
                 "lint_delta": self.quality.lint_delta,
                 "security_delta": self.quality.security_delta,
                 "test_regressions": self.quality.test_regressions,
+                "baseline_security_issues": self.quality.baseline_security_issues,
+                "post_security_issues": self.quality.post_security_issues,
                 "lint_status": self.quality.lint_status,
                 "security_status": self.quality.security_status,
                 "test_regressions_status": self.quality.test_regressions_status,

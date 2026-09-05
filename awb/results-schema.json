@@ -177,6 +177,20 @@
         "test_regressions": {
           "type": "integer"
         },
+        "baseline_security_issues": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 0
+        },
+        "post_security_issues": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 0
+        },
         "lint_status": {
           "type": "string"
         },

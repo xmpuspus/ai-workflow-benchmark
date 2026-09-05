@@ -86,7 +86,9 @@
       "properties": {
         "lint_delta": {"type": "integer"},
         "security_delta": {"type": "integer"},
-        "test_regressions": {"type": "integer"}
+        "test_regressions": {"type": "integer"},
+        "baseline_security_issues": {"type": ["integer", "null"], "minimum": 0},
+        "post_security_issues": {"type": ["integer", "null"], "minimum": 0}
       }
     },
     "environment": {

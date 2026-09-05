@@ -274,6 +274,8 @@ def _dict_to_result(data: dict) -> RunResult:
             lint_delta=quality_data.get("lint_delta", 0),
             security_delta=quality_data.get("security_delta", 0),
             test_regressions=quality_data.get("test_regressions", 0),
+            baseline_security_issues=quality_data.get("baseline_security_issues"),
+            post_security_issues=quality_data.get("post_security_issues"),
             lint_status=quality_data.get("lint_status", "missing"),
             security_status=quality_data.get("security_status", "missing"),
             test_regressions_status=quality_data.get("test_regressions_status", "missing"),
