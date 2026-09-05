@@ -1,15 +1,18 @@
 """Controlled execution of a frozen experiment plan.
 
 The service accepts only local, instruction-only Claude configuration trees.
-It never copies configuration files, credentials, sessions, or persistent
-state. Each scheduled attempt gets a fresh runner and adapter instance.
+It copies vetted noncredential configuration bytes into a new temporary
+directory for each try. Each scheduled try gets a fresh runner and adapter.
 """
 
 from __future__ import annotations
 
 import asyncio
+import contextlib
+import fcntl
 import hashlib
 import json
+import tempfile
 from pathlib import Path
 from typing import Any
 
@@ -18,9 +21,9 @@ import yaml
 from awb.experiments.protocol import validate_plan
 
 _ROOT_FILES = {"settings.json", "hooks.json", "CLAUDE.md", "AGENTS.md", "AGENTS.override.md"}
-_INSTRUCTION_DIRS = {"agents", "rules", "skills"}
 _SAFETY_FILES = {"settings.json", "hooks.json"}
 _FORBIDDEN_PARTS = {"auth.json", "credentials.json", "sessions", "state", "history.jsonl"}
+_INSTRUCTION_ROOTS = {"CLAUDE.md", "AGENTS.md", "AGENTS.override.md"}
 
 
 def _hash_entries(entries: list[tuple[str, bytes]]) -> str:
@@ -48,12 +51,17 @@ def config_snapshot(config_dir: Path) -> dict[str, Any]:
             raise ValueError(f"Configuration symlink is not permitted: {relative}")
         if path.is_dir():
             continue
-        allowed = len(parts) == 1 and parts[0] in _ROOT_FILES
-        allowed = allowed or (len(parts) >= 2 and parts[0] in _INSTRUCTION_DIRS)
-        if not allowed:
+        if len(parts) != 1 or parts[0] not in _ROOT_FILES:
             raise ValueError(f"Configuration file is not permitted: {relative}")
         name = relative.as_posix()
         content = path.read_bytes()
+        if path.suffix in {".md", ".json"}:
+            try:
+                content.decode("utf-8")
+            except UnicodeDecodeError as exc:
+                raise ValueError(f"Configuration text file is not UTF-8: {relative}") from exc
+        if path.name in _SAFETY_FILES:
+            _reject_credential_environment(content, relative)
         entries.append((name, content))
         if len(parts) == 1 and parts[0] in _SAFETY_FILES:
             safety.append((name, content))
@@ -61,13 +69,45 @@ def config_snapshot(config_dir: Path) -> dict[str, Any]:
         "hash": _hash_entries(entries),
         "safety_policy_hash": _hash_entries(safety),
         "files": [name for name, _ in entries],
-        "instruction_files": [
-            name
-            for name, _ in entries
-            if name in {"CLAUDE.md", "AGENTS.md", "AGENTS.override.md"}
-            or name.split("/", 1)[0] in _INSTRUCTION_DIRS
-        ],
+        "entries": entries,
+        "instruction_files": [name for name, _ in entries if name in _INSTRUCTION_ROOTS],
     }
+
+
+def _reject_credential_environment(content: bytes, relative: Path) -> None:
+    """Reject credential-like environment keys without exposing their values."""
+    try:
+        data = json.loads(content)
+    except json.JSONDecodeError as exc:
+        raise ValueError(f"Configuration JSON is invalid: {relative}") from exc
+
+    def visit(value: Any, parent: str = "") -> None:
+        if isinstance(value, dict):
+            for key, nested in value.items():
+                if parent.lower() == "env" and any(
+                    word in key.lower()
+                    for word in ("key", "token", "secret", "password", "credential", "auth")
+                ):
+                    raise ValueError(f"Credential environment key is not permitted in {relative}")
+                visit(nested, key)
+        elif isinstance(value, list):
+            for nested in value:
+                visit(nested, parent)
+
+    visit(data)
+
+
+@contextlib.contextmanager
+def _isolated_config(snapshot: dict[str, Any], parent: Path):
+    """Materialize only reviewed config bytes into a fresh temporary directory."""
+    parent.mkdir(parents=True, exist_ok=True)
+    with tempfile.TemporaryDirectory(prefix="attempt-", dir=parent) as directory:
+        destination = Path(directory)
+        for relative, content in snapshot["entries"]:
+            path = destination / relative
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_bytes(content)
+        yield destination
 
 
 def _task_paths(tasks_dir: Path, wanted: set[str]) -> dict[str, Path]:
@@ -109,9 +149,7 @@ def _attempt_marker(
     return runs_dir / ".experiment-attempts" / plan_hash / f"{identity}.json"
 
 
-def _existing_attempts(
-    runs_dir: Path, plan_hash: str, split: str
-) -> dict[tuple[str, str, int], dict]:
+def _existing_attempts(runs_dir: Path, plan: dict, split: str) -> dict[tuple[str, str, int], dict]:
     found: dict[tuple[str, str, int], dict] = {}
     if not runs_dir.exists():
         return found
@@ -122,7 +160,7 @@ def _existing_attempts(
             row = json.loads(path.read_text())
         except (OSError, json.JSONDecodeError):
             continue
-        if not isinstance(row, dict) or row.get("experiment_plan_hash") != plan_hash:
+        if not isinstance(row, dict) or row.get("experiment_plan_hash") != plan["plan_hash"]:
             continue
         if row.get("experiment_split") != split:
             continue
@@ -131,6 +169,15 @@ def _existing_attempts(
             raise ValueError(f"Invalid experiment receipt: {path}")
         if key in found:
             raise ValueError(f"Duplicate completed experiment attempt: {key}")
+        spec = plan["spec"]
+        if key[0] not in spec[f"{split}_tasks"] or not 1 <= key[2] <= spec["repeats"]:
+            raise ValueError(f"Experiment receipt is outside the frozen schedule: {key}")
+        if row.get("task_definition_hash") != spec["task_hashes"][key[0]]:
+            raise ValueError(f"Experiment receipt task hash differs: {key}")
+        if row.get("effective_config_hash") != spec[f"config_{key[1]}_hash"]:
+            raise ValueError(f"Experiment receipt config hash differs: {key}")
+        if row.get("model") != spec["model"]:
+            raise ValueError(f"Experiment receipt model differs or is unknown: {key}")
         if row.get("execution_status") != "completed":
             raise ValueError(f"Experiment attempt is incomplete: {key}")
         found[key] = row
@@ -145,7 +192,9 @@ class _ModelPinnedClaudeAdapter:
 
         class ModelPinnedAdapter(ClaudeCodeCustomAdapter):
             def _get_cmd(self, prompt: str, max_turns: int) -> list[str]:
-                return [*super()._get_cmd(prompt, max_turns), "--model", self.model]
+                command = super()._get_cmd(prompt, max_turns)
+                command = [part for part in command if part != "--dangerously-skip-permissions"]
+                return [*command, "--model", self.model]
 
         adapter = ModelPinnedAdapter(config_dir=config_dir)
         adapter.model = model
@@ -189,7 +238,7 @@ def _execute_attempt(
 
 def _validate_inputs(
     plan: dict, config_a: Path, config_b: Path, tasks_dir: Path, split: str
-) -> tuple[dict, dict, dict[str, Path]]:
+) -> tuple[dict, dict, dict[str, Any]]:
     validate_plan(plan)
     if split not in {"development", "holdout"}:
         raise ValueError("split must be development or holdout")
@@ -205,7 +254,37 @@ def _validate_inputs(
     if snapshot_a["safety_policy_hash"] != snapshot_b["safety_policy_hash"]:
         raise ValueError("Both arms must preserve equal settings and hooks")
     wanted = set(spec[f"{split}_tasks"])
-    return snapshot_a, snapshot_b, _task_paths(tasks_dir, wanted)
+    paths = _task_paths(tasks_dir, wanted)
+    tasks = {
+        task_id: _load_frozen_task(paths[task_id], task_id, spec["task_hashes"][task_id])
+        for task_id in wanted
+    }
+    return snapshot_a, snapshot_b, tasks
+
+
+@contextlib.contextmanager
+def _plan_lock(runs_dir: Path, plan_hash: str):
+    """Serialize one plan so concurrent invocations cannot spend the same arm twice."""
+    locks = runs_dir / ".experiment-locks"
+    locks.mkdir(parents=True, exist_ok=True)
+    with (locks / f"{plan_hash}.lock").open("a+") as handle:
+        fcntl.flock(handle.fileno(), fcntl.LOCK_EX)
+        try:
+            yield
+        finally:
+            fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
+
+
+def _create_marker(path: Path, attempt: tuple[str, str, int]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        with path.open("x") as handle:
+            json.dump({"status": "started", "attempt": attempt}, handle)
+            handle.write("\n")
+    except FileExistsError as exc:
+        raise ValueError(
+            f"Ambiguous started-but-not-finished experiment attempt: {attempt}"
+        ) from exc
 
 
 def execute_plan(
@@ -224,77 +303,80 @@ def execute_plan(
     else:
         effective_tasks_dir = Path(tasks_dir)
     config_a, config_b, runs_dir = Path(config_a), Path(config_b), Path(runs_dir)
-    snapshot_a, snapshot_b, task_paths = _validate_inputs(
+    snapshot_a, snapshot_b, tasks = _validate_inputs(
         plan, config_a, config_b, effective_tasks_dir, split
     )
     spec = plan["spec"]
-    existing = _existing_attempts(runs_dir, plan["plan_hash"], split)
     completed: list[dict] = []
     resumed: list[dict] = []
     executed: list[dict] = []
     schedule = [entry for entry in plan["schedule"] if entry["split"] == split]
-    # Refuse before starting any new paid work if a prior process left an
-    # ambiguous receipt for this plan/split. Continuing a different scheduled
-    # arm would make recovery order-dependent and conceal that ambiguity.
-    for entry in schedule:
-        key = (entry["task_id"], entry["arm"], entry["repeat"])
-        if (
-            key not in existing
-            and _attempt_marker(runs_dir, plan["plan_hash"], split, *key).exists()
-        ):
-            raise ValueError(f"Ambiguous started-but-not-finished experiment attempt: {key}")
-    for entry in schedule:
-        key = (entry["task_id"], entry["arm"], entry["repeat"])
-        if key in existing:
-            resumed.append(existing[key])
-            completed.append(existing[key])
-            continue
-        marker = _attempt_marker(runs_dir, plan["plan_hash"], split, *key)
-        # Freeze actual inputs again immediately before the paid attempt.
-        snapshot_a, snapshot_b, task_paths = _validate_inputs(
-            plan, config_a, config_b, effective_tasks_dir, split
-        )
-        arm = entry["arm"]
-        config_dir = config_a if arm == "a" else config_b
-        snapshot = snapshot_a if arm == "a" else snapshot_b
-        task_id, repeat = entry["task_id"], entry["repeat"]
-        task = _load_frozen_task(task_paths[task_id], task_id, spec["task_hashes"][task_id])
-        marker.parent.mkdir(parents=True, exist_ok=True)
-        marker.write_text(json.dumps({"status": "started", "attempt": key}, indent=2) + "\n")
-        run_id = f"experiment_{plan['plan_hash'][:12]}_{split}_{arm}_{repeat}_{task_id}"
-        result_path = _execute_attempt(
-            task=task,
-            arm=arm,
-            repeat_index=repeat,
-            config_dir=config_dir,
-            model=spec["model"],
-            timeout_seconds=spec["timeout_seconds"],
-            runs_dir=runs_dir,
-            run_id=run_id,
-            tasks_dir=effective_tasks_dir,
-        )
-        row = json.loads(result_path.read_text())
-        row.update(
-            {
-                "experiment_plan_hash": plan["plan_hash"],
-                "experiment_split": split,
-                "experiment_arm": arm,
-                "repeat_index": repeat,
-                "task_definition_hash": spec["task_hashes"][task_id],
-                "effective_config_hash": snapshot["hash"],
-                "model": spec["model"],
-                "execution_status": "completed",
-                "execution_stage": "finished",
-                "execution_mode": "fresh_process_per_attempt",
-                "loaded_instruction_files": snapshot["instruction_files"],
-            }
-        )
-        result_path.write_text(json.dumps(row, indent=2) + "\n")
-        marker.unlink()
-        executed.append(row)
-        completed.append(row)
+    with _plan_lock(runs_dir, plan["plan_hash"]):
+        existing = _existing_attempts(runs_dir, plan, split)
+        # Refuse before starting any new paid work if a prior process left an
+        # ambiguous receipt for this plan/split. Continuing a different arm
+        # would conceal that uncertainty.
+        for entry in schedule:
+            key = (entry["task_id"], entry["arm"], entry["repeat"])
+            if (
+                key not in existing
+                and _attempt_marker(runs_dir, plan["plan_hash"], split, *key).exists()
+            ):
+                raise ValueError(f"Ambiguous started-but-not-finished experiment attempt: {key}")
+        for entry in schedule:
+            key = (entry["task_id"], entry["arm"], entry["repeat"])
+            if key in existing:
+                resumed.append(existing[key])
+                completed.append(existing[key])
+                continue
+            # Re-freeze all selected task hashes and both config trees before
+            # each paid try, so a later file edit cannot alter the cohort.
+            snapshot_a, snapshot_b, tasks = _validate_inputs(
+                plan, config_a, config_b, effective_tasks_dir, split
+            )
+            arm = entry["arm"]
+            snapshot = snapshot_a if arm == "a" else snapshot_b
+            task_id, repeat = entry["task_id"], entry["repeat"]
+            marker = _attempt_marker(runs_dir, plan["plan_hash"], split, *key)
+            _create_marker(marker, key)
+            run_id = f"experiment_{plan['plan_hash'][:12]}_{split}_{arm}_{repeat}_{task_id}"
+            with _isolated_config(snapshot, runs_dir / ".experiment-configs") as isolated_config:
+                result_path = _execute_attempt(
+                    task=tasks[task_id],
+                    arm=arm,
+                    repeat_index=repeat,
+                    config_dir=isolated_config,
+                    model=spec["model"],
+                    timeout_seconds=spec["timeout_seconds"],
+                    runs_dir=runs_dir,
+                    run_id=run_id,
+                    tasks_dir=effective_tasks_dir,
+                )
+            row = json.loads(result_path.read_text())
+            row.update(
+                {
+                    "experiment_plan_hash": plan["plan_hash"],
+                    "experiment_split": split,
+                    "experiment_arm": arm,
+                    "repeat_index": repeat,
+                    "task_definition_hash": spec["task_hashes"][task_id],
+                    "effective_config_hash": snapshot["hash"],
+                    "requested_model": spec["model"],
+                    "experiment_attempt_status": "attempted",
+                    "execution_mode": "fresh_process_per_attempt",
+                    "configured_instruction_files": snapshot["instruction_files"],
+                }
+            )
+            result_path.write_text(json.dumps(row, indent=2) + "\n")
+            marker.unlink()
+            executed.append(row)
+            completed.append(row)
+    eligible = all(
+        row.get("execution_status") == "completed" and row.get("model") == spec["model"]
+        for row in completed
+    )
     return {
-        "status": "completed",
+        "status": "completed" if eligible else "review_required",
         "plan_hash": plan["plan_hash"],
         "split": split,
         "executed_attempts": executed,

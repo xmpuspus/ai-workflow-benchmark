@@ -95,7 +95,9 @@ def test_counterbalanced_attempts_are_receipted_and_resume_without_duplicates(
     calls = []
 
     def fake_attempt(**kwargs):
-        calls.append((kwargs["arm"], kwargs["repeat_index"], kwargs["timeout_seconds"]))
+        calls.append(
+            (kwargs["arm"], kwargs["repeat_index"], kwargs["timeout_seconds"], kwargs["config_dir"])
+        )
         run_dir = kwargs["runs_dir"] / f"{kwargs['run_id']}_run1"
         run_dir.mkdir(parents=True)
         path = run_dir / f"{kwargs['task'].id}_claude-code-custom.json"
@@ -106,6 +108,7 @@ def test_counterbalanced_attempts_are_receipted_and_resume_without_duplicates(
                     "tool": "claude-code-custom",
                     "run_id": f"{kwargs['run_id']}_run1",
                     "model": "claude-test-model",
+                    "execution_status": "completed",
                     "outcome": {
                         "success": True,
                         "partial_credit_score": 100,
@@ -118,15 +121,18 @@ def test_counterbalanced_attempts_are_receipted_and_resume_without_duplicates(
 
     monkeypatch.setattr("awb.experiments.execution._execute_attempt", fake_attempt)
     first = execute_plan(plan, config_a, config_b, tasks_dir, "development", tmp_path / "runs")
-    assert [arm for arm, _, _ in calls] == [
+    assert [arm for arm, _, _, _ in calls] == [
         entry["arm"] for entry in plan["schedule"] if entry["split"] == "development"
     ]
-    assert {timeout for _, _, timeout in calls} == {120}
+    assert {timeout for _, _, timeout, _ in calls} == {120}
+    assert len({path for _, _, _, path in calls}) == 2
+    assert all(not path.exists() for _, _, _, path in calls)
     assert len(first["completed_attempts"]) == 2
     for row in first["completed_attempts"]:
         assert row["experiment_plan_hash"] == plan["plan_hash"]
         assert row["repeat_index"] == 1
         assert row["execution_status"] == "completed"
+        assert row["requested_model"] == "claude-test-model"
         assert row["effective_config_hash"] in {
             plan["spec"]["config_a_hash"],
             plan["spec"]["config_b_hash"],
@@ -160,9 +166,89 @@ def test_config_snapshot_rejects_auth_or_state_files(tmp_path):
         config_snapshot(config)
 
 
+def test_config_snapshot_rejects_credential_environment_key_without_echoing_value(tmp_path):
+    from awb.experiments.execution import config_snapshot
+
+    config = tmp_path / "config"
+    config.mkdir()
+    (config / "settings.json").write_text('{"env":{"API_TOKEN":"do-not-print-me"}}')
+    with pytest.raises(ValueError) as error:
+        config_snapshot(config)
+    assert "API_TOKEN" not in str(error.value)
+    assert "do-not-print-me" not in str(error.value)
+
+
 def test_model_is_explicitly_pinned_in_each_adapter_command(tmp_path):
     from awb.experiments.execution import _ModelPinnedClaudeAdapter
 
     adapter = _ModelPinnedClaudeAdapter(tmp_path, "claude-test-model")
     command = adapter._get_cmd("prompt", 3)
     assert command[-2:] == ["--model", "claude-test-model"]
+    assert "--dangerously-skip-permissions" not in command
+
+
+def test_failed_observed_receipt_is_not_rewritten_or_rerun(monkeypatch, tmp_path):
+    from awb.experiments.execution import execute_plan
+
+    plan, config_a, config_b, tasks_dir = _plan(tmp_path)
+    calls = []
+
+    def failed_attempt(**kwargs):
+        calls.append(kwargs["arm"])
+        run_dir = kwargs["runs_dir"] / f"{kwargs['run_id']}_run1"
+        run_dir.mkdir(parents=True)
+        path = run_dir / f"{kwargs['task'].id}_claude-code-custom.json"
+        path.write_text(
+            json.dumps(
+                {
+                    "task_id": kwargs["task"].id,
+                    "tool": "claude-code-custom",
+                    "run_id": f"{kwargs['run_id']}_run1",
+                    "model": "observed-other-model",
+                    "execution_status": "timed_out",
+                    "outcome": {
+                        "success": False,
+                        "partial_credit_score": 0,
+                        "partial_credit_max": 100,
+                    },
+                }
+            )
+        )
+        return path
+
+    monkeypatch.setattr("awb.experiments.execution._execute_attempt", failed_attempt)
+    first = execute_plan(plan, config_a, config_b, tasks_dir, "development", tmp_path / "runs")
+    assert len(first["executed_attempts"]) == 2
+    receipt = first["executed_attempts"][0]
+    assert receipt["model"] == "observed-other-model"
+    assert receipt["execution_status"] == "timed_out"
+    assert receipt["requested_model"] == "claude-test-model"
+    with pytest.raises(ValueError, match="model differs"):
+        execute_plan(plan, config_a, config_b, tasks_dir, "development", tmp_path / "runs")
+    assert len(calls) == 2
+
+
+def test_marker_creation_is_exclusive(tmp_path):
+    from awb.experiments.execution import _create_marker
+
+    marker = tmp_path / "marker.json"
+    _create_marker(marker, ("BF-001", "a", 1))
+    with pytest.raises(ValueError, match="Ambiguous"):
+        _create_marker(marker, ("BF-001", "a", 1))
+
+
+def test_all_selected_task_hashes_are_checked_before_any_attempt(monkeypatch, tmp_path):
+    from awb.experiments.execution import execute_plan
+
+    plan, config_a, config_b, tasks_dir = _plan(tmp_path)
+    plan["spec"]["development_tasks"] = ["BF-001", "BF-002"]
+    plan["spec"]["task_hashes"]["BF-002"] = "c" * 64
+    plan = create_plan(plan["spec"])
+    calls = []
+    monkeypatch.setattr(
+        "awb.experiments.execution._execute_attempt", lambda **kwargs: calls.append(kwargs)
+    )
+
+    with pytest.raises(ValueError, match="missing"):
+        execute_plan(plan, config_a, config_b, tasks_dir, "development", tmp_path / "runs")
+    assert calls == []
