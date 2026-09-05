@@ -25,7 +25,7 @@ from awb.scoring.normalize import (
 class ScoreReport:
     tool: str
     composite_score: float | None
-    per_metric_scores: dict[str, float] = field(default_factory=dict)
+    per_metric_scores: dict[str, float | None] = field(default_factory=dict)
     per_metric_normalized: dict[str, float | None] = field(default_factory=dict)
     capability_profile: CapabilityProfile | None = None
 
@@ -47,9 +47,17 @@ def generate_report(tool_stats: dict) -> ScoreReport:
     }
     normalized = {
         "correctness": round(correctness, 1),
-        "cost_efficiency": normalize_cost(tool_stats["avg_cost"]),
+        "cost_efficiency": (
+            normalize_cost(tool_stats["avg_cost"])
+            if tool_stats.get("usage_measurements", 0) >= n
+            else None
+        ),
         "speed": normalize_speed(tool_stats["avg_time"]),
-        "code_quality": normalize_quality(tool_stats["total_lint_delta"], n),
+        "code_quality": (
+            normalize_quality(tool_stats["total_lint_delta"], n)
+            if tool_stats.get("lint_measurements", 0) >= n
+            else None
+        ),
         "reliability": (
             normalize_regressions(tool_stats["total_regressions"], n)
             if tool_stats.get("regression_measurements", 0) >= n
@@ -60,7 +68,11 @@ def generate_report(tool_stats: dict) -> ScoreReport:
             if tool_stats.get("security_measurements", 0) >= n
             else None
         ),
-        "efficiency": normalize_iterations(tool_stats["avg_iterations"]),
+        "efficiency": (
+            normalize_iterations(tool_stats["avg_iterations"])
+            if tool_stats.get("usage_measurements", 0) >= n
+            else None
+        ),
     }
     composite = compute_composite_score(tool_stats)
     return ScoreReport(

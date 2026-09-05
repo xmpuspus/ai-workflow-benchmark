@@ -39,12 +39,13 @@ class ToolReadiness:
     regression_safety: float | None
     security: float | None
     review_burden: float
-    maintainability: float
-    cost: float
+    maintainability: float | None
+    cost: float | None
     speed: float
     cohort_id: str = ""
     comparison_eligible: bool = False
     ineligibility_reasons: list[str] | None = None
+    rank: int | None = None
 
 
 @click.command()
@@ -95,7 +96,7 @@ def _compute_readiness_scores() -> list[ToolReadiness]:
 
     recorder = ResultRecorder()
     runs = recorder.load_all_runs()
-    from awb.scoring.cohorts import cohort_group_key, identity_from_result
+    from awb.scoring.cohorts import assess_cohort_coverage, cohort_group_key, identity_from_result
 
     by_cohort: dict[str, list] = {}
     for results in runs.values():
@@ -104,7 +105,12 @@ def _compute_readiness_scores() -> list[ToolReadiness]:
     out: list[ToolReadiness] = []
     for cohort_id, cohort_results in sorted(by_cohort.items()):
         identity = identity_from_result(cohort_results[0])
+        coverage = assess_cohort_coverage(cohort_results)
         d = readiness_from_results(cohort_results)
+        reasons = [f"missing {name}" for name in identity.missing_fields]
+        reasons.extend(coverage.reasons)
+        if d["composite"] is None:
+            reasons.append("missing measurement coverage")
         out.append(
             ToolReadiness(
                 tool=cohort_results[0].tool,
@@ -118,11 +124,18 @@ def _compute_readiness_scores() -> list[ToolReadiness]:
                 cost=d["cost"],
                 speed=d["speed"],
                 cohort_id=cohort_id,
-                comparison_eligible=identity.eligible,
-                ineligibility_reasons=[f"missing {name}" for name in identity.missing_fields],
+                comparison_eligible=identity.eligible
+                and coverage.eligible
+                and d["composite"] is not None,
+                ineligibility_reasons=sorted(set(reasons)),
             )
         )
     out.sort(key=lambda s: (not s.comparison_eligible, -(s.composite or -1), s.tool))
+    rank = 0
+    for score in out:
+        if score.comparison_eligible:
+            rank += 1
+            score.rank = rank
     return out
 
 
@@ -134,12 +147,17 @@ def _render_readiness_panel(scores: list[ToolReadiness], explain: bool) -> None:
         table.add_column("Tool")
         table.add_column("Score", justify="right")
         table.add_column("n", justify="right")
-        for i, s in enumerate(ranked, 1):
+        for s in ranked:
             style = score_style(s.composite) if s.composite is not None else MUTED
             score = f"{s.composite:5.1f}" if s.composite is not None else "  n/a"
             table.add_row(
-                str(i),
-                s.tool,
+                str(s.rank) if s.rank is not None else "n/a",
+                s.tool
+                + (
+                    ""
+                    if s.comparison_eligible
+                    else " (ineligible: " + "; ".join(s.ineligibility_reasons or []) + ")"
+                ),
                 f"[{style}]{score}[/{style}]",
                 str(s.n_results),
             )
@@ -159,23 +177,28 @@ def _render_readiness_panel(scores: list[ToolReadiness], explain: bool) -> None:
             ("n", "right"),
         ]:
             table.add_column(col, justify=just)
-        for i, s in enumerate(ranked, 1):
+        for s in ranked:
             style = score_style(s.composite) if s.composite is not None else MUTED
             score = f"{s.composite:5.1f}" if s.composite is not None else "  n/a"
             table.add_row(
-                str(i),
-                s.tool,
+                str(s.rank) if s.rank is not None else "n/a",
+                s.tool
+                + (
+                    ""
+                    if s.comparison_eligible
+                    else " (ineligible: " + "; ".join(s.ineligibility_reasons or []) + ")"
+                ),
                 f"[{style}]{score}[/{style}]",
                 f"{s.correctness:5.1f}",
                 f"{s.regression_safety:5.1f}" if s.regression_safety is not None else "  n/a",
                 f"{s.security:5.1f}" if s.security is not None else "  n/a",
                 f"{s.review_burden:5.1f}",
-                f"{s.maintainability:5.1f}",
-                f"{s.cost:5.1f}",
+                f"{s.maintainability:5.1f}" if s.maintainability is not None else "  n/a",
+                f"{s.cost:5.1f}" if s.cost is not None else "  n/a",
                 f"{s.speed:5.1f}",
                 str(s.n_results),
             )
-    leader = ranked[0]
+    leader = next((score for score in ranked if score.comparison_eligible), None)
     subtitle = (
         f"[{MUTED}]Weights: correctness 35, regression-safety 20, "
         f"security 15, review 10, maintainability 8, cost 7, speed 5.[/{MUTED}]"
@@ -189,7 +212,8 @@ def _render_readiness_panel(scores: list[ToolReadiness], explain: bool) -> None:
             expand=False,
         )
     )
-    console.print(
-        f"\n[{MUTED}]Inspect the leader's traces:[/{MUTED}] "
-        f"awb trace grade <run_dir>  [{MUTED}]# top tool: {leader.tool}[/{MUTED}]"
-    )
+    if leader is not None:
+        console.print(
+            f"\n[{MUTED}]Inspect the leader's traces:[/{MUTED}] "
+            f"awb trace grade <run_dir>  [{MUTED}]# top tool: {leader.tool}[/{MUTED}]"
+        )

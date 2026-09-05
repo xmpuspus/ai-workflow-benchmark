@@ -61,7 +61,7 @@
                         <td><span data-target="{{ tool.success_rate }}">0</span>%</td>
                         <td><span data-target="{{ tool.avg_score_pct }}">0</span>%</td>
                         <td>{{ tool.avg_time }}</td>
-                        <td>${{ tool.avg_cost }}</td>
+                        <td>{% if tool.avg_cost is not none %}${{ tool.avg_cost }}{% else %}n/a{% endif %}</td>
                         <td>{{ tool.avg_iterations }}</td>
                     </tr>
                     {% endfor %}

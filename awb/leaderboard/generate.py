@@ -11,7 +11,11 @@ from jinja2 import Environment, FileSystemLoader
 from awb.core.config import RESULTS_DIR
 from awb.core.results import _dict_to_result
 from awb.core.task_loader import load_all_tasks
-from awb.scoring.cohorts import cohort_group_key_mapping, identity_from_mapping
+from awb.scoring.cohorts import (
+    assess_cohort_coverage,
+    cohort_group_key_mapping,
+    identity_from_mapping,
+)
 from awb.scoring.composite import compute_aggregate_score
 
 
@@ -58,6 +62,8 @@ def aggregate_by_tool(results: list[dict]) -> dict[str, dict]:
                 "total_regressions": 0,
                 "security_measurements": 0,
                 "regression_measurements": 0,
+                "lint_measurements": 0,
+                "usage_measurements": 0,
             }
         t = tools[cohort_key]
         t["runs"].append(r)
@@ -84,13 +90,21 @@ def aggregate_by_tool(results: list[dict]) -> dict[str, dict]:
             "measured_findings",
         }:
             t["regression_measurements"] += 1
+        if r["quality"].get("lint_status") in {
+            "measured",
+            "measured_clean",
+            "measured_findings",
+        }:
+            t["lint_measurements"] += 1
+        if r["cost"].get("usage_status") == "complete":
+            t["usage_measurements"] += 1
 
     for t in tools.values():
         n = t["total_tasks"] or 1
         t["success_rate"] = round(t["successes"] / n * 100, 1)
         t["avg_score_pct"] = round(t["total_score"] / max(t["total_max_score"], 1) * 100, 1)
         t["avg_time"] = round(t["total_time"] / n, 1)
-        t["avg_cost"] = round(t["total_cost"] / n, 2)
+        t["avg_cost"] = round(t["total_cost"] / n, 2) if t["usage_measurements"] == n else None
         t["avg_iterations"] = round(t["total_iterations"] / n, 1)
 
     return tools
@@ -119,11 +133,16 @@ def generate_leaderboard(
 
     for tool_stats in tools.values():
         run_results = [_dict_to_result(r) for r in tool_stats["runs"]]
+        coverage = assess_cohort_coverage(tool_stats["runs"])
         agg_score, _ = compute_aggregate_score(run_results, task_defs)
         tool_stats["composite_score"] = agg_score
+        if not coverage.eligible:
+            tool_stats["comparison_eligible"] = False
+            tool_stats["ineligibility_reasons"].extend(coverage.reasons)
         if agg_score is None:
             tool_stats["comparison_eligible"] = False
             tool_stats["ineligibility_reasons"].append("missing quality measurement coverage")
+        tool_stats["ineligibility_reasons"] = sorted(set(tool_stats["ineligibility_reasons"]))
 
     ranked = sorted(
         tools.values(),

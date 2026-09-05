@@ -1,4 +1,5 @@
 import json
+from pathlib import Path
 
 from awb.leaderboard.generate import aggregate_by_tool, generate_leaderboard
 
@@ -11,12 +12,17 @@ def _result(run_id: str, *, model: str = "model-a", complete: bool = True) -> di
         "timestamp": "2026-09-05T00:00:00Z",
         "model": model,
         "tool_version": "1.2.3" if complete else "",
+        "adapter_version": "1.2.3" if complete else "",
         "task_set_hash": "ab" * 32 if complete else "",
+        "task_definition_hash": "cd" * 32 if complete else "",
         "effective_config_hash": "config-a" if complete else "",
         "evaluator_version": "evaluator-a" if complete else "",
         "execution_mode": "local" if complete else "",
         "environment_fingerprint": "env-a" if complete else "",
         "budget_fingerprint": "budget-a" if complete else "",
+        "cohort_manifest": (
+            {"selected_task_ids": ["BF-001"], "requested_repeats": 1} if complete else {}
+        ),
         "outcome": {
             "success": True,
             "partial_credit_score": 100,
@@ -31,11 +37,17 @@ def _result(run_id: str, *, model: str = "model-a", complete: bool = True) -> di
             "files_modified": 1,
             "lines_changed": 1,
         },
-        "cost": {"input_tokens": 0, "output_tokens": 0, "estimated_cost_usd": 0},
+        "cost": {
+            "input_tokens": 0,
+            "output_tokens": 0,
+            "estimated_cost_usd": 0,
+            "usage_status": "complete" if complete else "unknown",
+        },
         "quality": {
             "lint_delta": 0,
             "security_delta": 0,
             "test_regressions": 0,
+            "lint_status": "measured_clean" if complete else "missing",
             "security_status": "measured_clean" if complete else "missing",
             "test_regressions_status": "measured_clean" if complete else "missing",
         },
@@ -84,3 +96,25 @@ def test_generated_legacy_row_is_visible_but_unranked_and_has_no_chart(tmp_path)
     assert "Not comparison eligible" in html
     assert '<td class="rank">n/a</td>' in html
     assert '<div class="chart-section">' not in html
+
+
+def test_incomplete_repeat_grid_is_visible_but_unranked(tmp_path):
+    results_dir = tmp_path / "runs"
+    run_dir = results_dir / "partial"
+    run_dir.mkdir(parents=True)
+    result = _result("partial_run1")
+    result["cohort_manifest"]["requested_repeats"] = 2
+    (run_dir / "BF-001_tool.json").write_text(json.dumps(result))
+
+    output = generate_leaderboard(results_dir=results_dir, output_dir=tmp_path / "out")
+    html = output.read_text()
+
+    assert "Not comparison eligible" in html
+    assert '<td class="rank">n/a</td>' in html
+
+
+def test_leaderboard_sorting_preserves_rank_and_radar_series_include_model():
+    script = Path("awb/leaderboard/static/leaderboard.js").read_text()
+
+    assert "rank.textContent =" not in script
+    assert 'r.tool + " · " + r.model + " · " + r.cohort_id' in script

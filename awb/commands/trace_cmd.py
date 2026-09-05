@@ -7,8 +7,8 @@ from pathlib import Path
 
 import click
 
-from awb.commands._shared import MUTED, console, resolve_run_dir_or_exit
-from awb.trace.grader import grade_trace
+from awb.commands._shared import MUTED, console, emit_json, resolve_run_dir_or_exit
+from awb.trace.grader import grade_trace_or_none
 
 
 @click.group()
@@ -18,23 +18,27 @@ def trace():
 
 @trace.command("grade")
 @click.argument("run_dir", required=False, type=click.Path())
-def grade(run_dir: str | None):
+@click.option("--format", "fmt", type=click.Choice(["text", "json"]), default="text")
+def grade(run_dir: str | None, fmt: str):
     """Score every trace.jsonl in RUN_DIR by up to 6 behavior dimensions (0-100).
 
     RUN_DIR defaults to the most recently saved run (see --last-run plumbing
     in _shared.py) when omitted, or when passed the literal "last".
     """
-    resolved = resolve_run_dir_or_exit(run_dir, "text")
-    if run_dir is None or run_dir == "last":
+    resolved = resolve_run_dir_or_exit(run_dir, fmt)
+    if fmt == "text" and (run_dir is None or run_dir == "last"):
         console.print(f"[{MUTED}]using last run: {resolved}[/{MUTED}]")
 
     run_dir = Path(resolved)
     trace_files = sorted(run_dir.glob("*.trace.jsonl"))
     if not trace_files:
-        console.print("[yellow]No .trace.jsonl files found[/yellow]")
+        if fmt == "json":
+            emit_json([])
+        else:
+            console.print("[yellow]No .trace.jsonl files found[/yellow]")
         return
 
-    rows: list[tuple[str, dict[str, int]]] = []
+    rows: list[tuple[str, dict[str, int] | None]] = []
     for tp in trace_files:
         # Scope is gradeable only from the explicit serialized edit contract.
         result_path = tp.with_name(tp.name.replace(".trace.jsonl", ".json"))
@@ -47,8 +51,12 @@ def grade(run_dir: str | None):
                 ).get("allowed_edit_paths", [])
             except (OSError, json.JSONDecodeError):
                 allowed_edit_paths = []
-        scores = grade_trace(tp, allowed_edit_paths=allowed_edit_paths)
+        scores = grade_trace_or_none(tp, allowed_edit_paths=allowed_edit_paths)
         rows.append((tp.stem.replace(".trace", ""), scores))
+
+    if fmt == "json":
+        emit_json([{"task": name, "scores": scores} for name, scores in rows])
+        return
 
     console.print("\n[bold]Trace Behavior Scores[/bold] (0-100)\n")
     header = (
@@ -58,6 +66,10 @@ def grade(run_dir: str | None):
     console.print(header)
     console.print(f"  {'-' * 28} {'-' * 10} {'-' * 9} {'-' * 8} {'-' * 7} {'-' * 8} {'-' * 8}")
     for name, sc in rows:
+        if sc is None:
+            unavailable = f"{'n/a':>10} {'n/a':>9} {'n/a':>8} {'n/a':>7} {'n/a':>8} {'n/a':>8}"
+            console.print(f"  {name[:28]:<28} {unavailable}")
+            continue
         # context_discipline/tool_call_efficiency aren't present on every
         # trace (only gradeable when the trace/task context supplies enough
         # signal - see grade_trace's docstring); blank rather than fake.

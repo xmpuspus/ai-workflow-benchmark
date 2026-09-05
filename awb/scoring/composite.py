@@ -96,20 +96,30 @@ def compute_task_score(
 
     regression_status = quality_measurement_status(result, "test_regressions")
     security_status = quality_measurement_status(result, "security")
+    lint_status = quality_measurement_status(result, "lint")
+    usage_status = getattr(result.cost, "usage_status", "unknown")
     measured_statuses = {"measured", "measured_clean", "measured_findings"}
     per_metric: dict[str, float | None] = {
         "correctness": round(correctness, 1),
-        "cost_efficiency": normalize_cost(
-            result.cost.estimated_cost_usd,
-            baselines.cost_optimal,
-            baselines.cost_baseline,
+        "cost_efficiency": (
+            normalize_cost(
+                result.cost.estimated_cost_usd,
+                baselines.cost_optimal,
+                baselines.cost_baseline,
+            )
+            if usage_status == "complete"
+            else None
         ),
         "speed": normalize_speed(
             result.metrics.wall_clock_seconds,
             baselines.speed_optimal,
             baselines.speed_baseline,
         ),
-        "code_quality": normalize_quality(result.quality.lint_delta, 1),
+        "code_quality": (
+            normalize_quality(result.quality.lint_delta, 1)
+            if lint_status in measured_statuses
+            else None
+        ),
         "reliability": (
             normalize_regressions(result.quality.test_regressions, 1)
             if regression_status in measured_statuses
@@ -120,7 +130,9 @@ def compute_task_score(
             if security_status in measured_statuses
             else None
         ),
-        "efficiency": _compute_efficiency(result, baselines),
+        "efficiency": _compute_efficiency(result, baselines)
+        if usage_status == "complete"
+        else None,
     }
 
     composite = None
@@ -132,6 +144,9 @@ def compute_task_score(
         per_metric=per_metric,
         composite=round(composite, 1) if composite is not None else None,
         measurement_coverage={
+            "cost_efficiency": usage_status,
+            "efficiency": usage_status,
+            "code_quality": lint_status,
             "reliability": regression_status,
             "security": security_status,
         },
@@ -151,12 +166,46 @@ def compute_aggregate_score(
     if weights is None:
         weights = load_weight_profile()
 
-    task_scores = []
+    attempt_scores: dict[str, list[TaskScore]] = {}
     for result in results:
         task = tasks.get(result.task_id)
         if not task:
             continue
-        task_scores.append(compute_task_score(result, task, weights))
+        attempt_scores.setdefault(result.task_id, []).append(
+            compute_task_score(result, task, weights)
+        )
+
+    task_scores = []
+    for task_id, scores in sorted(attempt_scores.items()):
+        metric_names = {name for score in scores for name in score.per_metric}
+        per_metric = {
+            name: (
+                round(sum(float(score.per_metric[name]) for score in scores) / len(scores), 1)
+                if all(score.per_metric.get(name) is not None for score in scores)
+                else None
+            )
+            for name in metric_names
+        }
+        composites = [score.composite for score in scores]
+        task_scores.append(
+            TaskScore(
+                task_id=task_id,
+                difficulty=scores[0].difficulty,
+                per_metric=per_metric,
+                composite=(
+                    round(sum(float(value) for value in composites) / len(composites), 1)
+                    if all(value is not None for value in composites)
+                    else None
+                ),
+                measurement_coverage={
+                    name: status
+                    if len({score.measurement_coverage.get(name, "missing") for score in scores})
+                    == 1
+                    else "mixed"
+                    for name, status in scores[0].measurement_coverage.items()
+                },
+            )
+        )
 
     if not task_scores:
         return 0.0, []
@@ -184,6 +233,10 @@ def compute_composite_score(tool_stats: dict) -> float | None:
     if tool_stats.get("regression_measurements", 0) < n:
         return None
     if tool_stats.get("security_measurements", 0) < n:
+        return None
+    if tool_stats.get("lint_measurements", 0) < n:
+        return None
+    if tool_stats.get("usage_measurements", 0) < n:
         return None
     success = normalize_success_rate(tool_stats["success_rate"])
     partial = normalize_partial_credit(tool_stats["avg_score_pct"])

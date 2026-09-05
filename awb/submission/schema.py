@@ -82,6 +82,7 @@ class SubmissionRunCost:
     output_tokens: int = 0
     estimated_cost_usd: float = 0.0
     estimated_credits: float | None = None
+    usage_status: str = "unknown"
 
 
 @dataclass
@@ -91,6 +92,7 @@ class SubmissionRunQuality:
     test_regressions: int = 0
     security_status: str = "missing"
     test_regressions_status: str = "missing"
+    lint_status: str = "missing"
 
 
 @dataclass

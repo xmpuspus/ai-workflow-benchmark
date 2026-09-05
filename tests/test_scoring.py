@@ -14,7 +14,12 @@ from awb.core.config import (
 )
 from awb.scoring.baselines import TaskBaselines
 from awb.scoring.capabilities import compute_capability_profile
-from awb.scoring.composite import compute_composite_score, compute_task_score, load_weight_profile
+from awb.scoring.composite import (
+    compute_aggregate_score,
+    compute_composite_score,
+    compute_task_score,
+    load_weight_profile,
+)
 from awb.scoring.integrity import detect_contamination, detect_variance_anomalies
 from awb.scoring.normalize import (
     normalize_cost,
@@ -45,6 +50,8 @@ def _make_tool_stats(**overrides) -> dict:
         "total_regressions": 0,
         "security_measurements": 10,
         "regression_measurements": 10,
+        "lint_measurements": 10,
+        "usage_measurements": 10,
     }
     base.update(overrides)
     return base
@@ -75,6 +82,8 @@ def _make_result(
     )
     result.quality.security_status = "measured_clean"
     result.quality.test_regressions_status = "measured_clean"
+    result.quality.lint_status = "measured_clean"
+    result.cost.usage_status = "complete"
     return result
 
 
@@ -166,6 +175,32 @@ class TestNormalize:
 
 
 class TestCompositeScore:
+    def test_aggregate_weights_each_task_once_after_repeat_aggregation(self):
+        low = _make_result(task_id="BF-001", success=False, score=0)
+        high = _make_result(task_id="BF-002", success=True, score=100)
+        tasks = {
+            "BF-001": _make_task(task_id="BF-001"),
+            "BF-002": _make_task(task_id="BF-002"),
+        }
+
+        once, _ = compute_aggregate_score([low, high], tasks)
+        repeated, scores = compute_aggregate_score([low, *([high] * 5)], tasks)
+
+        assert repeated == once
+        assert len(scores) == 2
+
+    def test_unknown_usage_and_lint_suppress_cost_efficiency_and_composite(self):
+        result = _make_result()
+        result.cost.usage_status = "unknown"
+        result.quality.lint_status = "missing"
+
+        score = compute_task_score(result, _make_task())
+
+        assert score.per_metric["cost_efficiency"] is None
+        assert score.per_metric["efficiency"] is None
+        assert score.per_metric["code_quality"] is None
+        assert score.composite is None
+
     def test_missing_security_and_regression_measurements_suppress_composite(self):
         result = _make_result()
         result.quality.security_status = "missing"
@@ -223,6 +258,15 @@ class TestBaselines:
 
 
 class TestCapabilities:
+    def test_cost_discipline_is_unknown_when_usage_is_incomplete(self):
+        result = _make_result(task_id="BF-001", cost=0)
+        result.cost.usage_status = "unknown"
+        tasks = {"BF-001": _make_task(task_id="BF-001")}
+
+        profile = compute_capability_profile([result], tasks)
+
+        assert profile.scores["cost_discipline"].score is None
+
     def test_profile_computes(self):
         results = [_make_result(task_id="BF-001", score=80, max_score=100)]
         tasks = {
@@ -426,8 +470,13 @@ class TestTokenEfficiencyScoring:
     def test_weight_profiles_sum_to_one(self):
         from awb.scoring.composite import load_weight_profile
 
-        for profile in ("default", "correctness_focused", "production",
-                         "token_efficient", "rate_limited"):
+        for profile in (
+            "default",
+            "correctness_focused",
+            "production",
+            "token_efficient",
+            "rate_limited",
+        ):
             weights = load_weight_profile(profile)
             total = sum(weights.values())
             assert abs(total - 1.0) < 0.001, f"{profile} sums to {total}"
@@ -438,6 +487,7 @@ class TestTokenEfficiencyScoring:
         # With tokens, efficiency should differ from pure iteration score
         sample_result.cost.input_tokens = 50000
         sample_result.cost.output_tokens = 10000
+        sample_result.cost.usage_status = "complete"
         sample_result.metrics.iteration_count = 5
         score = compute_task_score(sample_result, sample_task)
         assert "efficiency" in score.per_metric

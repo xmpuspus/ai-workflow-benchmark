@@ -104,6 +104,7 @@ def parse_submission(data: dict) -> Submission:
                         output_tokens=cost_raw.get("output_tokens", 0),
                         estimated_cost_usd=cost_raw["estimated_cost_usd"],
                         estimated_credits=cost_raw.get("estimated_credits"),
+                        usage_status=cost_raw.get("usage_status", "unknown"),
                     ),
                     quality=SubmissionRunQuality(
                         lint_delta=quality_raw.get("lint_delta", 0),
@@ -113,6 +114,7 @@ def parse_submission(data: dict) -> Submission:
                         test_regressions_status=quality_raw.get(
                             "test_regressions_status", "missing"
                         ),
+                        lint_status=quality_raw.get("lint_status", "missing"),
                     ),
                 )
             )
@@ -162,11 +164,15 @@ def submission_to_run_results(submission: Submission) -> list[RunResult]:
                     output_tokens=run.cost.output_tokens,
                     estimated_cost_usd=run.cost.estimated_cost_usd,
                     estimated_credits=run.cost.estimated_credits,
+                    usage_status=run.cost.usage_status,
                 ),
                 quality=RunQuality(
                     lint_delta=run.quality.lint_delta,
                     security_delta=run.quality.security_delta,
                     test_regressions=run.quality.test_regressions,
+                    lint_status=run.quality.lint_status,
+                    security_status=run.quality.security_status,
+                    test_regressions_status=run.quality.test_regressions_status,
                 ),
                 environment=RunEnvironment(
                     os=submission.environment.os,
@@ -174,8 +180,6 @@ def submission_to_run_results(submission: Submission) -> list[RunResult]:
                 ),
                 task_set_hash=submission.task_set_hash,
             )
-            result.quality.security_status = run.quality.security_status
-            result.quality.test_regressions_status = run.quality.test_regressions_status
             for field_name, value in submission.comparison_identity.items():
                 if value:
                     setattr(result, field_name, value)

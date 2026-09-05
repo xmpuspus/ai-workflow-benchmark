@@ -41,6 +41,18 @@ def _result(task_id: str, tool: str, score: float, max_score: float = 100) -> Ru
 
 
 class TestBuildABReport:
+    def test_unequal_repeats_are_inconclusive_and_counted_unpaired(self):
+        results_a = [_result("T1", "tool", 100)]
+        results_b = [_result("T1", "tool", 0) for _ in range(3)]
+
+        report = build_ab_report(results_a, results_b, label_a="A", label_b="B")
+
+        assert report.n_tasks == 0
+        assert report.p_value is None
+        assert report.significant is False
+        assert report.unpaired_attempts_b == 2
+        assert "unequal repeat" in report.message.lower()
+
     def test_repeats_are_meaned_per_task_and_input_order_does_not_change_result(self):
         results_a = [
             _result("T1", "tool", 0),

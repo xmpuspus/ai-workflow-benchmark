@@ -492,6 +492,11 @@ def _render_stage1_text(
         console.print(
             f"\n  Workflow lift  [{color}]{sign}{lift_report.lift:.1f} pts[/{color}]  ({p_str})"
         )
+        if not lift_report.comparison_eligible:
+            console.print(
+                f"  [{MUTED}]inconclusive: unequal repeat coverage for "
+                f"{', '.join(lift_report.incomplete_tasks)}[/{MUTED}]"
+            )
 
     if verdicts:
         table = Table(title="Rule Integrity", header_style="bold")

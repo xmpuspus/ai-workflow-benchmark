@@ -33,8 +33,7 @@ function initSorting() {
                 return direction === "asc" ? comparison : -comparison;
             });
 
-            rows.forEach(function (row, i) {
-                row.querySelector(".rank").textContent = i + 1;
+            rows.forEach(function (row) {
                 tbody.appendChild(row);
             });
         });
@@ -106,13 +105,14 @@ function drawRadarChart() {
     var toolData = {};
     RESULTS_DATA.forEach(function (r) {
         if (!r.comparison_eligible) return;
-        if (!toolData[r.tool]) {
-            toolData[r.tool] = {
+        var cohortLabel = r.tool + " · " + r.model + " · " + r.cohort_id;
+        if (!toolData[cohortLabel]) {
+            toolData[cohortLabel] = {
                 count: 0, success: 0, score: 0, maxScore: 0,
                 time: 0, cost: 0, iterations: 0, lint: 0, security: 0, regressions: 0
             };
         }
-        var t = toolData[r.tool];
+        var t = toolData[cohortLabel];
         t.count++;
         if (r.outcome.success) t.success++;
         t.score += r.outcome.partial_credit_score;

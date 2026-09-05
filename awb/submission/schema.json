@@ -193,12 +193,18 @@
               "maximum": 100
             },
             "maintainability": {
-              "type": "number",
+              "type": [
+                "number",
+                "null"
+              ],
               "minimum": 0,
               "maximum": 100
             },
             "cost": {
-              "type": "number",
+              "type": [
+                "number",
+                "null"
+              ],
               "minimum": 0,
               "maximum": 100
             },
@@ -279,6 +285,53 @@
                   "type": "number",
                   "minimum": 0,
                   "maximum": 100
+                },
+                "coverage": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "total_traces",
+                    "gradeable_traces",
+                    "rubrics"
+                  ],
+                  "properties": {
+                    "total_traces": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "gradeable_traces": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "rubrics": {
+                      "type": "object",
+                      "additionalProperties": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": [
+                          "measured",
+                          "total",
+                          "status"
+                        ],
+                        "properties": {
+                          "measured": {
+                            "type": "integer",
+                            "minimum": 0
+                          },
+                          "total": {
+                            "type": "integer",
+                            "minimum": 0
+                          },
+                          "status": {
+                            "enum": [
+                              "complete",
+                              "partial"
+                            ]
+                          }
+                        }
+                      }
+                    }
+                  }
                 }
               }
             }
@@ -416,6 +469,9 @@
                     "estimated_credits": {
                       "type": "number",
                       "minimum": 0
+                    },
+                    "usage_status": {
+                      "type": "string"
                     }
                   }
                 },
@@ -436,6 +492,9 @@
                       "type": "string"
                     },
                     "test_regressions_status": {
+                      "type": "string"
+                    },
+                    "lint_status": {
                       "type": "string"
                     }
                   }

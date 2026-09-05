@@ -25,8 +25,13 @@ def _mean_trace_summary(trace_grades: list) -> dict | None:
     sorts after, alphabetically, so output stays deterministic.
     """
     graded = [g for g in trace_grades if g is not None]
+    coverage = {
+        "total_traces": len(trace_grades),
+        "gradeable_traces": len(graded),
+        "rubrics": {},
+    }
     if not graded:
-        return None
+        return {"coverage": coverage}
     present = {k for g in graded for k in g}
     ordered = [k for k in RUBRIC_NAMES if k in present]
     ordered.extend(sorted(k for k in present if k not in RUBRIC_NAMES))
@@ -34,6 +39,12 @@ def _mean_trace_summary(trace_grades: list) -> dict | None:
     for k in ordered:
         values = [g[k] for g in graded if k in g]
         summary[k] = round(sum(values) / len(values), 1)
+        coverage["rubrics"][k] = {
+            "measured": len(values),
+            "total": len(trace_grades),
+            "status": "complete" if len(values) == len(trace_grades) else "partial",
+        }
+    summary["coverage"] = coverage
     return summary
 
 
@@ -58,7 +69,7 @@ def build_submission(results: list, run_dir: Path, task_defs: dict, submitter: s
     from datetime import datetime
 
     from awb import __version__
-    from awb.scoring.cohorts import identity_from_result
+    from awb.scoring.cohorts import assess_cohort_coverage, identity_from_result
     from awb.scoring.readiness import readiness_from_results
     from awb.trace.grader import grade_trace_or_none
 
@@ -71,7 +82,11 @@ def build_submission(results: list, run_dir: Path, task_defs: dict, submitter: s
     identity = {}
     reasons = []
     for field_name in identity_fields:
-        values = {getattr(item, field_name) for item in identities if getattr(item, field_name)}
+        values = {
+            getattr(item, field_name)
+            for item in identities
+            if getattr(item, field_name) not in {None, "", "unknown"}
+        }
         if len(values) > 1:
             reasons.append(f"mixed {field_name}")
             identity[field_name] = ""
@@ -80,6 +95,14 @@ def build_submission(results: list, run_dir: Path, task_defs: dict, submitter: s
         else:
             reasons.append(f"missing {field_name}")
             identity[field_name] = ""
+
+    cohort_coverage = assess_cohort_coverage(results)
+    reasons.extend(cohort_coverage.reasons)
+    reasons = sorted(set(reasons))
+    readiness = readiness_from_results(results)
+    if readiness["composite"] is None:
+        reasons.append("missing measurement coverage")
+        reasons = sorted(set(reasons))
 
     all_trace_grades: list = []
     submission = {
@@ -99,7 +122,7 @@ def build_submission(results: list, run_dir: Path, task_defs: dict, submitter: s
                 "hardware_detail": results[0].environment.hardware,
             },
             "awb_version": __version__,
-            "readiness": readiness_from_results(results),
+            "readiness": readiness,
             "comparison_eligibility": {
                 "eligible": not reasons,
                 "reasons": reasons,
@@ -141,6 +164,7 @@ def build_submission(results: list, run_dir: Path, task_defs: dict, submitter: s
                         "input_tokens": r.cost.input_tokens,
                         "output_tokens": r.cost.output_tokens,
                         "estimated_cost_usd": r.cost.estimated_cost_usd,
+                        "usage_status": getattr(r.cost, "usage_status", "unknown"),
                         **(
                             {"estimated_credits": r.cost.estimated_credits}
                             if r.cost.estimated_credits is not None
@@ -149,6 +173,7 @@ def build_submission(results: list, run_dir: Path, task_defs: dict, submitter: s
                     },
                     "quality": {
                         "lint_delta": r.quality.lint_delta,
+                        "lint_status": getattr(r.quality, "lint_status", "missing"),
                         "security_delta": r.quality.security_delta,
                         "test_regressions": r.quality.test_regressions,
                         "security_status": getattr(r.quality, "security_status", "missing"),

@@ -7,6 +7,8 @@ operational dimensions (review burden, maintainability, cost, speed).
 
 from __future__ import annotations
 
+from collections import Counter
+
 # Weights sum to 1.0. Order is deliberate: the dimensions on top are the
 # ones that decide whether code can ship without a human catching a bug.
 READINESS_DIMENSIONS: list[tuple[str, float]] = [
@@ -34,8 +36,8 @@ def compute_readiness_score(
     regression_safety: float | None,
     security: float | None,
     review_burden: float,
-    maintainability: float,
-    cost: float,
+    maintainability: float | None,
+    cost: float | None,
     speed: float,
 ) -> float | None:
     """Weighted composite over 7 dimensions, each expressed as 0-100."""
@@ -89,35 +91,70 @@ def readiness_from_results(results: list) -> dict:
     compute the score identically. Returns a dict with the 7 dims, `composite`,
     and `n_results`.
     """
-    n = len(results) or 1
+    by_task: dict[str, list] = {}
+    for result in results:
+        by_task.setdefault(result.task_id, []).append(result)
 
-    def _mean(fn):
-        return sum(fn(r) for r in results) / n
+    def _task_mean(fn):
+        if not by_task:
+            return 0.0
+        return sum(
+            sum(fn(result) for result in attempts) / len(attempts) for attempts in by_task.values()
+        ) / len(by_task)
 
-    correctness = 100.0 * sum(1 for r in results if r.outcome.success) / n
+    correctness = (
+        100.0
+        * sum(
+            sum(r.outcome.success for r in attempts) / len(attempts)
+            for attempts in by_task.values()
+        )
+        / (len(by_task) or 1)
+    )
     regression_values, regression_coverage = _measured_quality_values(results, "test_regressions")
     security_values, security_coverage = _measured_quality_values(results, "security")
     regression_safety = (
-        sum(regression_values) / len(regression_values)
+        _task_mean(lambda result: 100.0 if result.quality.test_regressions <= 0 else 0.0)
         if len(regression_values) == len(results) and results
         else None
     )
     security = (
-        sum(security_values) / len(security_values)
+        _task_mean(lambda result: 100.0 if result.quality.security_delta <= 0 else 0.0)
         if len(security_values) == len(results) and results
         else None
     )
     review_burden = max(
-        0.0, 100.0 - 100.0 * _mean(lambda r: r.metrics.files_modified) / REVIEW_BURDEN_FILES_TO_ZERO
-    )
-    maintainability = max(
         0.0,
         100.0
-        - 100.0 * max(0.0, _mean(lambda r: r.quality.lint_delta)) / MAINTAINABILITY_LINT_TO_ZERO,
+        - 100.0 * _task_mean(lambda r: r.metrics.files_modified) / REVIEW_BURDEN_FILES_TO_ZERO,
     )
-    cost = max(0.0, 100.0 - 100.0 * _mean(lambda r: r.cost.estimated_cost_usd) / COST_USD_TO_ZERO)
+    lint_statuses = [quality_measurement_status(result, "lint") for result in results]
+    lint_complete = bool(results) and all(
+        status in {"measured", "measured_clean", "measured_findings"} for status in lint_statuses
+    )
+    usage_statuses = [getattr(result.cost, "usage_status", "unknown") for result in results]
+    usage_complete = bool(results) and all(status == "complete" for status in usage_statuses)
+    maintainability = (
+        max(
+            0.0,
+            100.0
+            - 100.0
+            * max(0.0, _task_mean(lambda r: r.quality.lint_delta))
+            / MAINTAINABILITY_LINT_TO_ZERO,
+        )
+        if lint_complete
+        else None
+    )
+    cost = (
+        max(
+            0.0,
+            100.0 - 100.0 * _task_mean(lambda r: r.cost.estimated_cost_usd) / COST_USD_TO_ZERO,
+        )
+        if usage_complete
+        else None
+    )
     speed = max(
-        0.0, 100.0 - 100.0 * _mean(lambda r: r.metrics.wall_clock_seconds) / SPEED_SECONDS_TO_ZERO
+        0.0,
+        100.0 - 100.0 * _task_mean(lambda r: r.metrics.wall_clock_seconds) / SPEED_SECONDS_TO_ZERO,
     )
     composite = compute_readiness_score(
         correctness=correctness,
@@ -134,12 +171,25 @@ def readiness_from_results(results: list) -> dict:
         "regression_safety": round(regression_safety, 1) if regression_safety is not None else None,
         "security": round(security, 1) if security is not None else None,
         "review_burden": round(review_burden, 1),
-        "maintainability": round(maintainability, 1),
-        "cost": round(cost, 1),
+        "maintainability": round(maintainability, 1) if maintainability is not None else None,
+        "cost": round(cost, 1) if cost is not None else None,
         "speed": round(speed, 1),
         "n_results": len(results),
         "coverage": {
             "regression_safety": regression_coverage,
             "security": security_coverage,
+            "lint": {
+                "measured": sum(
+                    status in {"measured", "measured_clean", "measured_findings"}
+                    for status in lint_statuses
+                ),
+                "total": len(results),
+                "statuses": dict(Counter(lint_statuses)),
+            },
+            "cost": {
+                "measured": sum(status == "complete" for status in usage_statuses),
+                "total": len(results),
+                "statuses": dict(Counter(usage_statuses)),
+            },
         },
     }
