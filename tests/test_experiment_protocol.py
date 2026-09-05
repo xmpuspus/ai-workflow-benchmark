@@ -140,6 +140,54 @@ def test_bundle_preserves_nested_experiment_receipts_and_declared_attachments(tm
     assert "checksum" in " ".join(verify_bundle(bundle)).lower()
 
 
+def test_bundle_rejects_attachment_through_symlinked_ancestor(tmp_path):
+    from awb.experiments.evidence import build_bundle
+
+    run = tmp_path / "run"
+    run.mkdir()
+    (run / "BF-001.json").write_text('{"task_id":"BF-001"}')
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    (outside / "secret.patch").write_text("outside")
+    (run / "linked").symlink_to(outside, target_is_directory=True)
+    with pytest.raises(ValueError, match="symlink|inside"):
+        build_bundle(
+            run,
+            tmp_path / "bundle",
+            attachments=[run / "linked" / "secret.patch"],
+        )
+
+
+def test_bundle_verifier_rejects_nonobject_manifest(tmp_path):
+    from awb.experiments.evidence import verify_bundle
+
+    (tmp_path / "manifest.json").write_text("[]")
+    with pytest.raises(ValueError, match="manifest"):
+        verify_bundle(tmp_path)
+
+
+def test_bundle_verifier_rejects_no_results_and_false_complete_metadata(tmp_path):
+    import hashlib
+    import json
+
+    from awb.experiments.evidence import verify_bundle
+
+    payload = b"not a result"
+    (tmp_path / "only.patch").write_bytes(payload)
+    (tmp_path / "manifest.json").write_text(
+        json.dumps(
+            {
+                "schema_version": 2,
+                "metadata": {"complete": True, "artifacts": {}},
+                "files": {"only.patch": hashlib.sha256(payload).hexdigest()},
+            }
+        )
+    )
+    errors = verify_bundle(tmp_path)
+    assert any("result" in error.lower() for error in errors)
+    assert any("metadata" in error.lower() for error in errors)
+
+
 def test_assessment_incomplete_or_wrong_model_is_inconclusive():
     from awb.experiments.protocol import assess, create_plan
 

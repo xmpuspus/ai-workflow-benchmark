@@ -263,6 +263,25 @@ class TestFromPrGuards:
         assert result.exit_code == 0, result.output
         assert "Fix bug[/x]" in result.output
 
+    def test_review_write_failure_removes_only_new_task_yaml(
+        self, monkeypatch, tmp_path, pr_responses
+    ):
+        monkeypatch.setattr("awb.core.pr_miner.subprocess.run", _fake_gh_run(pr_responses))
+        from pathlib import Path
+
+        original_open = Path.open
+
+        def fail_review(path, mode="r", *args, **kwargs):
+            if path.name.endswith(".review.json") and mode == "x":
+                raise OSError("review write failed")
+            return original_open(path, mode, *args, **kwargs)
+
+        monkeypatch.setattr(Path, "open", fail_review)
+        out = tmp_path / "tasks"
+        result = CliRunner().invoke(task, ["from-pr", self.PR_URL, "--out", str(out)])
+        assert result.exit_code != 0
+        assert not list(out.glob("*.yaml"))
+
     def test_resume_with_tasks_dir_uses_task_set_identity(self, tmp_path):
         tasks_dir = tmp_path / "tasks"
         tasks_dir.mkdir()

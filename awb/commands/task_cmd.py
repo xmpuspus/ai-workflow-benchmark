@@ -286,24 +286,32 @@ def from_pr(
     metadata_path = out_dir / f"{chosen_id}.review.json"
     if out_path.exists() or metadata_path.exists():
         raise click.UsageError("Candidate task or review metadata already exists")
-    with out_path.open("x") as handle:
-        handle.write(yaml_text)
-    with metadata_path.open("x") as handle:
-        json.dump(
-            {
-                "status": "candidate",
-                "admission": "not_admitted",
-                "confirmation_eligible": False,
-                "task_id": chosen_id,
-                "task_definition_hash": hashlib.sha256(yaml_text.encode()).hexdigest(),
-                "next_step": (
-                    "Run task controls and an independent review before holdout admission."
-                ),
-            },
-            handle,
-            indent=2,
-        )
-        handle.write("\n")
+    owned_paths: list[Path] = []
+    try:
+        with out_path.open("x") as handle:
+            owned_paths.append(out_path)
+            handle.write(yaml_text)
+        with metadata_path.open("x") as handle:
+            owned_paths.append(metadata_path)
+            json.dump(
+                {
+                    "status": "candidate",
+                    "admission": "not_admitted",
+                    "confirmation_eligible": False,
+                    "task_id": chosen_id,
+                    "task_definition_hash": hashlib.sha256(yaml_text.encode()).hexdigest(),
+                    "next_step": (
+                        "Run task controls and an independent review before holdout admission."
+                    ),
+                },
+                handle,
+                indent=2,
+            )
+            handle.write("\n")
+    except Exception:
+        for owned_path in reversed(owned_paths):
+            owned_path.unlink(missing_ok=True)
+        raise
 
     if fmt == "json":
         emit_json(

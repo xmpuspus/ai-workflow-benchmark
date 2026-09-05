@@ -137,6 +137,67 @@ def test_audit_rejects_forged_percent_only_control_review(tmp_path):
     assert "missing_independent_controls" in payload["findings"][0]["findings"]
 
 
+def test_validate_control_review_rejects_recomputed_but_semantically_forged_receipt(tmp_path):
+    from awb.verification.task_admission import (
+        _receipt_hash,
+        task_definition_hash,
+        validate_control_review,
+    )
+
+    task_path = _write_task(tmp_path / "BF-901.yaml")
+    review = {
+        "status": "review_evidence_ready",
+        "admission": "not_admitted",
+        "protocol_version": 1,
+        "evaluator": {},
+        "task_definition_hash": task_definition_hash(task_path),
+        "requirements": {},
+        "controls": {
+            name: {
+                "percent": percent,
+                "earned": 999,
+                "possible": -1,
+                "workspace_hash": "x" * 64,
+                "criteria": [{}],
+            }
+            for name, percent in {"gold": 100, "noop": 0, "mutation": 0}.items()
+        },
+    }
+    review["receipt_sha256"] = _receipt_hash(review)
+    (tmp_path / "BF-901.review.json").write_text(json.dumps(review))
+    assert validate_control_review(task_path) is False
+
+
+def test_controls_reject_symlinked_workspace_evidence_before_evaluation(tmp_path):
+    from awb.verification.task_admission import run_control_protocol
+
+    task_path = _write_task(tmp_path / "BF-901.yaml")
+    gold, noop, mutation, outside = (
+        tmp_path / "gold",
+        tmp_path / "noop",
+        tmp_path / "mutation",
+        tmp_path / "outside",
+    )
+    for workspace in (gold, noop, mutation, outside):
+        workspace.mkdir()
+    (outside / "solved.txt").write_text("outside")
+    (gold / "solved.txt").symlink_to(outside / "solved.txt")
+    with pytest.raises(ValueError, match="symlink"):
+        run_control_protocol(task_path, gold, noop, mutation)
+
+
+def test_controls_reject_evaluator_workspace_mutation(tmp_path):
+    from awb.verification.task_admission import run_control_protocol
+
+    task_path = _write_task(tmp_path / "BF-901.yaml", "touch changed.txt; test -f solved.txt")
+    gold, noop, mutation = tmp_path / "gold", tmp_path / "noop", tmp_path / "mutation"
+    for workspace in (gold, noop, mutation):
+        workspace.mkdir()
+    (gold / "solved.txt").write_text("done")
+    with pytest.raises(ValueError, match="changed its workspace"):
+        run_control_protocol(task_path, gold, noop, mutation)
+
+
 def test_audit_marks_schema_and_unpinned_commit_failures(tmp_path):
     invalid = _task_definition()
     invalid["estimated_minutes"] = 1

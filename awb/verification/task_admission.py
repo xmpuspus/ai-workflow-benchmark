@@ -9,6 +9,7 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import json
+import math
 import re
 from pathlib import Path
 from typing import Any
@@ -19,6 +20,13 @@ from awb.core.task_loader import load_task, validate_task_yaml
 from awb.verification.partial_credit import evaluate_partial_credit
 
 _UNCONDITIONAL_CREDIT = re.compile(r"(?:;|\|\|)\s*true\s*$")
+_CONTROL_EXPECTED = {"gold": 100, "noop": 0, "mutation": 0}
+_EVALUATOR = {"name": "awb.verification.partial_credit", "version": "1"}
+_RECEIPT_PROFILE = {
+    "algorithm": "sha256",
+    "scope": "control_evidence",
+    "authentication": "none",
+}
 
 
 def task_definition_hash(path: Path) -> str:
@@ -43,41 +51,100 @@ def _has_valid_controls(review: dict[str, Any] | None, definition_hash: str) -> 
         return False
     if review.get("status") != "review_evidence_ready" or review.get("admission") != "not_admitted":
         return False
-    if review.get("protocol_version") != 1 or not isinstance(review.get("evaluator"), dict):
+    if review.get("protocol_version") != 1 or review.get("evaluator") != _EVALUATOR:
         return False
     controls = review.get("controls")
-    if not isinstance(controls, dict) or not isinstance(review.get("requirements"), dict):
+    requirements = review.get("requirements")
+    if not isinstance(controls, dict) or requirements != {
+        "gold_percent": 100,
+        "noop_percent": 0,
+        "mutation_percent": 0,
+    }:
         return False
-    expected = {"gold": 100, "noop": 0, "mutation": 0}
-    for name, score in expected.items():
+    if set(controls) != set(_CONTROL_EXPECTED):
+        return False
+    for name, score in _CONTROL_EXPECTED.items():
         control = controls.get(name)
         if not isinstance(control, dict) or control.get("percent") != score:
             return False
-        if control.get("earned") is None or control.get("possible") is None:
-            return False
+        earned, possible = control.get("earned"), control.get("possible")
         if (
-            not isinstance(control.get("workspace_hash"), str)
-            or len(control["workspace_hash"]) != 64
+            isinstance(earned, bool)
+            or isinstance(possible, bool)
+            or not isinstance(earned, int | float)
+            or not isinstance(possible, int | float)
+            or not math.isfinite(earned)
+            or not math.isfinite(possible)
+            or possible <= 0
+            or earned < 0
+            or earned > possible
+            or not math.isclose(100 * earned / possible, score)
         ):
             return False
-        if not isinstance(control.get("criteria"), list) or not control["criteria"]:
+        if not isinstance(control.get("workspace_hash"), str) or not re.fullmatch(
+            r"[0-9a-f]{64}", control["workspace_hash"]
+        ):
+            return False
+        criteria = control.get("criteria")
+        if not isinstance(criteria, list) or not criteria:
+            return False
+        criterion_earned = 0.0
+        criterion_possible = 0.0
+        for criterion in criteria:
+            if not isinstance(criterion, dict):
+                return False
+            points_earned = criterion.get("points_earned")
+            points_possible = criterion.get("points_possible")
+            passed = criterion.get("passed")
+            if (
+                not isinstance(criterion.get("criterion"), str)
+                or not criterion["criterion"]
+                or isinstance(points_earned, bool)
+                or isinstance(points_possible, bool)
+                or not isinstance(points_earned, int | float)
+                or not isinstance(points_possible, int | float)
+                or not math.isfinite(points_earned)
+                or not math.isfinite(points_possible)
+                or points_possible <= 0
+                or points_earned not in {0, points_possible}
+                or type(passed) is not bool
+                or passed != (points_earned == points_possible)
+            ):
+                return False
+            criterion_earned += points_earned
+            criterion_possible += points_possible
+        if not math.isclose(criterion_earned, earned) or not math.isclose(
+            criterion_possible, possible
+        ):
             return False
     receipt = review.get("receipt_sha256")
-    return isinstance(receipt, str) and receipt == _receipt_hash(review)
+    receipt_detail = review.get("receipt")
+    return (
+        isinstance(receipt, str)
+        and re.fullmatch(r"[0-9a-f]{64}", receipt) is not None
+        and receipt == _receipt_hash(review)
+        and isinstance(receipt_detail, dict)
+        and {key: receipt_detail.get(key) for key in _RECEIPT_PROFILE} == _RECEIPT_PROFILE
+        and receipt_detail.get("sha256") == receipt
+        and set(receipt_detail) == {*_RECEIPT_PROFILE, "sha256"}
+    )
 
 
 def validate_control_review(task_definition: Path) -> bool:
-    """Return whether the sibling review contains complete control evidence."""
+    """Check structure and checksum consistency; this does not authenticate a reviewer."""
     try:
-        return _has_valid_controls(
-            _load_json(_review_path(task_definition)), task_definition_hash(task_definition)
-        )
+        review_path = _review_path(task_definition)
+        if task_definition.is_symlink() or review_path.is_symlink():
+            return False
+        return _has_valid_controls(_load_json(review_path), task_definition_hash(task_definition))
     except OSError:
         return False
 
 
 def _receipt_hash(review: dict[str, Any]) -> str:
-    payload = {key: value for key, value in review.items() if key != "receipt_sha256"}
+    payload = {
+        key: value for key, value in review.items() if key not in {"receipt_sha256", "receipt"}
+    }
     return hashlib.sha256(
         json.dumps(payload, sort_keys=True, separators=(",", ":")).encode()
     ).hexdigest()
@@ -91,6 +158,19 @@ def _workspace_hash(workspace: Path) -> str:
         hasher.update(b"\0")
         hasher.update(hashlib.sha256(path.read_bytes()).digest())
     return hasher.hexdigest()
+
+
+def _validate_control_workspace(workspace: Path) -> None:
+    if not workspace.is_dir() or workspace.is_symlink():
+        raise ValueError(f"Control workspace is missing or is a symlink: {workspace}")
+    root = workspace.resolve()
+    for path in root.rglob("*"):
+        if path.is_symlink():
+            raise ValueError(f"Control workspace contains a symlink: {path.relative_to(root)}")
+        try:
+            path.resolve(strict=True).relative_to(root)
+        except (OSError, ValueError) as exc:
+            raise ValueError("Control workspace entry resolves outside its root") from exc
 
 
 def audit_tasks(tasks_dir: Path) -> dict[str, Any]:
@@ -183,13 +263,16 @@ def _load_json(path: Path) -> dict[str, Any] | None:
 
 def _control_result(task_definition: Path, workspace: Path) -> dict[str, Any]:
     task = load_task(task_definition)
+    workspace_hash = _workspace_hash(workspace)
     earned, possible, breakdown = asyncio.run(
         evaluate_partial_credit(task.verification.partial_credit, workspace)
     )
+    if _workspace_hash(workspace) != workspace_hash:
+        raise ValueError("Control evaluation changed its workspace")
     percent = 0 if possible == 0 else earned * 100 / possible
     return {
         "workspace": str(workspace),
-        "workspace_hash": _workspace_hash(workspace),
+        "workspace_hash": workspace_hash,
         "earned": earned,
         "possible": possible,
         "percent": percent,
@@ -213,20 +296,23 @@ def run_control_protocol(
     review_output: Path | None = None,
 ) -> dict[str, Any]:
     """Run trusted task criteria against explicit local control workspaces."""
+    if task_definition.is_symlink() or not task_definition.is_file():
+        raise ValueError("Task definition must be a regular non-symlink file")
+    for workspace in (gold_workspace, noop_workspace, mutation_workspace):
+        _validate_control_workspace(workspace)
     controls = {
         "gold": _control_result(task_definition, gold_workspace),
         "noop": _control_result(task_definition, noop_workspace),
         "mutation": _control_result(task_definition, mutation_workspace),
     }
-    expected = {"gold": 100, "noop": 0, "mutation": 0}
-    complete = all(controls[name]["percent"] == score for name, score in expected.items())
+    complete = all(controls[name]["percent"] == score for name, score in _CONTROL_EXPECTED.items())
     evidence = {
         "status": "review_evidence_ready" if complete else "review_required",
         "admission": "not_admitted",
         "task_definition": str(task_definition),
         "task_definition_hash": task_definition_hash(task_definition),
         "protocol_version": 1,
-        "evaluator": {"name": "awb.verification.partial_credit", "version": "1"},
+        "evaluator": dict(_EVALUATOR),
         "controls": controls,
         "requirements": {
             "gold_percent": 100,
@@ -238,6 +324,10 @@ def run_control_protocol(
         ),
     }
     evidence["receipt_sha256"] = _receipt_hash(evidence)
+    evidence["receipt"] = {
+        **_RECEIPT_PROFILE,
+        "sha256": evidence["receipt_sha256"],
+    }
     output = review_output or _review_path(task_definition)
     output.parent.mkdir(parents=True, exist_ok=True)
     output.write_text(json.dumps(evidence, indent=2) + "\n")

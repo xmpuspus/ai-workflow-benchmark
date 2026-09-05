@@ -22,6 +22,8 @@ def _digest(payload: bytes) -> str:
 
 
 def _relative(path: Path, root: Path) -> Path:
+    root = root.absolute()
+    path = path.absolute()
     try:
         rel = path.relative_to(root)
     except ValueError as exc:
@@ -30,6 +32,15 @@ def _relative(path: Path, root: Path) -> Path:
         raise ValueError("Unsafe evidence artifact path")
     if any(part.lower() in _FORBIDDEN for part in rel.parts):
         raise ValueError("Credential or state artifact is not permitted")
+    cursor = root
+    for part in rel.parts:
+        cursor /= part
+        if cursor.is_symlink():
+            raise ValueError("Evidence artifact path contains a symlink")
+    try:
+        path.resolve(strict=True).relative_to(root.resolve(strict=True))
+    except (OSError, ValueError) as exc:
+        raise ValueError("Evidence artifact must resolve inside the run directory") from exc
     return rel
 
 
@@ -124,35 +135,94 @@ def _safe_name(name: str) -> bool:
     )
 
 
+def _artifact_kind(name: str) -> str | None:
+    path = PurePosixPath(name)
+    if path.parts[0] == "metadata":
+        return "metadata" if len(path.parts) == 2 and path.name in _METADATA else None
+    if path.parts[0] == "attachments":
+        return "attachment" if path.suffix in _ATTACHMENT_SUFFIXES else None
+    return "result" if _RESULT.fullmatch(path.name) else None
+
+
 def verify_bundle(directory: Path) -> list[str]:
     """Check manifest structure, checksums, and exact recursive contents."""
-    path = directory / "manifest.json"
+    if not directory.is_dir() or directory.is_symlink():
+        raise ValueError("Bundle directory does not exist or is a symlink")
+    root = directory.resolve()
+    path = root / "manifest.json"
     if path.is_symlink():
         raise ValueError("Manifest symlink is not permitted")
     manifest = json.loads(path.read_text())
-    files = manifest.get("files") if isinstance(manifest, dict) else None
-    metadata = manifest.get("metadata") if isinstance(manifest, dict) else None
+    if not isinstance(manifest, dict):
+        raise ValueError("Bundle manifest must be an object")
+    files = manifest.get("files")
+    metadata = manifest.get("metadata")
     if manifest.get("schema_version") != 2 or not isinstance(files, dict):
         raise ValueError("Unsupported bundle manifest")
-    if not isinstance(metadata, dict) or not isinstance(metadata.get("complete"), bool):
+    if (
+        not isinstance(metadata, dict)
+        or not isinstance(metadata.get("complete"), bool)
+        or not isinstance(metadata.get("artifacts"), dict)
+    ):
         raise ValueError("Invalid bundle metadata")
     errors = []
+    kinds: dict[str, str] = {}
     for name, expected in files.items():
-        if not isinstance(expected, str) or len(expected) != 64 or not _safe_name(name):
+        if (
+            not isinstance(name, str)
+            or not isinstance(expected, str)
+            or not re.fullmatch(r"[0-9a-f]{64}", expected)
+            or not _safe_name(name)
+        ):
             errors.append(f"Unsafe manifest artifact: {name}")
             continue
-        artifact = directory / name
-        if artifact.is_symlink() or not artifact.is_file():
-            errors.append(f"Missing or symlink artifact: {name}")
-        elif _digest(artifact.read_bytes()) != expected:
+        kind = _artifact_kind(name)
+        if kind is None:
+            errors.append(f"Unsupported manifest artifact: {name}")
+            continue
+        kinds[name] = kind
+        artifact = root / name
+        try:
+            _, payload = _read(artifact, root)
+        except ValueError:
+            errors.append(f"Missing, outside-root, or symlink artifact: {name}")
+            continue
+        if _digest(payload) != expected:
             errors.append(f"Checksum mismatch: {name}")
+            continue
+        if kind == "result":
+            try:
+                result = json.loads(payload)
+            except json.JSONDecodeError:
+                result = None
+            if not isinstance(result, dict) or not result.get("task_id"):
+                errors.append(f"Invalid result artifact: {name}")
+
+    metadata_entries = metadata["artifacts"]
+    complete_metadata = True
+    for filename, metadata_kind in _METADATA.items():
+        expected_path = f"metadata/{filename}"
+        entry = metadata_entries.get(metadata_kind)
+        valid = (
+            isinstance(entry, dict)
+            and entry.get("path") == expected_path
+            and entry.get("sha256") == files.get(expected_path)
+            and kinds.get(expected_path) == "metadata"
+        )
+        complete_metadata = complete_metadata and valid
+        if entry is not None and not valid:
+            errors.append(f"Invalid metadata declaration: {metadata_kind}")
+    if set(metadata_entries) - set(_METADATA.values()):
+        errors.append("Bundle declares unknown metadata")
+    if metadata["complete"] != complete_metadata:
+        errors.append("Bundle metadata completeness is inconsistent")
     actual = {
-        item.relative_to(directory).as_posix()
-        for item in directory.rglob("*")
+        item.relative_to(root).as_posix()
+        for item in root.rglob("*")
         if item.is_file() and item.name != "manifest.json"
     }
     if actual != set(files):
         errors.append("Bundle contains missing or unlisted files")
-    if not files:
-        errors.append("Bundle contains no results")
+    if "result" not in kinds.values():
+        errors.append("Bundle contains no result artifacts")
     return errors
