@@ -9,6 +9,16 @@ import yaml
 from awb.experiments.protocol import create_plan
 
 
+@pytest.fixture(autouse=True)
+def _skip_real_cli_preflight(monkeypatch, request):
+    real_preflight_tests = {
+        "test_runtime_preflight_rejects_missing_allowed_environment",
+        "test_runtime_preflight_rejects_missing_cli",
+    }
+    if request.node.name not in real_preflight_tests:
+        monkeypatch.setattr("awb.experiments.execution._preflight_runtime", lambda *args: None)
+
+
 def _task(path: Path, task_id: str) -> None:
     path.write_text(
         yaml.safe_dump(
@@ -255,6 +265,125 @@ def test_model_is_explicitly_pinned_in_each_adapter_command(tmp_path):
     assert "--dangerously-skip-permissions" not in command
 
 
+def test_experiment_adapter_forwards_only_named_environment(monkeypatch, tmp_path):
+    from awb.experiments.execution import _ModelPinnedClaudeAdapter
+
+    monkeypatch.setenv("UNRELATED_PRIVATE_TOKEN", "do-not-forward")
+    monkeypatch.setenv("DECLARED_API_TOKEN", "forward")
+    adapter = _ModelPinnedClaudeAdapter(tmp_path, "claude-test-model", ("DECLARED_API_TOKEN",))
+    environment = adapter._get_env()
+    assert "UNRELATED_PRIVATE_TOKEN" not in environment
+    assert environment["DECLARED_API_TOKEN"] == "forward"
+    assert environment["CLAUDE_CONFIG_DIR"] == str(tmp_path)
+    assert set(environment) <= {
+        "PATH",
+        "HOME",
+        "TMPDIR",
+        "AWB_BENCHMARK",
+        "CLAUDE_CONFIG_DIR",
+        "DECLARED_API_TOKEN",
+    }
+
+
+def test_runtime_preflight_rejects_missing_allowed_environment(monkeypatch, tmp_path):
+    from awb.experiments.execution import _preflight_runtime, config_snapshot
+
+    _, config_b = _configs(tmp_path)
+    snapshot = config_snapshot(config_b)
+    monkeypatch.delenv("DECLARED_MISSING_TOKEN", raising=False)
+    with pytest.raises(ValueError, match="DECLARED_MISSING_TOKEN"):
+        _preflight_runtime(
+            (snapshot, snapshot),
+            "claude-test-model",
+            ("DECLARED_MISSING_TOKEN",),
+            tmp_path / "runs",
+        )
+
+
+def test_runtime_preflight_rejects_missing_cli(monkeypatch, tmp_path):
+    from awb.experiments.execution import _preflight_runtime, config_snapshot
+
+    _, config_b = _configs(tmp_path)
+    snapshot = config_snapshot(config_b)
+    monkeypatch.setattr("awb.experiments.execution.shutil.which", lambda *args, **kwargs: None)
+    with pytest.raises(ValueError, match="not available"):
+        _preflight_runtime((snapshot, snapshot), "claude-test-model", (), tmp_path / "runs")
+
+
+def test_runtime_preflight_runs_before_attempt_marker(monkeypatch, tmp_path):
+    from awb.experiments.execution import execute_plan
+
+    plan, config_a, config_b, tasks_dir = _plan(tmp_path)
+    called = []
+
+    def reject(*args):
+        raise ValueError("preflight rejected")
+
+    monkeypatch.setattr("awb.experiments.execution._preflight_runtime", reject)
+    monkeypatch.setattr(
+        "awb.experiments.execution._execute_attempt", lambda **kwargs: called.append(kwargs)
+    )
+    runs_dir = tmp_path / "runs"
+    with pytest.raises(ValueError, match="preflight rejected"):
+        execute_plan(plan, config_a, config_b, tasks_dir, "development", runs_dir)
+    assert called == []
+    assert not (runs_dir / ".experiment-attempts").exists()
+
+
+def test_attempt_passes_stage_and_whole_attempt_deadlines(monkeypatch, tmp_path):
+    from types import SimpleNamespace
+
+    from awb.experiments.execution import _execute_attempt
+
+    captured = {}
+
+    class FakeRunner:
+        def __init__(self, **kwargs):
+            captured.update(kwargs)
+            self.recorder = None
+            self._run_id = ""
+
+        async def run_all(self):
+            return [SimpleNamespace(run_id="run1", task_id="BF-001", tool="claude-code-custom")]
+
+    monkeypatch.setattr("awb.core.runner.BenchmarkRunner", FakeRunner)
+    _execute_attempt(
+        task=SimpleNamespace(id="BF-001"),
+        arm="a",
+        repeat_index=1,
+        config_dir=tmp_path,
+        model="claude-test-model",
+        timeout_seconds=120,
+        setup_timeout_seconds=30,
+        verification_timeout_seconds=40,
+        attempt_timeout_seconds=190,
+        allowed_env=(),
+        runs_dir=tmp_path / "runs",
+        run_id="run",
+        tasks_dir=tmp_path / "tasks",
+    )
+    assert captured["timeout_override"] == 120
+    assert captured["setup_timeout_seconds"] == 30
+    assert captured["verification_timeout_seconds"] == 40
+    assert captured["experiment_timeout_seconds"] == 190
+
+
+def test_adapter_marks_unobserved_model_unknown(monkeypatch, tmp_path):
+    import asyncio
+
+    from awb.adapters.base import ToolResult
+    from awb.adapters.claude_code import ClaudeCodeCustomAdapter
+    from awb.experiments.execution import _ModelPinnedClaudeAdapter
+
+    async def empty_model(*args, **kwargs):
+        return ToolResult(success=True, model="")
+
+    monkeypatch.setattr(ClaudeCodeCustomAdapter, "execute", empty_model)
+    adapter = _ModelPinnedClaudeAdapter(tmp_path, "claude-test-model")
+    result = asyncio.run(adapter.execute("prompt", tmp_path))
+    assert result.model == "unknown"
+
+
 def test_failed_observed_receipt_is_not_rewritten_or_rerun(monkeypatch, tmp_path):
     from awb.experiments.execution import execute_plan
 
@@ -286,14 +415,32 @@ def test_failed_observed_receipt_is_not_rewritten_or_rerun(monkeypatch, tmp_path
 
     monkeypatch.setattr("awb.experiments.execution._execute_attempt", failed_attempt)
     first = execute_plan(plan, config_a, config_b, tasks_dir, "development", tmp_path / "runs")
-    assert len(first["executed_attempts"]) == 2
+    assert len(first["executed_attempts"]) == 1
     receipt = first["executed_attempts"][0]
     assert receipt["model"] == "observed-other-model"
     assert receipt["execution_status"] == "timed_out"
     assert receipt["requested_model"] == "claude-test-model"
     with pytest.raises(ValueError, match="model differs"):
         execute_plan(plan, config_a, config_b, tasks_dir, "development", tmp_path / "runs")
-    assert len(calls) == 2
+    assert len(calls) == 1
+
+
+def test_holdout_claim_survives_replanning_threshold(tmp_path):
+    from awb.experiments.execution import _claim_holdout
+
+    plan, _, _, _ = _plan(tmp_path)
+    _claim_holdout(tmp_path / "runs", plan)
+    changed = create_plan({**plan["spec"], "minimum_delta": plan["spec"]["minimum_delta"] + 1})
+    with pytest.raises(ValueError, match="already consumed"):
+        _claim_holdout(tmp_path / "runs", changed)
+
+
+def test_holdout_needs_complete_eligible_development_result(tmp_path):
+    from awb.experiments.execution import _require_development_confirmation
+
+    plan, _, _, _ = _plan(tmp_path)
+    with pytest.raises(ValueError, match="development attempts"):
+        _require_development_confirmation(tmp_path / "runs", plan)
 
 
 def test_marker_creation_is_exclusive(tmp_path):

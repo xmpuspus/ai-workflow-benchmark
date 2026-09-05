@@ -12,18 +12,21 @@ import contextlib
 import fcntl
 import hashlib
 import json
+import os
+import shutil
 import tempfile
 from pathlib import Path
 from typing import Any
 
 import yaml
 
-from awb.experiments.protocol import validate_plan
+from awb.experiments.protocol import assess, fingerprint, validate_plan
 
 _ROOT_FILES = {"settings.json", "hooks.json", "CLAUDE.md", "AGENTS.md", "AGENTS.override.md"}
 _SAFETY_FILES = {"settings.json", "hooks.json"}
 _FORBIDDEN_PARTS = {"auth.json", "credentials.json", "sessions", "state", "history.jsonl"}
 _INSTRUCTION_ROOTS = {"CLAUDE.md", "AGENTS.md", "AGENTS.override.md"}
+_BASE_ENV = ("PATH", "HOME", "TMPDIR")
 
 
 def _hash_entries(entries: list[tuple[str, bytes]]) -> str:
@@ -187,14 +190,30 @@ def _existing_attempts(runs_dir: Path, plan: dict, split: str) -> dict[tuple[str
 class _ModelPinnedClaudeAdapter:
     """Create a fresh Claude adapter whose command always declares the plan model."""
 
-    def __new__(cls, config_dir: Path, model: str):
+    def __new__(cls, config_dir: Path, model: str, allowed_env: tuple[str, ...] = ()):
         from awb.adapters.claude_code import ClaudeCodeCustomAdapter
 
         class ModelPinnedAdapter(ClaudeCodeCustomAdapter):
+            def _get_env(self) -> dict[str, str]:
+                environment = {
+                    name: os.environ[name]
+                    for name in (*_BASE_ENV, *allowed_env)
+                    if name in os.environ
+                }
+                environment["AWB_BENCHMARK"] = "1"
+                environment["CLAUDE_CONFIG_DIR"] = str(self.config_dir)
+                return environment
+
             def _get_cmd(self, prompt: str, max_turns: int) -> list[str]:
                 command = super()._get_cmd(prompt, max_turns)
                 command = [part for part in command if part != "--dangerously-skip-permissions"]
                 return [*command, "--model", self.model]
+
+            async def execute(self, *args, **kwargs):
+                result = await super().execute(*args, **kwargs)
+                if not result.model:
+                    result.model = "unknown"
+                return result
 
         adapter = ModelPinnedAdapter(config_dir=config_dir)
         adapter.model = model
@@ -209,6 +228,10 @@ def _execute_attempt(
     config_dir: Path,
     model: str,
     timeout_seconds: int,
+    setup_timeout_seconds: int,
+    verification_timeout_seconds: int,
+    attempt_timeout_seconds: int,
+    allowed_env: tuple[str, ...],
     runs_dir: Path,
     run_id: str,
     tasks_dir: Path,
@@ -217,12 +240,15 @@ def _execute_attempt(
     from awb.core.results import ResultRecorder
     from awb.core.runner import BenchmarkRunner
 
-    adapter = _ModelPinnedClaudeAdapter(config_dir, model)
+    adapter = _ModelPinnedClaudeAdapter(config_dir, model, allowed_env)
     runner = BenchmarkRunner(
         tool="claude-code-custom",
         tasks=[task],
         runs=1,
         timeout_override=timeout_seconds,
+        setup_timeout_seconds=setup_timeout_seconds,
+        verification_timeout_seconds=verification_timeout_seconds,
+        experiment_timeout_seconds=attempt_timeout_seconds,
         concurrency=1,
         tasks_dir=tasks_dir,
     )
@@ -234,6 +260,37 @@ def _execute_attempt(
         raise RuntimeError("Experiment attempt did not produce exactly one result")
     result = results[0]
     return runs_dir / result.run_id / f"{result.task_id}_{result.tool}.json"
+
+
+def _preflight_runtime(
+    snapshots: tuple[dict[str, Any], dict[str, Any]],
+    model: str,
+    allowed_env: tuple[str, ...],
+    runs_dir: Path,
+) -> None:
+    missing = [name for name in allowed_env if name not in os.environ]
+    if missing:
+        raise ValueError(f"Allowed environment variable is not set: {', '.join(missing)}")
+    for snapshot in snapshots:
+        with _isolated_config(snapshot, runs_dir / ".experiment-preflight") as config_dir:
+            adapter = _ModelPinnedClaudeAdapter(config_dir, model, allowed_env)
+            environment = adapter._get_env()
+            if shutil.which("claude", path=environment.get("PATH", "")) is None:
+                raise ValueError("claude command is not available in the allowed PATH")
+            command = adapter._get_cmd("preflight", 1)
+            if command[-2:] != ["--model", model] or "--dangerously-skip-permissions" in command:
+                raise ValueError("Could not pin the declared model and safety boundary")
+
+
+def _validate_holdout_controls(paths: dict[str, Path]) -> None:
+    from awb.verification.task_admission import validate_control_review
+
+    invalid = [task_id for task_id, path in paths.items() if not validate_control_review(path)]
+    if invalid:
+        raise ValueError(
+            "Holdout tasks lack reviewed positive and negative control evidence: "
+            + ", ".join(sorted(invalid))
+        )
 
 
 def _validate_inputs(
@@ -255,6 +312,8 @@ def _validate_inputs(
         raise ValueError("Both arms must preserve equal settings and hooks")
     wanted = set(spec[f"{split}_tasks"])
     paths = _task_paths(tasks_dir, wanted)
+    if split == "holdout":
+        _validate_holdout_controls(paths)
     tasks = {
         task_id: _load_frozen_task(paths[task_id], task_id, spec["task_hashes"][task_id])
         for task_id in wanted
@@ -287,6 +346,51 @@ def _create_marker(path: Path, attempt: tuple[str, str, int]) -> None:
         ) from exc
 
 
+def _require_development_confirmation(runs_dir: Path, plan: dict) -> None:
+    existing = _existing_attempts(runs_dir, plan, "development")
+    expected = [entry for entry in plan["schedule"] if entry["split"] == "development"]
+    if len(existing) != len(expected):
+        raise ValueError("Holdout execution needs all matching development attempts")
+    arms = {arm: [row for key, row in existing.items() if key[1] == arm] for arm in ("a", "b")}
+    decision = assess(plan, arms["a"], arms["b"], "development")
+    if decision["decision"] != "confirm_on_holdout":
+        raise ValueError("Holdout execution needs an eligible development confirmation decision")
+
+
+def _holdout_identity(plan: dict) -> str:
+    spec = plan["spec"]
+    return fingerprint(
+        {
+            "holdout_task_hashes": {
+                task_id: spec["task_hashes"][task_id] for task_id in sorted(spec["holdout_tasks"])
+            },
+            "candidate_config_hash": spec["config_b_hash"],
+            "model": spec["model"],
+            "safety_policy_hash": spec["safety_policy_hash_b"],
+        }
+    )
+
+
+def _claim_holdout(runs_dir: Path, plan: dict) -> Path:
+    claim = runs_dir / ".experiment-holdouts" / f"{_holdout_identity(plan)}.json"
+    claim.parent.mkdir(parents=True, exist_ok=True)
+    payload = {"plan_hash": plan["plan_hash"], "holdout_identity": _holdout_identity(plan)}
+    try:
+        with claim.open("x") as handle:
+            json.dump(payload, handle)
+            handle.write("\n")
+    except FileExistsError:
+        try:
+            existing = json.loads(claim.read_text())
+        except (OSError, json.JSONDecodeError) as exc:
+            raise ValueError("Holdout consumption record is invalid") from exc
+        if existing != payload:
+            raise ValueError(
+                "This holdout cohort was already consumed by a different plan"
+            ) from None
+    return claim
+
+
 def execute_plan(
     plan: dict,
     config_a: Path,
@@ -307,11 +411,16 @@ def execute_plan(
         plan, config_a, config_b, effective_tasks_dir, split
     )
     spec = plan["spec"]
+    allowed_env = tuple(spec["allowed_env"])
+    _preflight_runtime((snapshot_a, snapshot_b), spec["model"], allowed_env, runs_dir)
     completed: list[dict] = []
     resumed: list[dict] = []
     executed: list[dict] = []
     schedule = [entry for entry in plan["schedule"] if entry["split"] == split]
     with _plan_lock(runs_dir, plan["plan_hash"]):
+        if split == "holdout":
+            _require_development_confirmation(runs_dir, plan)
+            _claim_holdout(runs_dir, plan)
         existing = _existing_attempts(runs_dir, plan, split)
         # Refuse before starting any new paid work if a prior process left an
         # ambiguous receipt for this plan/split. Continuing a different arm
@@ -337,10 +446,10 @@ def execute_plan(
             arm = entry["arm"]
             snapshot = snapshot_a if arm == "a" else snapshot_b
             task_id, repeat = entry["task_id"], entry["repeat"]
-            marker = _attempt_marker(runs_dir, plan["plan_hash"], split, *key)
-            _create_marker(marker, key)
             run_id = f"experiment_{plan['plan_hash'][:12]}_{split}_{arm}_{repeat}_{task_id}"
             with _isolated_config(snapshot, runs_dir / ".experiment-configs") as isolated_config:
+                marker = _attempt_marker(runs_dir, plan["plan_hash"], split, *key)
+                _create_marker(marker, key)
                 result_path = _execute_attempt(
                     task=tasks[task_id],
                     arm=arm,
@@ -348,6 +457,10 @@ def execute_plan(
                     config_dir=isolated_config,
                     model=spec["model"],
                     timeout_seconds=spec["timeout_seconds"],
+                    setup_timeout_seconds=spec["setup_timeout_seconds"],
+                    verification_timeout_seconds=spec["verification_timeout_seconds"],
+                    attempt_timeout_seconds=spec["attempt_timeout_seconds"],
+                    allowed_env=allowed_env,
                     runs_dir=runs_dir,
                     run_id=run_id,
                     tasks_dir=effective_tasks_dir,
@@ -371,6 +484,11 @@ def execute_plan(
             marker.unlink()
             executed.append(row)
             completed.append(row)
+            if (
+                row.get("execution", {}).get("status", row.get("execution_status")) != "completed"
+                or row.get("model") != spec["model"]
+            ):
+                break
     eligible = all(
         row.get("execution", {}).get("status", row.get("execution_status")) == "completed"
         and row.get("model") == spec["model"]

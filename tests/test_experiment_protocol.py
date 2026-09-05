@@ -19,6 +19,7 @@ def spec():
         "timeout_seconds": 300,
         "minimum_delta": 5.0,
         "state_policy": "fresh_process_per_attempt",
+        "allowed_env": [],
     }
 
 
@@ -51,6 +52,25 @@ def test_protocol_rejects_uncontrolled_comparisons(change):
     data.update(change)
     with pytest.raises(ValueError):
         create_plan(data)
+
+
+@pytest.mark.parametrize("allowed_env", [["TOKEN", "TOKEN"], ["BAD-NAME"], "TOKEN"])
+def test_protocol_rejects_invalid_environment_allowlist(allowed_env):
+    from awb.experiments.protocol import create_plan
+
+    data = spec()
+    data["allowed_env"] = allowed_env
+    with pytest.raises(ValueError, match="allowed_env"):
+        create_plan(data)
+
+
+def test_protocol_freezes_stage_and_attempt_deadlines():
+    from awb.experiments.protocol import create_plan
+
+    plan = create_plan(spec())
+    assert plan["spec"]["setup_timeout_seconds"] > 0
+    assert plan["spec"]["verification_timeout_seconds"] > 0
+    assert plan["spec"]["attempt_timeout_seconds"] >= plan["spec"]["timeout_seconds"]
 
 
 def test_protocol_hash_detects_post_registration_edits():
@@ -128,6 +148,84 @@ def test_assessment_incomplete_or_wrong_model_is_inconclusive():
     result = assess(plan, [row], [row], "development")
     assert result["decision"] == "inconclusive"
     assert any("model" in reason for reason in result["reasons"])
+
+
+def test_assessment_rejects_repeats_outside_frozen_schedule():
+    from awb.experiments.protocol import assess, create_plan
+
+    data = spec()
+    data["development_tasks"] = [f"BF-{number:03}" for number in range(1, 7)]
+    data["holdout_tasks"] = [f"BF-{number:03}" for number in range(7, 13)]
+    data["task_hashes"] = {
+        task_id: f"{index % 10}" * 64
+        for index, task_id in enumerate(data["development_tasks"] + data["holdout_tasks"])
+    }
+    plan = create_plan(data)
+
+    def rows(arm):
+        return [
+            {
+                "task_id": task_id,
+                "model": data["model"],
+                "effective_config_hash": data[f"config_{arm}_hash"],
+                "task_definition_hash": data["task_hashes"][task_id],
+                "experiment_plan_hash": plan["plan_hash"],
+                "experiment_split": "development",
+                "experiment_arm": arm,
+                "repeat_index": repeat,
+                "execution_status": "completed",
+                "usage_status": "complete",
+                "outcome": {
+                    "partial_credit_score": 0 if arm == "a" else 100,
+                    "partial_credit_max": 100,
+                },
+            }
+            for task_id in data["development_tasks"]
+            for repeat in (98, 99)
+        ]
+
+    result = assess(plan, rows("a"), rows("b"), "development")
+    assert result["decision"] == "inconclusive"
+    assert any("schedule" in reason for reason in result["reasons"])
+
+
+def test_assessment_cannot_win_with_incomplete_usage():
+    from awb.experiments.protocol import assess, create_plan
+
+    data = spec()
+    data["development_tasks"] = [f"BF-{number:03}" for number in range(1, 7)]
+    data["holdout_tasks"] = [f"BF-{number:03}" for number in range(7, 13)]
+    data["repeats"] = 1
+    data["task_hashes"] = {
+        task_id: f"{index % 10}" * 64
+        for index, task_id in enumerate(data["development_tasks"] + data["holdout_tasks"])
+    }
+    plan = create_plan(data)
+
+    def rows(arm):
+        return [
+            {
+                "task_id": task_id,
+                "model": data["model"],
+                "effective_config_hash": data[f"config_{arm}_hash"],
+                "task_definition_hash": data["task_hashes"][task_id],
+                "experiment_plan_hash": plan["plan_hash"],
+                "experiment_split": "development",
+                "experiment_arm": arm,
+                "repeat_index": 1,
+                "execution_status": "completed",
+                "usage_status": "unknown" if arm == "b" else "complete",
+                "outcome": {
+                    "partial_credit_score": 0 if arm == "a" else 100,
+                    "partial_credit_max": 100,
+                },
+            }
+            for task_id in data["development_tasks"]
+        ]
+
+    result = assess(plan, rows("a"), rows("b"), "development")
+    assert result["decision"] == "inconclusive"
+    assert any("usage" in reason for reason in result["reasons"])
 
 
 def test_experiment_cli_json_error_and_plan(tmp_path):

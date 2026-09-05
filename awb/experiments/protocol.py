@@ -6,8 +6,12 @@ import hashlib
 import json
 import math
 import random
+import re
 import statistics
 from collections import defaultdict
+
+_ENV_NAME = re.compile(r"[A-Za-z_][A-Za-z0-9_]*")
+_RESERVED_ENV = {"AWB_BENCHMARK", "CLAUDE_CONFIG_DIR", "CLAUDE_SKIP_HOOKS"}
 
 
 def fingerprint(value: object) -> str:
@@ -39,6 +43,33 @@ def create_plan(spec: dict) -> dict:
             raise ValueError(f"{field} must be a positive integer")
     if spec["repeats"] > 100 or spec["timeout_seconds"] > 7200:
         raise ValueError("Plan exceeds bounded repeat or timeout limits")
+    spec.setdefault("setup_timeout_seconds", 900)
+    spec.setdefault("verification_timeout_seconds", 600)
+    for field in ("setup_timeout_seconds", "verification_timeout_seconds"):
+        if type(spec.get(field)) is not int or not 0 < spec[field] <= 7200:
+            raise ValueError(f"{field} must be an integer between 1 and 7200")
+    spec.setdefault(
+        "attempt_timeout_seconds",
+        spec["timeout_seconds"]
+        + spec["setup_timeout_seconds"]
+        + spec["verification_timeout_seconds"],
+    )
+    if (
+        type(spec.get("attempt_timeout_seconds")) is not int
+        or spec["attempt_timeout_seconds"] < spec["timeout_seconds"]
+        or spec["attempt_timeout_seconds"] > 21600
+    ):
+        raise ValueError(
+            "attempt_timeout_seconds must be an integer between timeout_seconds and 21600"
+        )
+    allowed_env = spec.setdefault("allowed_env", [])
+    if (
+        not isinstance(allowed_env, list)
+        or any(not isinstance(name, str) or not _ENV_NAME.fullmatch(name) for name in allowed_env)
+        or len(set(allowed_env)) != len(allowed_env)
+        or any(name in _RESERVED_ENV for name in allowed_env)
+    ):
+        raise ValueError("allowed_env must contain unique, nonreserved environment variable names")
     if type(spec.get("seed")) is not int:
         raise ValueError("Declare an integer seed")
     threshold = spec.get("minimum_delta")
@@ -87,6 +118,7 @@ def create_plan(spec: dict) -> dict:
         "interpretation": "Paired configuration evidence, not human productivity",
         "spend_cap": None,
         "agent_time_upper_bound_seconds": len(schedule) * spec["timeout_seconds"],
+        "wall_time_upper_bound_seconds": len(schedule) * spec["attempt_timeout_seconds"],
     }
     return {**body, "plan_hash": fingerprint(body)}
 
@@ -113,6 +145,11 @@ def assess(plan: dict, arm_a: list[dict], arm_b: list[dict], split: str) -> dict
         known_cost = 0.0
         cost_complete = True
         seen = set()
+        expected = {
+            (entry["task_id"], entry["repeat"])
+            for entry in plan["schedule"]
+            if entry["split"] == split and entry["arm"] == arm
+        }
         for row in rows:
             task_id = row.get("task_id")
             if task_id not in wanted:
@@ -129,7 +166,13 @@ def assess(plan: dict, arm_a: list[dict], arm_b: list[dict], split: str) -> dict
             identity = (task_id, row.get("repeat_index"))
             if identity in seen or type(identity[1]) is not int:
                 reasons.append(f"Arm {arm}/{task_id}: duplicate or missing repeat identity")
+                continue
+            if identity not in expected:
+                reasons.append(f"Arm {arm}/{task_id}: attempt is outside the frozen schedule")
+                continue
             seen.add(identity)
+            if row.get("experiment_split") != split or row.get("experiment_arm") != arm:
+                reasons.append(f"Arm {arm}/{task_id}: receipt arm or split differs")
             if row.get("execution", {}).get("status", row.get("execution_status")) != "completed":
                 reasons.append(f"Arm {arm}/{task_id}: execution incomplete or unknown")
             outcome = row.get("outcome", {})
@@ -141,7 +184,10 @@ def assess(plan: dict, arm_a: list[dict], arm_b: list[dict], split: str) -> dict
             cost = row.get("cost", {})
             if row.get("usage_status", cost.get("usage_status")) != "complete":
                 cost_complete = False
+                reasons.append(f"Arm {arm}/{task_id}: usage measurement incomplete or unknown")
             known_cost += cost.get("estimated_cost_usd", 0) or 0
+        if seen != expected:
+            reasons.append(f"Arm {arm}: attempts do not match the frozen schedule")
         for task_id in sorted(wanted):
             if len(grouped[task_id]) != spec["repeats"]:
                 reasons.append(f"Arm {arm}/{task_id}: expected {spec['repeats']} attempts")
