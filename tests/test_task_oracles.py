@@ -17,6 +17,14 @@ async def test_empty_workspace_earns_no_credit(task_id, tmp_path):
     assert earned == 0
 
 
+def test_bundled_security_checks_do_not_mask_tool_errors():
+    commands = [
+        command for task in load_all_tasks() for command in task.verification.security_commands
+    ]
+    assert len(commands) == 4
+    assert not any("|| true" in command or "2>/dev/null" in command for command in commands)
+
+
 @pytest.mark.asyncio
 async def test_bf001_comments_and_placeholder_earn_no_credit(tmp_path):
     (tmp_path / "tests").mkdir()

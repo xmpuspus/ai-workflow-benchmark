@@ -83,7 +83,7 @@ verification:
   lint_commands:
     - "source .venv/bin/activate && ruff check main.py auth/"
   security_commands:
-    - "source .venv/bin/activate && bandit -r . -ll --exclude .venv 2>/dev/null || true"
+    - "source .venv/bin/activate && bandit -r . -ll --exclude .venv"
   partial_credit:
     - criterion: "CORS allow_origins is not wildcard ['*']"
       points: 20
