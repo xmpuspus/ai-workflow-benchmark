@@ -179,6 +179,7 @@ def test_validate_control_review_rejects_recomputed_but_semantically_forged_rece
 
 
 def test_holdout_admission_requires_separate_declaration_bound_to_controls(tmp_path):
+    from awb.experiments.execution import _validate_holdout_controls
     from awb.verification.task_admission import (
         task_definition_hash,
         validate_holdout_admission,
@@ -187,6 +188,8 @@ def test_holdout_admission_requires_separate_declaration_bound_to_controls(tmp_p
     task_path = _write_task(tmp_path / "BF-901.yaml")
     review = _write_control_review(task_path, tmp_path)
     assert validate_holdout_admission(task_path) is False
+    with pytest.raises(ValueError, match="explicit admission"):
+        _validate_holdout_controls({"BF-901": task_path})
 
     (tmp_path / "BF-901.admission.json").write_text(
         json.dumps(
@@ -203,6 +206,7 @@ def test_holdout_admission_requires_separate_declaration_bound_to_controls(tmp_p
     )
 
     assert validate_holdout_admission(task_path) is True
+    _validate_holdout_controls({"BF-901": task_path})
 
 
 @pytest.mark.parametrize(

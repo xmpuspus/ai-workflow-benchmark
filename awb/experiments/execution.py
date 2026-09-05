@@ -336,12 +336,12 @@ def _preflight_runtime(
 
 
 def _validate_holdout_controls(paths: dict[str, Path]) -> None:
-    from awb.verification.task_admission import validate_control_review
+    from awb.verification.task_admission import validate_holdout_admission
 
-    invalid = [task_id for task_id, path in paths.items() if not validate_control_review(path)]
+    invalid = [task_id for task_id, path in paths.items() if not validate_holdout_admission(path)]
     if invalid:
         raise ValueError(
-            "Holdout tasks lack reviewed positive and negative control evidence: "
+            "Holdout tasks lack reviewed control evidence or explicit admission: "
             + ", ".join(sorted(invalid))
         )
 
