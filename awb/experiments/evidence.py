@@ -216,11 +216,13 @@ def verify_bundle(directory: Path) -> list[str]:
         errors.append("Bundle declares unknown metadata")
     if metadata["complete"] != complete_metadata:
         errors.append("Bundle metadata completeness is inconsistent")
-    actual = {
-        item.relative_to(root).as_posix()
-        for item in root.rglob("*")
-        if item.is_file() and item.name != "manifest.json"
-    }
+    actual = set()
+    for item in root.rglob("*"):
+        relative = item.relative_to(root).as_posix()
+        if item.is_symlink():
+            errors.append(f"Bundle contains symlink: {relative}")
+        elif item.is_file() and item != path:
+            actual.add(relative)
     if actual != set(files):
         errors.append("Bundle contains missing or unlisted files")
     if "result" not in kinds.values():

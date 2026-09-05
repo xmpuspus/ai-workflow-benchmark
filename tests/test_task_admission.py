@@ -35,6 +35,16 @@ def _write_task(path, check: str = "test -f solved.txt"):
     return path
 
 
+def _write_control_review(task_path, tmp_path):
+    from awb.verification.task_admission import run_control_protocol
+
+    gold, noop, mutation = tmp_path / "gold", tmp_path / "noop", tmp_path / "mutation"
+    for workspace in (gold, noop, mutation):
+        workspace.mkdir()
+    (gold / "solved.txt").write_text("done")
+    return run_control_protocol(task_path, gold, noop, mutation)
+
+
 def test_audit_marks_unconditional_credit_and_missing_review_controls(tmp_path):
     _write_task(tmp_path / "BF-901.yaml", "test -f solved.txt; true")
 
@@ -166,6 +176,68 @@ def test_validate_control_review_rejects_recomputed_but_semantically_forged_rece
     review["receipt_sha256"] = _receipt_hash(review)
     (tmp_path / "BF-901.review.json").write_text(json.dumps(review))
     assert validate_control_review(task_path) is False
+
+
+def test_holdout_admission_requires_separate_declaration_bound_to_controls(tmp_path):
+    from awb.verification.task_admission import (
+        task_definition_hash,
+        validate_holdout_admission,
+    )
+
+    task_path = _write_task(tmp_path / "BF-901.yaml")
+    review = _write_control_review(task_path, tmp_path)
+    assert validate_holdout_admission(task_path) is False
+
+    (tmp_path / "BF-901.admission.json").write_text(
+        json.dumps(
+            {
+                "admission": "holdout",
+                "task_definition_hash": task_definition_hash(task_path),
+                "control_receipt_sha256": review["receipt_sha256"],
+                "reviewed_by": "independent-reviewer",
+                "reviewed_at": "2026-09-05T12:30:00Z",
+                "independent_oracle_review": True,
+                "contamination_review": "No benchmark solution or target patch was exposed.",
+            }
+        )
+    )
+
+    assert validate_holdout_admission(task_path) is True
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [
+        ("admission", "development"),
+        ("task_definition_hash", "0" * 64),
+        ("control_receipt_sha256", "0" * 64),
+        ("reviewed_by", "  "),
+        ("reviewed_at", "not-a-date"),
+        ("independent_oracle_review", False),
+        ("contamination_review", ""),
+    ],
+)
+def test_holdout_admission_rejects_incomplete_or_unbound_declarations(tmp_path, field, value):
+    from awb.verification.task_admission import (
+        task_definition_hash,
+        validate_holdout_admission,
+    )
+
+    task_path = _write_task(tmp_path / "BF-901.yaml")
+    review = _write_control_review(task_path, tmp_path)
+    admission = {
+        "admission": "holdout",
+        "task_definition_hash": task_definition_hash(task_path),
+        "control_receipt_sha256": review["receipt_sha256"],
+        "reviewed_by": "independent-reviewer",
+        "reviewed_at": "2026-09-05T12:30:00+00:00",
+        "independent_oracle_review": True,
+        "contamination_review": "No benchmark solution or target patch was exposed.",
+    }
+    admission[field] = value
+    (tmp_path / "BF-901.admission.json").write_text(json.dumps(admission))
+
+    assert validate_holdout_admission(task_path) is False
 
 
 def test_controls_reject_symlinked_workspace_evidence_before_evaluation(tmp_path):

@@ -11,6 +11,7 @@ import hashlib
 import json
 import math
 import re
+from datetime import datetime
 from pathlib import Path
 from typing import Any
 
@@ -36,6 +37,10 @@ def task_definition_hash(path: Path) -> str:
 
 def _review_path(task_definition: Path) -> Path:
     return task_definition.with_suffix(".review.json")
+
+
+def _admission_path(task_definition: Path) -> Path:
+    return task_definition.with_suffix(".admission.json")
 
 
 def _load_mapping(path: Path) -> dict[str, Any] | None:
@@ -138,6 +143,41 @@ def validate_control_review(task_definition: Path) -> bool:
             return False
         return _has_valid_controls(_load_json(review_path), task_definition_hash(task_definition))
     except OSError:
+        return False
+
+
+def validate_holdout_admission(task_definition: Path) -> bool:
+    """Validate an unauthenticated operator declaration for separate holdout admission."""
+    try:
+        review_path = _review_path(task_definition)
+        admission_path = _admission_path(task_definition)
+        if task_definition.is_symlink() or review_path.is_symlink() or admission_path.is_symlink():
+            return False
+        definition_hash = task_definition_hash(task_definition)
+        review = _load_json(review_path)
+        if not _has_valid_controls(review, definition_hash):
+            return False
+        admission = _load_json(admission_path)
+        if not isinstance(admission, dict):
+            return False
+        reviewed_by = admission.get("reviewed_by")
+        contamination_review = admission.get("contamination_review")
+        reviewed_at = admission.get("reviewed_at")
+        if not isinstance(reviewed_at, str):
+            return False
+        timestamp = datetime.fromisoformat(reviewed_at.replace("Z", "+00:00"))
+        return (
+            admission.get("admission") == "holdout"
+            and admission.get("task_definition_hash") == definition_hash
+            and admission.get("control_receipt_sha256") == review.get("receipt_sha256")
+            and isinstance(reviewed_by, str)
+            and bool(reviewed_by.strip())
+            and timestamp.tzinfo is not None
+            and admission.get("independent_oracle_review") is True
+            and isinstance(contamination_review, str)
+            and bool(contamination_review.strip())
+        )
+    except (OSError, ValueError):
         return False
 
 

@@ -188,6 +188,36 @@ def test_bundle_verifier_rejects_no_results_and_false_complete_metadata(tmp_path
     assert any("metadata" in error.lower() for error in errors)
 
 
+def test_bundle_verifier_rejects_unlisted_nested_manifest(tmp_path):
+    from awb.experiments.evidence import build_bundle, verify_bundle
+
+    run = tmp_path / "run"
+    run.mkdir()
+    (run / "BF-001.json").write_text('{"task_id":"BF-001"}')
+    bundle = tmp_path / "bundle"
+    build_bundle(run, bundle)
+    extra = bundle / "attachments" / "manifest.json"
+    extra.parent.mkdir()
+    extra.write_text('{"unlisted":true}')
+
+    assert "unlisted" in " ".join(verify_bundle(bundle)).lower()
+
+
+def test_bundle_verifier_rejects_unlisted_symlink_directory(tmp_path):
+    from awb.experiments.evidence import build_bundle, verify_bundle
+
+    run = tmp_path / "run"
+    run.mkdir()
+    (run / "BF-001.json").write_text('{"task_id":"BF-001"}')
+    bundle = tmp_path / "bundle"
+    build_bundle(run, bundle)
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    (bundle / "unlisted-link").symlink_to(outside, target_is_directory=True)
+
+    assert "symlink" in " ".join(verify_bundle(bundle)).lower()
+
+
 def test_assessment_incomplete_or_wrong_model_is_inconclusive():
     from awb.experiments.protocol import assess, create_plan
 
