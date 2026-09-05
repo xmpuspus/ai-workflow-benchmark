@@ -26,6 +26,7 @@ from awb.core.config import (
     TaskDefinition,
     WorkflowInfo,
 )
+from awb.core.evaluator import evaluator_identity
 from awb.core.metrics import MetricCollector
 from awb.core.repo_manager import RepoManager
 from awb.core.results import ResultRecorder
@@ -105,6 +106,7 @@ class BenchmarkRunner:
         self.repo_manager = RepoManager(use_uv=use_uv)
         self.recorder = ResultRecorder()
         self._environment = RunEnvironment()
+        self._evaluator_version = evaluator_identity(self._environment.awb_version)
         self._adapter = _get_adapter(tool)
         self._run1_times: dict[str, float] = {}  # task_id -> wall clock from run 1
         # Compute once per runner so every saved result pins the same task set.
@@ -931,7 +933,7 @@ class BenchmarkRunner:
         )
         return {
             "task_definition_hash": task_hash,
-            "evaluator_version": self._environment.awb_version,
+            "evaluator_version": self._get_evaluator_version(),
             "effective_config_hash": config_hash,
             "adapter_version": adapter_version,
             "execution_mode": getattr(self, "execution_mode", "host"),
@@ -968,6 +970,12 @@ class BenchmarkRunner:
                 "budget_fingerprint": budget_hash,
             },
         }
+
+    def _get_evaluator_version(self) -> str:
+        """Return the source identity cached for this runner instance."""
+        if not hasattr(self, "_evaluator_version"):
+            self._evaluator_version = evaluator_identity(self._environment.awb_version)
+        return self._evaluator_version
 
 
 def _get_adapter(name: str):
