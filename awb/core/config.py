@@ -257,6 +257,14 @@ class RunResult:
     effective_input_manifest: dict[str, Any] = field(default_factory=dict)
     environment_manifest: dict[str, Any] = field(default_factory=dict)
     cohort_manifest: dict[str, Any] = field(default_factory=dict)
+    experiment_plan_hash: str = ""
+    experiment_split: str = ""
+    experiment_arm: str = ""
+    repeat_index: int | None = None
+    requested_model: str = ""
+    experiment_attempt_status: str = ""
+    experiment_state_policy: str = ""
+    configured_instruction_files: list[str] = field(default_factory=list)
 
     @property
     def execution_status(self) -> str:
@@ -380,4 +388,16 @@ class RunResult:
             d["task_set_hash"] = self.task_set_hash
         if self.trace_path:
             d["trace_path"] = self.trace_path
+        if self.experiment_plan_hash:
+            for name in (
+                "experiment_plan_hash",
+                "experiment_split",
+                "experiment_arm",
+                "repeat_index",
+                "requested_model",
+                "experiment_attempt_status",
+                "experiment_state_policy",
+                "configured_instruction_files",
+            ):
+                d[name] = getattr(self, name)
         return d

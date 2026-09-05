@@ -71,7 +71,7 @@ def build_report(run_dir: Path) -> dict:
                 "tool": r.tool,
                 "correctness": "passed" if r.outcome.success else "failed",
                 "execution_status": getattr(r, "execution_status", "unknown"),
-                "stage": getattr(r, "stage", "unknown"),
+                "stage": getattr(r, "execution_stage", "unknown"),
                 "termination_reason": getattr(r, "termination_reason", ""),
                 "error": str(error) if error else None,
                 "partial_credit": r.outcome.partial_credit_score,
@@ -119,7 +119,7 @@ def render_text(report: dict) -> str:
     """Render the stable report payload for a terminal without Rich markup."""
     counts = report["counts"]
     lines = [
-        f"Evidence report: {report['status']}",
+        f"Evidence report: {report['status'].replace('_', ' ')}",
         f"Run directory: {report['run_dir']}",
     ]
     lines.append(
@@ -157,7 +157,7 @@ def render_html(report: dict) -> str:
         for key, value in counts.items()
     )
     failed = ", ".join(report.get("failed_tasks", [])) or "None"
-    status = html.escape(report["status"])
+    status = html.escape(report["status"].replace("_", " ").title())
     run_dir = html.escape(report["run_dir"])
     next_step = html.escape(report["next_step"])
     evidence = ""
@@ -184,7 +184,9 @@ def render_html(report: dict) -> str:
         "body{font:16px system-ui;max-width:720px;margin:3rem auto;padding:0 1rem;color:#17202a}"
         "table{border-collapse:collapse}th,td{padding:.45rem .8rem;border-bottom:1px solid #d8dee4;"
         "text-align:left}.status{font-weight:700}pre{white-space:pre-wrap;overflow-wrap:anywhere}"
-        "details{margin:1rem 0;padding:.6rem;border:1px solid #d8dee4}code{overflow-wrap:anywhere}"
+        "details{margin:1rem 0;border:1px solid #d8dee4}"
+        "summary{min-height:44px;box-sizing:border-box;padding:.75rem;cursor:pointer}"
+        "details pre{padding:0 .75rem}code{overflow-wrap:anywhere}"
     )
     return (
         '<!doctype html><html lang="en"><meta charset="utf-8">'

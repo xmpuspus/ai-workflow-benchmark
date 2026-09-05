@@ -307,6 +307,37 @@
           "type": "string"
         }
       }
+    },
+    "experiment_plan_hash": {
+      "type": "string"
+    },
+    "experiment_split": {
+      "type": "string"
+    },
+    "experiment_arm": {
+      "type": "string"
+    },
+    "requested_model": {
+      "type": "string"
+    },
+    "experiment_attempt_status": {
+      "type": "string"
+    },
+    "experiment_state_policy": {
+      "type": "string"
+    },
+    "repeat_index": {
+      "type": [
+        "integer",
+        "null"
+      ],
+      "minimum": 1
+    },
+    "configured_instruction_files": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
     }
   }
 }

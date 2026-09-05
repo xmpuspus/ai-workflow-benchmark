@@ -86,6 +86,74 @@ def test_wrong_input_hash_rejected_before_attempt(monkeypatch, tmp_path):
     assert called == []
 
 
+def test_nested_execution_receipt_is_reusable(monkeypatch, tmp_path):
+    from awb.experiments.execution import execute_plan
+
+    plan, config_a, config_b, tasks_dir = _plan(tmp_path)
+    calls = []
+
+    def attempt(**kwargs):
+        calls.append(kwargs["arm"])
+        directory = kwargs["runs_dir"] / kwargs["run_id"]
+        directory.mkdir(parents=True)
+        path = directory / "BF-001_claude-code-custom.json"
+        path.write_text(
+            json.dumps(
+                {
+                    "task_id": "BF-001",
+                    "model": "claude-test-model",
+                    "execution": {"status": "completed", "stage": "complete"},
+                    "execution_mode": "host",
+                    "outcome": {
+                        "success": True,
+                        "partial_credit_score": 100,
+                        "partial_credit_max": 100,
+                    },
+                }
+            )
+        )
+        return path
+
+    monkeypatch.setattr("awb.experiments.execution._execute_attempt", attempt)
+    first = execute_plan(plan, config_a, config_b, tasks_dir, "development", tmp_path / "runs")
+    assert first["status"] == "completed"
+    assert first["completed_attempts"][0]["execution_mode"] == "host"
+    second = execute_plan(plan, config_a, config_b, tasks_dir, "development", tmp_path / "runs")
+    assert len(second["resumed_attempts"]) == 2
+    assert len(calls) == 2
+
+
+def test_experiment_receipts_survive_result_serialization():
+    from awb.core.config import (
+        RunCost,
+        RunEnvironment,
+        RunMetrics,
+        RunOutcome,
+        RunQuality,
+        RunResult,
+    )
+    from awb.core.results import _dict_to_result
+
+    result = RunResult(
+        task_id="BF-001",
+        tool="test",
+        run_id="r",
+        timestamp="now",
+        outcome=RunOutcome(False, 0, 100),
+        metrics=RunMetrics(),
+        cost=RunCost(),
+        quality=RunQuality(),
+        environment=RunEnvironment(),
+        experiment_plan_hash="plan",
+        repeat_index=2,
+        experiment_arm="a",
+    )
+    loaded = _dict_to_result(result.to_dict())
+    assert loaded.experiment_plan_hash == "plan"
+    assert loaded.repeat_index == 2
+    assert loaded.experiment_arm == "a"
+
+
 def test_counterbalanced_attempts_are_receipted_and_resume_without_duplicates(
     monkeypatch, tmp_path
 ):

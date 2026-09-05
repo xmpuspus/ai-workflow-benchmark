@@ -130,7 +130,7 @@ def assess(plan: dict, arm_a: list[dict], arm_b: list[dict], split: str) -> dict
             if identity in seen or type(identity[1]) is not int:
                 reasons.append(f"Arm {arm}/{task_id}: duplicate or missing repeat identity")
             seen.add(identity)
-            if row.get("execution_status") != "completed":
+            if row.get("execution", {}).get("status", row.get("execution_status")) != "completed":
                 reasons.append(f"Arm {arm}/{task_id}: execution incomplete or unknown")
             outcome = row.get("outcome", {})
             maximum = outcome.get("partial_credit_max", 0)

@@ -277,4 +277,12 @@ def _dict_to_result(data: dict) -> RunResult:
         effective_input_manifest=data.get("effective_input_manifest", {}),
         environment_manifest=data.get("environment_manifest", {}),
         cohort_manifest=data.get("cohort_manifest", {}),
+        experiment_plan_hash=data.get("experiment_plan_hash", ""),
+        experiment_split=data.get("experiment_split", ""),
+        experiment_arm=data.get("experiment_arm", ""),
+        repeat_index=data.get("repeat_index"),
+        requested_model=data.get("requested_model", ""),
+        experiment_attempt_status=data.get("experiment_attempt_status", ""),
+        experiment_state_policy=data.get("experiment_state_policy", ""),
+        configured_instruction_files=data.get("configured_instruction_files", []),
     )

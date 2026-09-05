@@ -178,7 +178,7 @@ def _existing_attempts(runs_dir: Path, plan: dict, split: str) -> dict[tuple[str
             raise ValueError(f"Experiment receipt config hash differs: {key}")
         if row.get("model") != spec["model"]:
             raise ValueError(f"Experiment receipt model differs or is unknown: {key}")
-        if row.get("execution_status") != "completed":
+        if row.get("execution", {}).get("status", row.get("execution_status")) != "completed":
             raise ValueError(f"Experiment attempt is incomplete: {key}")
         found[key] = row
     return found
@@ -363,7 +363,7 @@ def execute_plan(
                     "effective_config_hash": snapshot["hash"],
                     "requested_model": spec["model"],
                     "experiment_attempt_status": "attempted",
-                    "execution_mode": "fresh_process_per_attempt",
+                    "experiment_state_policy": "fresh_process_per_attempt",
                     "configured_instruction_files": snapshot["instruction_files"],
                 }
             )
@@ -372,7 +372,8 @@ def execute_plan(
             executed.append(row)
             completed.append(row)
     eligible = all(
-        row.get("execution_status") == "completed" and row.get("model") == spec["model"]
+        row.get("execution", {}).get("status", row.get("execution_status")) == "completed"
+        and row.get("model") == spec["model"]
         for row in completed
     )
     return {
