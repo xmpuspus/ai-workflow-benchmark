@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import contextlib
 import json
+import sys
 from pathlib import Path
 
 import click
@@ -20,6 +22,49 @@ def _error(exc: Exception) -> None:
 @click.group()
 def experiment():
     """Plan a comparison, assess saved attempts, or verify an evidence bundle."""
+
+
+@experiment.command("snapshot")
+@click.argument("config_dir", type=click.Path(path_type=Path))
+def snapshot_cmd(config_dir: Path):
+    """Show permitted file names and hashes for a plan. Never prints file contents."""
+    from awb.experiments.execution import config_snapshot
+
+    try:
+        snapshot = config_snapshot(config_dir)
+        emit_json({key: value for key, value in snapshot.items() if key != "entries"})
+    except (ValueError, OSError, KeyError, TypeError) as exc:
+        _error(exc)
+
+
+@experiment.command("run")
+@click.argument("plan_file", type=click.Path(path_type=Path))
+@click.option("--config-a", required=True, type=click.Path(path_type=Path))
+@click.option("--config-b", required=True, type=click.Path(path_type=Path))
+@click.option("--tasks-dir", type=click.Path(path_type=Path))
+@click.option("--split", type=click.Choice(["development", "holdout"]), default="development")
+@click.option("--runs-dir", type=click.Path(path_type=Path), default="results/experiments")
+def run_plan_cmd(
+    plan_file: Path,
+    config_a: Path,
+    config_b: Path,
+    tasks_dir: Path | None,
+    split: str,
+    runs_dir: Path,
+):
+    """Execute the frozen schedule. This explicitly calls the configured tool."""
+    from awb.experiments.execution import execute_plan
+
+    try:
+        plan = json.loads(plan_file.read_text())
+        validate_plan(plan)
+        with contextlib.redirect_stdout(sys.stderr):
+            result = execute_plan(plan, config_a, config_b, tasks_dir, split, runs_dir)
+        emit_json(result)
+        if result["status"] != "completed":
+            raise click.exceptions.Exit(1)
+    except (ValueError, OSError, KeyError, TypeError, RuntimeError) as exc:
+        _error(exc)
 
 
 @experiment.command("plan")

@@ -118,3 +118,48 @@ def test_experiment_cli_json_error_and_plan(tmp_path):
     result = CliRunner().invoke(experiment, ["verify-bundle", str(tmp_path)])
     assert result.exit_code == 2
     assert json.loads(result.output)["status"] == "error"
+
+
+def test_snapshot_command_does_not_expose_configuration_content(tmp_path):
+    import json
+
+    from click.testing import CliRunner
+
+    from awb.commands.experiment_cmd import experiment
+
+    config = tmp_path / "config"
+    config.mkdir()
+    (config / "CLAUDE.md").write_text("private instruction text")
+    result = CliRunner().invoke(experiment, ["snapshot", str(config)])
+    assert result.exit_code == 0, result.output
+    payload = json.loads(result.output)
+    assert len(payload["hash"]) == 64
+    assert "private instruction text" not in result.output
+    assert "entries" not in payload
+
+
+def test_run_command_rejects_invalid_plan_before_adapter(tmp_path):
+    import json
+
+    from click.testing import CliRunner
+
+    from awb.commands.experiment_cmd import experiment
+
+    path = tmp_path / "plan.json"
+    path.write_text("{}")
+    result = CliRunner().invoke(
+        experiment,
+        [
+            "run",
+            str(path),
+            "--config-a",
+            str(tmp_path),
+            "--config-b",
+            str(tmp_path),
+            "--runs-dir",
+            str(tmp_path / "runs"),
+        ],
+    )
+    assert result.exit_code == 2, result.output
+    assert json.loads(result.output)["status"] == "error"
+    assert not (tmp_path / "runs").exists()

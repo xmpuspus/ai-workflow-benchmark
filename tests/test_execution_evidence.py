@@ -306,3 +306,31 @@ def test_custom_task_path_is_translated_or_rejected(tmp_path):
     assert _path_inside_container(tasks, project) == "/opt/awb/private/tasks"
     with pytest.raises(click.ClickException):
         _path_inside_container(tmp_path / "outside", project)
+
+
+def test_container_can_mount_an_explicit_external_task_pack_read_only(tmp_path):
+    from awb.core.container import build_container_command
+
+    tasks = tmp_path / "private-tasks"
+    tasks.mkdir()
+    command = build_container_command(
+        image="test-image",
+        project_root=tmp_path / "package",
+        results_dir=tmp_path / "results",
+        cli_args=["run", "codex-cli"],
+        input_mounts=[(tasks, "/inputs/tasks")],
+    )
+    assert f"type=bind,src={tasks},dst=/inputs/tasks,readonly" in command
+
+
+def test_container_rejects_home_as_task_input(tmp_path):
+    from awb.core.container import build_container_command
+
+    with pytest.raises(ValueError, match="broad"):
+        build_container_command(
+            image="test-image",
+            project_root=tmp_path,
+            results_dir=tmp_path / "results",
+            cli_args=["run"],
+            input_mounts=[(Path.home(), "/inputs/tasks")],
+        )

@@ -14,11 +14,21 @@ def build_container_command(
     results_dir: Path,
     cli_args: list[str],
     container_name: str | None = None,
+    input_mounts: list[tuple[Path, str]] | None = None,
 ) -> list[str]:
     """Build a narrow Docker command without host-home or ambient-secret mounts."""
     source = project_root.resolve()
     results = results_dir.resolve()
     results.mkdir(parents=True, exist_ok=True)
+    mounts = []
+    for path, target in input_mounts or []:
+        if path.is_symlink() or path.resolve() in {Path.home().resolve(), Path("/")}:
+            raise ValueError("Refusing a broad or symlink container input")
+        if target not in {"/inputs/tasks", "/inputs/workflow.yaml"}:
+            raise ValueError("Unknown container input target")
+        if not path.exists():
+            raise ValueError("Container input does not exist")
+        mounts.extend(["--mount", f"type=bind,src={path.resolve()},dst={target},readonly"])
     return [
         "docker",
         "run",
@@ -41,6 +51,7 @@ def build_container_command(
         "--env=AWB_RESULTS_DIR=/results",
         "--env=HOME=/tmp/awb-home",
         "--env=XDG_CACHE_HOME=/tmp/awb-cache",
+        *mounts,
         image,
         "python3",
         "-c",

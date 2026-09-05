@@ -361,10 +361,15 @@ def run(
         project_root = Path(__file__).resolve().parents[2]
         container_timeout = experiment_timeout or 7200
         container_identity = resolve_image_identity(container_image)
-        container_tasks_dir = _path_inside_container(tasks_dir_path, project_root)
-        container_workflow = _path_inside_container(
-            Path(workflow) if workflow else None, project_root
-        )
+        input_mounts = []
+        container_tasks_dir = None
+        container_workflow = None
+        if tasks_dir_path:
+            input_mounts.append((tasks_dir_path, "/inputs/tasks"))
+            container_tasks_dir = "/inputs/tasks"
+        if workflow:
+            input_mounts.append((Path(workflow), "/inputs/workflow.yaml"))
+            container_workflow = "/inputs/workflow.yaml"
         args = _rebuild_container_args(
             tool=tool,
             workflow=container_workflow,
@@ -396,6 +401,7 @@ def run(
                 results_dir=RESULTS_DIR,
                 cli_args=args,
                 timeout=container_timeout + 30,
+                input_mounts=input_mounts,
             )
         except RuntimeError as exc:
             raise click.ClickException(str(exc)) from exc
