@@ -256,6 +256,25 @@ def test_config_snapshot_rejects_root_symlink(tmp_path):
         config_snapshot(link)
 
 
+def test_config_snapshot_rejects_nonregular_and_oversized_files(tmp_path):
+    import os
+
+    from awb.experiments.execution import config_snapshot
+
+    config = tmp_path / "config"
+    config.mkdir()
+    fifo = config / "settings.json"
+    os.mkfifo(fifo)
+    with pytest.raises(ValueError, match="regular file"):
+        config_snapshot(config)
+    fifo.unlink()
+    oversized = config / "CLAUDE.md"
+    with oversized.open("wb") as handle:
+        handle.truncate(1024 * 1024 + 1)
+    with pytest.raises(ValueError, match="size limit"):
+        config_snapshot(config)
+
+
 def test_holdout_requires_reviewed_controls_before_execution(monkeypatch, tmp_path):
     from awb.experiments.execution import execute_plan
 

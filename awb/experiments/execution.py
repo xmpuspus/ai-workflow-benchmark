@@ -27,6 +27,7 @@ _SAFETY_FILES = {"settings.json", "hooks.json"}
 _FORBIDDEN_PARTS = {"auth.json", "credentials.json", "sessions", "state", "history.jsonl"}
 _INSTRUCTION_ROOTS = {"CLAUDE.md", "AGENTS.md", "AGENTS.override.md"}
 _BASE_ENV = ("PATH", "HOME", "TMPDIR")
+_MAX_CONFIG_FILE_BYTES = 1024 * 1024
 
 
 def _hash_entries(entries: list[tuple[str, bytes]]) -> str:
@@ -56,8 +57,12 @@ def config_snapshot(config_dir: Path) -> dict[str, Any]:
             raise ValueError(f"Configuration symlink is not permitted: {relative}")
         if path.is_dir():
             continue
+        if not path.is_file():
+            raise ValueError(f"Configuration entry is not a regular file: {relative}")
         if len(parts) != 1 or parts[0] not in _ROOT_FILES:
             raise ValueError(f"Configuration file is not permitted: {relative}")
+        if path.stat().st_size > _MAX_CONFIG_FILE_BYTES:
+            raise ValueError(f"Configuration file exceeds the size limit: {relative}")
         name = relative.as_posix()
         content = path.read_bytes()
         if path.suffix in {".md", ".json"}:
