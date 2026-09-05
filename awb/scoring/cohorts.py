@@ -23,7 +23,13 @@ def _selection_identity(manifest: dict) -> str:
         return str(explicit)
     task_ids = manifest.get("selected_task_ids")
     repeats = manifest.get("requested_repeats")
-    if not isinstance(task_ids, list) or not task_ids or type(repeats) is not int or repeats <= 0:
+    if (
+        not isinstance(task_ids, list)
+        or not task_ids
+        or any(not isinstance(task_id, str) or not _known(task_id) for task_id in task_ids)
+        or type(repeats) is not int
+        or repeats <= 0
+    ):
         return ""
     payload = {"selected_task_ids": sorted(task_ids), "requested_repeats": repeats}
     return hashlib.sha256(
@@ -35,6 +41,7 @@ def _selection_identity(manifest: dict) -> str:
 class CohortIdentity:
     task_set_hash: str = ""
     selection_identity: str = ""
+    tool: str = ""
     model: str = ""
     adapter_version: str = ""
     config_hash: str = ""
@@ -76,6 +83,7 @@ def identity_from_result(result) -> CohortIdentity:
             getattr(result, "task_set_hash", ""), cohort_manifest.get("task_set_hash", "")
         ),
         selection_identity=_selection_identity(cohort_manifest),
+        tool=_first_known(getattr(result, "tool", ""), getattr(workflow, "tool", "")),
         model=_first_known(getattr(result, "model", ""), getattr(workflow, "model", "")),
         adapter_version=_first_known(
             getattr(result, "adapter_version", ""),
@@ -111,6 +119,7 @@ def identity_from_mapping(data: dict) -> CohortIdentity:
     return CohortIdentity(
         task_set_hash=_first_known(data.get("task_set_hash"), cohort_manifest.get("task_set_hash")),
         selection_identity=_selection_identity(cohort_manifest),
+        tool=_first_known(data.get("tool"), workflow.get("tool")),
         model=_first_known(data.get("model"), workflow.get("model")),
         adapter_version=_first_known(
             data.get("adapter_version"),

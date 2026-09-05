@@ -8,7 +8,12 @@ from awb.core.config import (
     RunQuality,
     RunResult,
 )
-from awb.scoring.cohorts import assess_cohort_coverage, cohort_group_key, identity_from_result
+from awb.scoring.cohorts import (
+    assess_cohort_coverage,
+    cohort_group_key,
+    identity_from_mapping,
+    identity_from_result,
+)
 from awb.scoring.readiness import readiness_from_results
 from awb.scoring.workflow_lift import compute_workflow_lift
 from awb.trace import FILE_EDIT, TraceWriter, new_span
@@ -126,6 +131,39 @@ def test_complete_cohort_identity_is_eligible_and_model_changes_partition():
     assert cohort_group_key(first) == cohort_group_key(second)
     second.model = "model-b"
     assert cohort_group_key(first) != cohort_group_key(second)
+
+
+def test_cohort_identity_partitions_different_tools():
+    first = _result("T1", 100)
+    second = _result("T1", 100)
+    for result in (first, second):
+        result.task_set_hash = "suite"
+        result.model = "model"
+        result.adapter_version = "adapter"
+        result.effective_config_hash = "config"
+        result.evaluator_version = "evaluator"
+        result.execution_mode = "host"
+        result.environment_fingerprint = "environment"
+        result.budget_fingerprint = "budget"
+        result.cohort_manifest = {"selected_task_ids": ["T1"], "requested_repeats": 1}
+    second.tool = "other-tool"
+
+    assert cohort_group_key(first) != cohort_group_key(second)
+
+
+def test_malformed_task_selection_is_missing_instead_of_raising():
+    identity = identity_from_mapping(
+        {
+            "tool": "tool",
+            "cohort_manifest": {
+                "selected_task_ids": ["T1", None],
+                "requested_repeats": 1,
+            },
+        }
+    )
+
+    assert identity.selection_identity == ""
+    assert "selection_identity" in identity.missing_fields
 
 
 def test_cohort_uses_suite_and_selection_identity_not_per_task_definition_hash():
