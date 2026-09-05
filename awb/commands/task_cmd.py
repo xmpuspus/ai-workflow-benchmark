@@ -58,6 +58,105 @@ def task():
     """Manage benchmark task definitions."""
 
 
+def _emit_admission_text(payload: dict) -> None:
+    """Print review evidence without implying that it admits a task."""
+    console.print(f"[{INFO}]{payload['status']}[/{INFO}] ({payload['admission']})")
+    for key in ("tasks_scanned", "candidate_path", "review_path", "review_output", "next_step"):
+        if key in payload:
+            console.print(f"  {key.replace('_', ' ')}: {payload[key]}", markup=False)
+
+
+@task.command("audit")
+@click.option(
+    "--tasks-dir",
+    type=click.Path(exists=True, file_okay=False, path_type=Path),
+    default=None,
+    help="Task definition directory (default: bundled tasks).",
+)
+@click.option("--format", "fmt", type=click.Choice(["text", "json"]), default="text")
+def audit(tasks_dir: Path | None, fmt: str):
+    """Inventory static task-review gaps; it does not admit tasks."""
+    from awb.core.config import TASKS_DIR
+    from awb.verification.task_admission import audit_tasks
+
+    payload = audit_tasks(tasks_dir or TASKS_DIR)
+    if fmt == "json":
+        emit_json(payload)
+    else:
+        _emit_admission_text(payload)
+        console.print(f"  findings: {sum(len(item['findings']) for item in payload['findings'])}")
+
+
+@task.command("controls")
+@click.argument("task_definition", type=click.Path(exists=True, dir_okay=False, path_type=Path))
+@click.option(
+    "--gold-workspace", type=click.Path(exists=True, file_okay=False, path_type=Path), required=True
+)
+@click.option(
+    "--noop-workspace", type=click.Path(exists=True, file_okay=False, path_type=Path), required=True
+)
+@click.option(
+    "--mutation-workspace",
+    type=click.Path(exists=True, file_okay=False, path_type=Path),
+    required=True,
+)
+@click.option("--review-output", type=click.Path(path_type=Path), default=None)
+@click.option("--format", "fmt", type=click.Choice(["text", "json"]), default="text")
+def controls(
+    task_definition: Path,
+    gold_workspace: Path,
+    noop_workspace: Path,
+    mutation_workspace: Path,
+    review_output: Path | None,
+    fmt: str,
+):
+    """Record positive, no-op, and mutation control evidence for review."""
+    from awb.verification.task_admission import run_control_protocol
+
+    try:
+        payload = run_control_protocol(
+            task_definition, gold_workspace, noop_workspace, mutation_workspace, review_output
+        )
+    except Exception as exc:
+        raise click.ClickException(str(exc)) from exc
+    if fmt == "json":
+        emit_json(payload)
+    else:
+        _emit_admission_text(payload)
+
+
+@task.command("from-failure")
+@click.argument("result", type=click.Path(exists=True, dir_okay=False, path_type=Path))
+@click.option(
+    "--out", type=click.Path(path_type=Path), required=True, help="Candidate review directory."
+)
+@click.option("--description", required=True, help="Reviewer-written failure description.")
+@click.option("--oracle-review", required=True, help="Reviewer note on the proposed oracle.")
+@click.option(
+    "--task-definition", type=click.Path(exists=True, dir_okay=False, path_type=Path), default=None
+)
+@click.option("--format", "fmt", type=click.Choice(["text", "json"]), default="text")
+def from_failure(
+    result: Path,
+    out: Path,
+    description: str,
+    oracle_review: str,
+    task_definition: Path | None,
+    fmt: str,
+):
+    """Create a review-only candidate from a saved failed result."""
+    from awb.verification.task_admission import create_failure_candidate
+
+    try:
+        payload = create_failure_candidate(result, out, description, oracle_review, task_definition)
+    except ValueError as exc:
+        raise click.ClickException(str(exc)) from exc
+    if fmt == "json":
+        emit_json(payload)
+    else:
+        _emit_admission_text(payload)
+
+
 @task.command("from-pr")
 @click.argument("pr_url")
 @click.option(
