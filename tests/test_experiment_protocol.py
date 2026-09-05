@@ -42,6 +42,7 @@ def test_protocol_is_deterministic_and_counterbalanced():
         {"safety_policy_hash_b": "different"},
         {"repeats": 0},
         {"model": "unknown"},
+        {"model": "-unsafe-option"},
         {"timeout_seconds": 0},
     ],
 )

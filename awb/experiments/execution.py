@@ -43,6 +43,8 @@ def config_snapshot(config_dir: Path) -> dict[str, Any]:
     """Hash allowed configuration files without reading credential/state files."""
     if not config_dir.is_dir():
         raise ValueError(f"Configuration directory does not exist: {config_dir}")
+    if config_dir.is_symlink():
+        raise ValueError(f"Configuration directory symlink is not permitted: {config_dir}")
     entries: list[tuple[str, bytes]] = []
     safety: list[tuple[str, bytes]] = []
     for path in sorted(config_dir.rglob("*")):

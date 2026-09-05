@@ -244,6 +244,42 @@ def test_config_snapshot_rejects_auth_or_state_files(tmp_path):
         config_snapshot(config)
 
 
+def test_config_snapshot_rejects_root_symlink(tmp_path):
+    from awb.experiments.execution import config_snapshot
+
+    target = tmp_path / "target"
+    target.mkdir()
+    (target / "CLAUDE.md").write_text("instructions")
+    link = tmp_path / "config-link"
+    link.symlink_to(target, target_is_directory=True)
+    with pytest.raises(ValueError, match="symlink"):
+        config_snapshot(link)
+
+
+def test_holdout_requires_reviewed_controls_before_execution(monkeypatch, tmp_path):
+    from awb.experiments.execution import execute_plan
+
+    plan, config_a, config_b, tasks_dir = _plan(tmp_path)
+    holdout = tasks_dir / "BF-001-HOLDOUT.yaml"
+    _task(holdout, "BF-001-HOLDOUT")
+    plan = create_plan(
+        {
+            **plan["spec"],
+            "task_hashes": {
+                **plan["spec"]["task_hashes"],
+                "BF-001-HOLDOUT": __import__("hashlib").sha256(holdout.read_bytes()).hexdigest(),
+            },
+        }
+    )
+    called = []
+    monkeypatch.setattr(
+        "awb.experiments.execution._execute_attempt", lambda **kwargs: called.append(kwargs)
+    )
+    with pytest.raises(ValueError, match="control evidence"):
+        execute_plan(plan, config_a, config_b, tasks_dir, "holdout", tmp_path / "runs")
+    assert called == []
+
+
 def test_config_snapshot_rejects_credential_environment_key_without_echoing_value(tmp_path):
     from awb.experiments.execution import config_snapshot
 

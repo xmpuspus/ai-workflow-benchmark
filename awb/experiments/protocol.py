@@ -11,6 +11,7 @@ import statistics
 from collections import defaultdict
 
 _ENV_NAME = re.compile(r"[A-Za-z_][A-Za-z0-9_]*")
+_MODEL_NAME = re.compile(r"[A-Za-z0-9][A-Za-z0-9._:/-]{0,199}")
 _RESERVED_ENV = {"AWB_BENCHMARK", "CLAUDE_CONFIG_DIR", "CLAUDE_SKIP_HOOKS"}
 
 
@@ -36,6 +37,8 @@ def create_plan(spec: dict) -> dict:
             "default",
         }:
             raise ValueError(f"Declare a known {field}")
+    if not _MODEL_NAME.fullmatch(spec["model"]):
+        raise ValueError("model must be a bounded explicit model identifier")
     if spec["safety_policy_hash_a"] != spec["safety_policy_hash_b"]:
         raise ValueError("Both arms must preserve the same safety policy")
     for field in ("repeats", "timeout_seconds"):
