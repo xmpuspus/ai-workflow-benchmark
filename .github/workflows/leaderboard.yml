@@ -13,6 +13,7 @@ on:
     paths:
       - "results/baselines/**"
       - "awb/leaderboard/**"
+      - "scripts/build_leaderboard_site.py"
       - ".github/workflows/leaderboard.yml"
   workflow_dispatch:
 
@@ -35,17 +36,11 @@ jobs:
           python-version: "3.12"
       - name: Install awb
         run: pip install -e .
-      - name: Generate static leaderboard from baseline JSONs
-        run: |
-          mkdir -p site
-          if [ -d results/baselines ] && compgen -G "results/baselines/*.json" > /dev/null; then
-            cp -R awb/leaderboard/static/* site/ || true
-            cp -R awb/leaderboard/templates/* site/ || true
-            cp results/baselines/*.json site/
-          else
-            echo "<!doctype html><title>AWB leaderboard</title>" > site/index.html
-            echo "<p>No baselines published yet. See README.</p>" >> site/index.html
-          fi
+      - name: Render static baseline index
+        run: >-
+          python scripts/build_leaderboard_site.py
+          --baselines results/baselines --out site
+          --static awb/leaderboard/static
       - uses: actions/upload-pages-artifact@v3
         with:
           path: site
