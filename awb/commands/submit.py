@@ -25,8 +25,13 @@ def _mean_trace_summary(trace_grades: list) -> dict | None:
     sorts after, alphabetically, so output stays deterministic.
     """
     graded = [g for g in trace_grades if g is not None]
+    coverage = {
+        "total_traces": len(trace_grades),
+        "gradeable_traces": len(graded),
+        "rubrics": {},
+    }
     if not graded:
-        return None
+        return {"coverage": coverage}
     present = {k for g in graded for k in g}
     ordered = [k for k in RUBRIC_NAMES if k in present]
     ordered.extend(sorted(k for k in present if k not in RUBRIC_NAMES))
@@ -34,6 +39,12 @@ def _mean_trace_summary(trace_grades: list) -> dict | None:
     for k in ordered:
         values = [g[k] for g in graded if k in g]
         summary[k] = round(sum(values) / len(values), 1)
+        coverage["rubrics"][k] = {
+            "measured": len(values),
+            "total": len(trace_grades),
+            "status": "complete" if len(values) == len(trace_grades) else "partial",
+        }
+    summary["coverage"] = coverage
     return summary
 
 
@@ -58,6 +69,7 @@ def build_submission(results: list, run_dir: Path, task_defs: dict, submitter: s
     from datetime import datetime
 
     from awb import __version__
+    from awb.scoring.cohorts import assess_cohort_coverage, identity_from_result
     from awb.scoring.readiness import readiness_from_results
     from awb.trace.grader import grade_trace_or_none
 
@@ -65,13 +77,44 @@ def build_submission(results: list, run_dir: Path, task_defs: dict, submitter: s
     for r in results:
         by_task.setdefault(r.task_id, []).append(r)
 
+    identities = [identity_from_result(result) for result in results]
+    identity_fields = identities[0].__dataclass_fields__ if identities else {}
+    identity = {}
+    reasons = []
+    for field_name in identity_fields:
+        values = {
+            getattr(item, field_name)
+            for item in identities
+            if getattr(item, field_name) not in {None, "", "unknown"}
+        }
+        if len(values) > 1:
+            reasons.append(f"mixed {field_name}")
+            identity[field_name] = ""
+        elif values:
+            identity[field_name] = values.pop()
+        else:
+            reasons.append(f"missing {field_name}")
+            identity[field_name] = ""
+
+    cohort_coverage = assess_cohort_coverage(results)
+    reasons.extend(cohort_coverage.reasons)
+    reasons = sorted(set(reasons))
+    readiness = readiness_from_results(results)
+    if readiness["composite"] is None:
+        reasons.append("missing measurement coverage")
+        reasons = sorted(set(reasons))
+
     all_trace_grades: list = []
     submission = {
         "spec_version": "awb/v2",
         "submission": {
             "submitter": submitter,
             "submitted_at": datetime.now(UTC).isoformat(),
-            "tool": {"name": results[0].tool, "version": results[0].tool_version},
+            "tool": {
+                "name": results[0].tool,
+                "version": results[0].tool_version,
+                "config_description": identity["config_hash"],
+            },
             "model": {"name": results[0].model or "unknown"},
             "environment": {
                 "os": results[0].environment.os,
@@ -79,10 +122,17 @@ def build_submission(results: list, run_dir: Path, task_defs: dict, submitter: s
                 "hardware_detail": results[0].environment.hardware,
             },
             "awb_version": __version__,
-            "readiness": readiness_from_results(results),
+            "readiness": readiness,
+            "comparison_eligibility": {
+                "eligible": not reasons,
+                "reasons": reasons,
+                "identity": identity,
+            },
         },
         "results": [],
     }
+    if identity["task_set_hash"]:
+        submission["submission"]["task_set_hash"] = identity["task_set_hash"]
 
     for task_id, task_results in sorted(by_task.items()):
         files_to_examine = getattr(task_defs.get(task_id), "files_to_examine", []) or []
@@ -91,7 +141,9 @@ def build_submission(results: list, run_dir: Path, task_defs: dict, submitter: s
             trace_grade = None
             if r.trace_path:
                 trace_grade = grade_trace_or_none(
-                    run_dir / r.trace_path, files_to_examine=files_to_examine
+                    run_dir / r.trace_path,
+                    files_to_examine=files_to_examine,
+                    allowed_edit_paths=getattr(r, "allowed_edit_paths", None) or [],
                 )
             all_trace_grades.append(trace_grade)
             runs.append(
@@ -112,6 +164,7 @@ def build_submission(results: list, run_dir: Path, task_defs: dict, submitter: s
                         "input_tokens": r.cost.input_tokens,
                         "output_tokens": r.cost.output_tokens,
                         "estimated_cost_usd": r.cost.estimated_cost_usd,
+                        "usage_status": getattr(r.cost, "usage_status", "unknown"),
                         **(
                             {"estimated_credits": r.cost.estimated_credits}
                             if r.cost.estimated_credits is not None
@@ -120,8 +173,13 @@ def build_submission(results: list, run_dir: Path, task_defs: dict, submitter: s
                     },
                     "quality": {
                         "lint_delta": r.quality.lint_delta,
+                        "lint_status": getattr(r.quality, "lint_status", "missing"),
                         "security_delta": r.quality.security_delta,
                         "test_regressions": r.quality.test_regressions,
+                        "security_status": getattr(r.quality, "security_status", "missing"),
+                        "test_regressions_status": getattr(
+                            r.quality, "test_regressions_status", "missing"
+                        ),
                     },
                     "trace_grade": trace_grade,
                 }
@@ -173,6 +231,14 @@ def submit(file: str):
     console.print(f"  Model: {submission.model.name} ({submission.model.provider})")
     console.print(f"  Hardware: {submission.environment.hardware_class}")
     console.print(f"  Tasks: {len(submission.results)}")
+    if submission.comparison_eligible:
+        console.print("  Comparison eligibility: eligible")
+    else:
+        console.print(
+            "  [yellow]Comparison eligibility: ineligible ("
+            + "; ".join(submission.ineligibility_reasons)
+            + ")[/yellow]"
+        )
 
     results = submission_to_run_results(submission)
     total_runs = len(results)
@@ -207,6 +273,10 @@ def compare_submissions_cmd(file1: str, file2: str):
 
     if comp.hardware_warning:
         console.print(f"  [yellow]{comp.hardware_warning}[/yellow]")
+
+    if comp.eligibility_warning:
+        console.print(f"  [yellow]Comparison ineligible: {comp.eligibility_warning}[/yellow]")
+        return
 
     if comp.common_tasks < 5:
         console.print("[yellow]Need 5+ common tasks for meaningful comparison[/yellow]")

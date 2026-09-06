@@ -145,7 +145,7 @@ def test_out_of_scope_edit_detected_with_relative_paths(tmp_path):
         )
     ]
     p = _drain(tmp_path, events, workspace_root="/ws")
-    assert grade_trace(p, files_to_examine=["src/a.py"])["no_out_of_scope_edits"] < 100
+    assert grade_trace(p, allowed_edit_paths=["src/a.py"])["no_out_of_scope_edits"] < 100
 
 
 def test_file_path_relativized_through_symlinked_workspace(tmp_path):

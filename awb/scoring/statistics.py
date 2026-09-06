@@ -167,18 +167,25 @@ def compare_tools_paired(
         )
 
     n = len(scores_a)
+    diffs = [a - b for a, b in zip(scores_a, scores_b, strict=True)]
+    mean_diff = statistics.mean(diffs) if diffs else 0.0
+    sd_diff = statistics.stdev(diffs) if len(diffs) > 1 else 0.0
+    cohens_d = mean_diff / sd_diff if sd_diff > 0 else 0.0
+
     if n < 5:
         return ComparisonResult(
             significant=False,
             p_value=None,
-            effect_size=0.0,
-            effect_interpretation="n/a",
-            mean_difference=0.0,
+            effect_size=round(cohens_d, 2),
+            effect_interpretation=_interpret_effect(cohens_d),
+            mean_difference=round(mean_diff, 1),
             n_tasks=n,
-            message="Need 5+ common tasks for significance testing",
+            message=(
+                f"Observed mean difference {mean_diff:+.1f} points; "
+                "Need 5+ common tasks for significance testing"
+            ),
         )
 
-    diffs = [a - b for a, b in zip(scores_a, scores_b, strict=True)]
     non_zero = [d for d in diffs if abs(d) > 0.01]
     n_nz = len(non_zero)
 
@@ -199,10 +206,6 @@ def compare_tools_paired(
     p_value = _binomial_two_tailed_p(n_pos, n_nz)
 
     # Cohen's d
-    mean_diff = statistics.mean(diffs)
-    sd_diff = statistics.stdev(diffs) if len(diffs) > 1 else 1.0
-    cohens_d = mean_diff / sd_diff if sd_diff > 0 else 0.0
-
     direction = "A" if mean_diff > 0 else "B"
     return ComparisonResult(
         significant=p_value < 0.05,

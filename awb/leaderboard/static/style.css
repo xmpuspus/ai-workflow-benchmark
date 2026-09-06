@@ -5,6 +5,7 @@
     --text: #e2e8f0;
     --text-muted: #94a3b8;
     --accent: #3b82f6;
+    --link: #93c5fd;
     --success: #22c55e;
     --warning: #eab308;
     --danger: #ef4444;
@@ -26,9 +27,19 @@ body {
     line-height: 1.6;
 }
 
+a {
+    color: var(--link);
+}
+
+a:focus-visible {
+    outline: 2px solid var(--link);
+    outline-offset: 3px;
+    border-radius: 2px;
+}
+
 header {
     background: var(--surface);
-    padding: 2rem 0;
+    padding: 2rem 1rem;
     text-align: center;
     border-bottom: 1px solid var(--border);
 }
@@ -90,6 +101,7 @@ header h1 {
 }
 
 .filter-input {
+    min-height: 44px;
     background: var(--surface);
     border: 1px solid var(--border);
     color: var(--text);
@@ -107,6 +119,7 @@ header h1 {
 }
 
 .export-btn {
+    min-height: 44px;
     background: var(--accent);
     color: var(--bg);
     border: none;
@@ -121,9 +134,24 @@ header h1 {
 }
 
 .table-wrapper {
+    max-width: 100%;
+    min-width: 0;
     overflow-x: auto;
     border-radius: var(--radius);
     box-shadow: var(--shadow);
+}
+
+#leaderboard-table td:first-child {
+    overflow-wrap: anywhere;
+}
+
+.scroll-cue {
+    display: none;
+    margin: 0;
+    padding: 0.5rem 0.75rem;
+    color: var(--text-muted);
+    font-size: 0.8rem;
+    background: var(--surface);
 }
 
 table {
@@ -301,7 +329,6 @@ footer {
 }
 
 footer a {
-    color: var(--accent);
     text-decoration: none;
 }
 
@@ -322,5 +349,13 @@ footer a:hover {
 
     header h1 {
         font-size: 1.4rem;
+    }
+
+    .scroll-cue {
+        display: block;
+    }
+
+    #leaderboard-table {
+        min-width: 860px;
     }
 }

@@ -242,10 +242,7 @@ async def test_prepare_slow_path_creates_template(manager, task, tmp_path):
     mock_proc.communicate = AsyncMock(return_value=(b"", b""))
     mock_proc.kill = MagicMock()
 
-    with (
-        patch("asyncio.create_subprocess_shell", return_value=mock_proc),
-        patch("asyncio.wait_for", return_value=(b"", b"")),
-    ):
+    with patch("asyncio.create_subprocess_shell", return_value=mock_proc):
         await manager.prepare(task)
 
     assert (template_path / ".ready").exists()
@@ -288,10 +285,7 @@ async def test_prepare_replaces_pip_install_with_uv(tmp_path, task):
         mock_proc.kill = MagicMock()
         return mock_proc
 
-    with (
-        patch("asyncio.create_subprocess_shell", side_effect=fake_create_subprocess_shell),
-        patch("asyncio.wait_for", return_value=(b"", b"")),
-    ):
+    with patch("asyncio.create_subprocess_shell", side_effect=fake_create_subprocess_shell):
         await manager.prepare(task)
 
     assert any("uv pip install" in cmd for cmd in captured_cmds)
@@ -330,10 +324,7 @@ async def test_prepare_does_not_replace_pip_when_use_uv_false(tmp_path, task):
         mock_proc.kill = MagicMock()
         return mock_proc
 
-    with (
-        patch("asyncio.create_subprocess_shell", side_effect=fake_create_subprocess_shell),
-        patch("asyncio.wait_for", return_value=(b"", b"")),
-    ):
+    with patch("asyncio.create_subprocess_shell", side_effect=fake_create_subprocess_shell):
         await manager.prepare(task)
 
     assert any("pip install" in cmd for cmd in captured_cmds)

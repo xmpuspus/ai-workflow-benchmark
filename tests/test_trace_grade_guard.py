@@ -48,7 +48,6 @@ def test_trace_with_file_edit_grades(tmp_path):
     assert set(scores) == {
         "read_tests_before_edit",
         "ran_verification_after_change",
-        "no_out_of_scope_edits",
         "no_repeated_failing_command_loop",
         "tool_call_efficiency",
     }
@@ -64,7 +63,7 @@ def test_no_out_of_scope_treats_trailing_slash_as_directory(tmp_path):
     p = tmp_path / "dir.trace.jsonl"
     with TraceWriter(p) as w:
         w.write(new_span(FILE_EDIT, attributes={"file.path": "tests/test_extra_fields.py"}))
-    scores = grade_trace(p, files_to_examine=["fastapi/routing.py", "tests/"])
+    scores = grade_trace(p, allowed_edit_paths=["fastapi/routing.py", "tests/"])
     assert scores["no_out_of_scope_edits"] == 100
 
 
@@ -75,5 +74,5 @@ def test_no_out_of_scope_still_flags_truly_outside_edits(tmp_path):
     p = tmp_path / "oos.trace.jsonl"
     with TraceWriter(p) as w:
         w.write(new_span(FILE_EDIT, attributes={"file.path": "scripts/release.py"}))
-    scores = grade_trace(p, files_to_examine=["fastapi/routing.py", "tests/"])
+    scores = grade_trace(p, allowed_edit_paths=["fastapi/routing.py", "tests/"])
     assert scores["no_out_of_scope_edits"] == 0

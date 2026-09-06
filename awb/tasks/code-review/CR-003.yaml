@@ -77,7 +77,7 @@ verification:
   lint_commands:
     - "source .venv/bin/activate && ruff check config/"
   security_commands:
-    - "source .venv/bin/activate && bandit -r config/ -ll 2>/dev/null || true"
+    - "source .venv/bin/activate && bandit -r config/ -ll"
   partial_credit:
     - criterion: "No yaml.load() without Loader argument remaining in config/"
       points: 30

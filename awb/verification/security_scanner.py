@@ -1,28 +1,25 @@
 from __future__ import annotations
 
-import asyncio
 import re
 from pathlib import Path
 
-_BANDIT_RE = re.compile(r">> Issue:|Severity:")
+from awb.core.subprocesses import run_shell
+
+_BANDIT_RE = re.compile(r">> Issue:")
 _SEMGREP_RE = re.compile(r"\d+ findings?")
+_MASKED_FAILURE_RE = re.compile(r"(?:\|\|\s*(?:true|:)|;\s*true(?:\s|$))")
 
 
 async def _run_command(cmd: str, workspace: Path) -> tuple[int, str, str]:
     try:
-        proc = await asyncio.create_subprocess_shell(
-            cmd,
-            cwd=workspace,
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE,
+        result = await run_shell(cmd, cwd=workspace, timeout=180)
+        if result.exit_code == 124:
+            return 124, "", "[TIMEOUT]"
+        return (
+            result.exit_code,
+            result.stdout.decode(errors="replace"),
+            result.stderr.decode(errors="replace"),
         )
-        try:
-            stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=180)
-        except TimeoutError:
-            proc.kill()
-            await proc.communicate()
-            return 1, "", "[TIMEOUT]"
-        return proc.returncode, stdout.decode(errors="replace"), stderr.decode(errors="replace")
     except FileNotFoundError as exc:
         return 127, "", f"[scanner not found] {exc}"
 
@@ -48,6 +45,8 @@ def _count_findings(output: str, stderr: str) -> int:
 async def count_security_issues(commands: list[str], workspace: Path) -> int:
     total = 0
     for cmd in commands:
+        if _MASKED_FAILURE_RE.search(cmd):
+            continue
         code, stdout, stderr = await _run_command(cmd, workspace)
         # Scanner not installed -> count no findings (avoid double-counting noise),
         # but run_security_scan still surfaces this as "not clean".
@@ -60,6 +59,30 @@ async def count_security_issues(commands: list[str], workspace: Path) -> int:
             count = sum(1 for line in combined.splitlines() if line.strip())
         total += count
     return total
+
+
+async def measure_security_issues(commands: list[str], workspace: Path) -> tuple[int, str]:
+    """Return findings and evidence status without treating tool failure as clean."""
+    if not commands:
+        return 0, "missing"
+    total = 0
+    failed = False
+    for cmd in commands:
+        if _MASKED_FAILURE_RE.search(cmd):
+            failed = True
+            continue
+        code, stdout, stderr = await _run_command(cmd, workspace)
+        if code == 124 or _looks_like_missing_binary(code, stderr):
+            failed = True
+            continue
+        count = _count_findings(stdout, stderr)
+        if count == 0 and code != 0:
+            failed = True
+            continue
+        total += count
+    if failed:
+        return total, "failed"
+    return total, "measured_findings" if total else "measured_clean"
 
 
 async def run_security_scan(commands: list[str], workspace: Path) -> tuple[bool, str]:

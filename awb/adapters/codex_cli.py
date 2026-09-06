@@ -8,13 +8,13 @@ import hashlib
 import json
 import os
 import shutil
-import signal
 import subprocess
 import tomllib
 from pathlib import Path
 from typing import Any
 
 from awb.adapters.base import StreamEventCallback, ToolAdapter, ToolResult
+from awb.core.subprocesses import stop_process_group
 
 
 class CodexCliAdapter(ToolAdapter):
@@ -107,16 +107,9 @@ class CodexCliAdapter(ToolAdapter):
         terminate = asyncio.Event()
 
         async def _stop_process() -> None:
-            if proc is None or proc.returncode is not None:
+            if proc is None:
                 return
-            with contextlib.suppress(ProcessLookupError, OSError):
-                os.killpg(proc.pid, signal.SIGTERM)
-            try:
-                await asyncio.wait_for(proc.wait(), timeout=5)
-            except TimeoutError:
-                with contextlib.suppress(ProcessLookupError, OSError):
-                    os.killpg(proc.pid, signal.SIGKILL)
-                await proc.wait()
+            await stop_process_group(proc)
 
         try:
             proc = await asyncio.create_subprocess_exec(

@@ -82,6 +82,7 @@ class SubmissionRunCost:
     output_tokens: int = 0
     estimated_cost_usd: float = 0.0
     estimated_credits: float | None = None
+    usage_status: str = "unknown"
 
 
 @dataclass
@@ -89,6 +90,9 @@ class SubmissionRunQuality:
     lint_delta: int = 0
     security_delta: int = 0
     test_regressions: int = 0
+    security_status: str = "missing"
+    test_regressions_status: str = "missing"
+    lint_status: str = "missing"
 
 
 @dataclass
@@ -117,3 +121,6 @@ class Submission:
     task_set_hash: str
     submitter: str
     results: list[SubmissionTaskResult] = field(default_factory=list)
+    comparison_eligible: bool = False
+    ineligibility_reasons: list[str] = field(default_factory=list)
+    comparison_identity: dict[str, str] = field(default_factory=dict)

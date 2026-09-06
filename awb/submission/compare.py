@@ -22,6 +22,8 @@ class SubmissionComparison:
     scores_b: dict[str, float] = field(default_factory=dict)
     statistical_comparison: ComparisonResult | None = None
     per_task: list[dict] = field(default_factory=list)
+    comparison_eligible: bool = False
+    eligibility_warning: str = ""
 
 
 def find_common_tasks(sub_a: Submission, sub_b: Submission) -> set[str]:
@@ -46,6 +48,30 @@ def compare_submissions(
             f"Speed and efficiency scores are not directly comparable."
         )
 
+    eligibility_reasons = []
+    if not sub_a.comparison_eligible:
+        eligibility_reasons.append(f"{sub_a.tool.name}: {', '.join(sub_a.ineligibility_reasons)}")
+    if not sub_b.comparison_eligible:
+        eligibility_reasons.append(f"{sub_b.tool.name}: {', '.join(sub_b.ineligibility_reasons)}")
+    if (
+        sub_a.comparison_eligible
+        and sub_b.comparison_eligible
+        and sub_a.comparison_identity != sub_b.comparison_identity
+    ):
+        eligibility_reasons.append("comparison identities differ")
+
+    if eligibility_reasons:
+        return SubmissionComparison(
+            tool_a=sub_a.tool.name,
+            tool_b=sub_b.tool.name,
+            common_tasks=len(common),
+            total_tasks_a=len(sub_a.results),
+            total_tasks_b=len(sub_b.results),
+            hardware_comparable=hw_same,
+            hardware_warning=hw_warning,
+            eligibility_warning="; ".join(eligibility_reasons),
+        )
+
     if len(common) < 5:
         return SubmissionComparison(
             tool_a=sub_a.tool.name,
@@ -55,6 +81,7 @@ def compare_submissions(
             total_tasks_b=len(sub_b.results),
             hardware_comparable=hw_same,
             hardware_warning=hw_warning or "Insufficient task overlap (need 5+) for comparison",
+            comparison_eligible=True,
         )
 
     def _task_median_score(results, task_id):
@@ -95,4 +122,5 @@ def compare_submissions(
         scores_b={"aggregate": agg_b},
         statistical_comparison=stat_result,
         per_task=per_task,
+        comparison_eligible=True,
     )

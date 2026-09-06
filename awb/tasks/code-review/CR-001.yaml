@@ -80,7 +80,7 @@ verification:
   lint_commands:
     - "source .venv/bin/activate && ruff check auth/login.py"
   security_commands:
-    - "source .venv/bin/activate && bandit -r auth/ -ll 2>/dev/null || true"
+    - "source .venv/bin/activate && bandit -r auth/ -ll"
   partial_credit:
     - criterion: "SQL injection vulnerability identified"
       points: 10

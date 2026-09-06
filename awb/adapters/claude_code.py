@@ -11,6 +11,7 @@ import subprocess
 from pathlib import Path
 
 from awb.adapters.base import ToolAdapter, ToolResult
+from awb.core.subprocesses import stop_process_group
 
 
 class ClaudeCodeVanillaAdapter(ToolAdapter):
@@ -64,6 +65,12 @@ class ClaudeCodeVanillaAdapter(ToolAdapter):
         full_env = self._get_env()
         cmd = self._get_cmd(prompt, max_turns)
         terminate = asyncio.Event()
+        proc: asyncio.subprocess.Process | None = None
+
+        async def _stop_process() -> None:
+            if proc is None:
+                return
+            await stop_process_group(proc)
 
         try:
             proc = await asyncio.create_subprocess_exec(
@@ -76,6 +83,7 @@ class ClaudeCodeVanillaAdapter(ToolAdapter):
                 # readline default killed the reader mid-run (LimitOverrunError
                 # during a real MF-001 probe).
                 limit=10 * 1024 * 1024,
+                start_new_session=True,
             )
 
             stream_events: list[dict] = []
@@ -136,15 +144,14 @@ class ClaudeCodeVanillaAdapter(ToolAdapter):
 
                 if terminate.is_set():
                     # Token budget exceeded, kill gracefully
-                    proc.terminate()
+                    await _stop_process()
                     try:
                         await asyncio.wait_for(proc.wait(), timeout=5)
                     except TimeoutError:
-                        proc.kill()
+                        await _stop_process()
                 elif not done or read_task not in done:
                     # Timeout
-                    proc.kill()
-                    await proc.wait()
+                    await _stop_process()
                     return ToolResult(
                         success=False,
                         raw_output="",
@@ -174,8 +181,7 @@ class ClaudeCodeVanillaAdapter(ToolAdapter):
                     )
 
             except TimeoutError:
-                proc.kill()
-                await proc.wait()
+                await _stop_process()
                 return ToolResult(
                     success=False,
                     raw_output="",
@@ -191,6 +197,9 @@ class ClaudeCodeVanillaAdapter(ToolAdapter):
                         with contextlib.suppress(asyncio.CancelledError, Exception):
                             await task
 
+        except asyncio.CancelledError:
+            await _stop_process()
+            raise
         except FileNotFoundError:
             return ToolResult(
                 success=False,
