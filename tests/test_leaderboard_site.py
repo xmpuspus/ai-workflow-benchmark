@@ -39,6 +39,9 @@ def test_baseline_site_is_rendered_unranked_and_links_to_copied_evidence(tmp_pat
     assert "{{" not in page and "{%" not in page
     assert 'href="static/style.css"' in page
     assert 'href="baselines/baseline.json"' in page
+    assert 'class="table-wrapper"' in page
+    assert 'id="leaderboard-table"' in page
+    assert "Scroll the table horizontally" in page
     assert "legacy evidence" in page
     assert "not ranked" in page
     assert "tool &lt;unsafe&gt;" in page

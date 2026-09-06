@@ -5,6 +5,7 @@
     --text: #e2e8f0;
     --text-muted: #94a3b8;
     --accent: #3b82f6;
+    --link: #93c5fd;
     --success: #22c55e;
     --warning: #eab308;
     --danger: #ef4444;
@@ -24,6 +25,16 @@ body {
     color: var(--text);
     font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
     line-height: 1.6;
+}
+
+a {
+    color: var(--link);
+}
+
+a:focus-visible {
+    outline: 2px solid var(--link);
+    outline-offset: 3px;
+    border-radius: 2px;
 }
 
 header {
@@ -123,9 +134,15 @@ header h1 {
 }
 
 .table-wrapper {
+    max-width: 100%;
+    min-width: 0;
     overflow-x: auto;
     border-radius: var(--radius);
     box-shadow: var(--shadow);
+}
+
+#leaderboard-table td:first-child {
+    overflow-wrap: anywhere;
 }
 
 .scroll-cue {
@@ -312,7 +329,6 @@ footer {
 }
 
 footer a {
-    color: var(--accent);
     text-decoration: none;
 }
 
