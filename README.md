@@ -1,6 +1,6 @@
 <div align="center">
   <h1>AI Workflow Benchmark (AWB)</h1>
-  <p><strong>Benchmarks the full AI coding stack (tool, configuration, workflow, model) on 100 real-repo tasks.</strong></p>
+  <p><strong>Inspect coding-agent workflows and compare configurations with recorded evidence.</strong></p>
   <p>
     <a href="https://pypi.org/project/awb/"><img src="https://img.shields.io/pypi/v/awb" alt="PyPI"></a>
     <a href="https://github.com/xmpuspus/ai-workflow-benchmark/actions"><img src="https://img.shields.io/github/actions/workflow/status/xmpuspus/ai-workflow-benchmark/test.yml" alt="Tests"></a>
@@ -10,9 +10,9 @@
     <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-green" alt="License"></a>
   </p>
   <br/>
-  <img src="demos/hero.gif" alt="Codex checkup, task validation, native credit cost report, and workflow export" width="820"/>
+  <img src="demos/hero.gif" alt="Free harness audit, saved evidence report, and task validation" width="820"/>
   <br/>
-  <sub>Grade Claude Code or Codex harness design: extract promised rules, run an 8-task probe, and show which rules held, broke, or never fired.</sub>
+  <sub>Start with a free audit. Inspect saved evidence. Freeze a comparison before making a performance claim.</sub>
 </div>
 
 ---
@@ -29,34 +29,17 @@ Related work measures complementary axes. [HAL](https://arxiv.org/abs/2510.11977
 
 AWB combines local configuration experiments with deterministic trace rubrics over OpenTelemetry-aligned `.trace.jsonl` artifacts. Default vanilla-versus-custom runs and `awb ab` provide exploratory paired summaries. The [controlled experiment workflow](docs/evidence-workflow.md) freezes inputs and checks a separate holdout before confirmation. See [METHODOLOGY.md#related-work](METHODOLOGY.md#related-work) for citation details.
 
-## What's New in v1.7.0
+## What's New in v1.8.0
 
-<img src="demos/checkup.gif" alt="awb checkup auditing a Codex AGENTS.md and rendering a measured Codex harness report from a saved run" width="820"/>
+<img src="demos/checkup.gif" alt="Free Codex static audit followed by a saved evidence report" width="820"/>
 
-AWB now measures Codex CLI end to end. The demos are live recordings of a
-Codex static audit and a report regraded from an eight-task Codex probe.
+- **A free starting point:** `awb quickstart` skips authentication by default. Grouped help and `awb report` lead from setup to saved text, JSON, or HTML evidence.
+- **Conservative comparisons:** balanced repeats, complete cohort identity, explicit missing measurements, and evaluator source fingerprints prevent unsupported rankings. Legacy results stay readable and unranked when evidence is incomplete.
+- **Recoverable execution:** resume checks configuration and budget identity. Deadlines stop pending work. An explicit offline Docker mode covers setup, tool execution, and verification.
+- **Frozen experiments:** plan, execute, assess, and bundle a controlled instruction-file comparison. Holdout work needs development evidence, task controls, and separate admission. Imported holdout arrays remain inconclusive.
+- **Behavioral task checks:** repaired BF-001, BF-009, and CR-007 oracles reject trivial solutions. Scanner failures remain visible, and results preserve pre-existing security counts.
 
-- **Native Codex execution:** `codex exec --ephemeral --sandbox workspace-write --json`
-  streams token usage, command exits, file edits, model provenance, and trace
-  events into the same benchmark pipeline used by other adapters.
-- **Codex harness checkup:** `awb checkup --tool codex-cli` inventories
-  `AGENTS.md`, `config.toml`, hooks, rules, agents, skills, and plugins, then
-  grades observable behavior from the probe traces.
-- **Native usage economics:** result, submission, and cost reports retain
-  ChatGPT credits and show a dollar-equivalent estimate without replacing the
-  original credit measurement.
-- **Codex workflow comparison:** workflow export records the Codex model and
-  harness inventory, while paired A/B runs accept separate authenticated
-  `CODEX_HOME` directories.
-- **Honest file metrics:** AWB measures the pre-agent snapshot against the
-  agent patch, includes staged and untracked changes, and preserves partial
-  timeout patches before cleanup.
-- **Measured validation:** the bundled [Codex harness measurement](docs/codex-harness-measurement.md)
-  records 4/8 passing tasks, 100.0 verification discipline, 97.9 scope
-  discipline, and 101.7399 recorded credits. The credit total is a lower bound
-  because two timed-out turns did not emit final usage.
-
-See [CHANGELOG.md](CHANGELOG.md) for the v1.6 checkup and earlier releases.
+See the [configuration comparison guide](docs/evidence-workflow.md) and [execution boundaries](docs/SECURITY.md). Controlled execution currently supports Claude instruction changes. User studies, independent replay, and representative holdout validation remain separate evidence gates.
 
 ## Quick Start
 
@@ -81,7 +64,7 @@ awb leaderboard --readiness --explain                 # Production Readiness Sco
 Run this end-to-end against the published v1.4.0 fast-check baseline. Should finish in roughly 12 minutes (fast-check now runs parallel at -j 4; 12 min measured on a real 2026-07-24 run) for ~$4 of metered spend and produce a tweetable Workflow Lift number plus a capability profile.
 
 ```bash
-pip install awb==1.7.0
+pip install awb==1.8.0
 awb quickstart                                       # 1. verify environment
 awb warmup --use-uv                                  # 2. pre-build templates
 awb run --fast-check claude-code-custom              # 3. ~12 min at -j 4, real run
@@ -584,6 +567,11 @@ The format captures tool version, model, hardware class, and per-task run result
 - Token efficiency: sigmoid normalizer (optimal=2k tokens/iter, baseline=15k) blended 50/50 with iteration count in the efficiency dimension
 
 ## Changelog
+
+### 1.8.0 (2026-09-06)
+
+Add saved evidence reports, frozen configuration experiments, explicit holdout admission, portable evidence bundles, and offline container execution. Correct repeat aggregation, cohort identity, missing-measurement handling, resume compatibility, and task oracles. Preserve scanner baselines and CSV identity. Refresh the free onboarding flow and desktop/mobile reporting.
+
 
 ### 1.7.0 (2026-08-01)
 

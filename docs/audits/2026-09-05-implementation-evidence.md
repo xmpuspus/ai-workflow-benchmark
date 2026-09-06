@@ -2,7 +2,7 @@
 
 The local implementation addresses the product audit's measurement, execution, reporting, and experiment-control findings. It keeps the existing CLI and readable legacy results. It does not measure human productivity, market demand, or a validated improvement from any particular model configuration.
 
-The tested code checkpoint is `15a0d75` on `improve-evidence-workflow`. The implementation uses an isolated worktree. Nothing was pushed, published, deployed, or sent to an external recipient.
+The tested code checkpoint is `15a0d75` on `improve-evidence-workflow`. The implementation uses an isolated worktree. At that checkpoint, nothing had been pushed, published, deployed, or sent to an external recipient. Release verification is recorded separately.
 
 ## Missing evidence no longer earns a perfect score
 
@@ -36,14 +36,14 @@ Task candidates stay unadmitted. Positive and negative controls cannot replace t
 
 | Check | Observed result | Local evidence |
 |---|---|---|
-| Full suite with real Docker control and runtime warnings treated as errors | 822 passed. zero skipped. zero warnings | [Test log](../../tmp/final-suite.log) |
-| Ruff and task schema validation | Passed. 100/100 task definitions valid | [Task validation](../../tmp/final-task-validation.log) |
-| Fresh wheel build and isolated installation | Commands succeeded and imported the installed wheel. evaluator source fingerprint matched | [Installation checks](../../tmp/wheel-smoke/checks.json) |
-| Free static check and saved report | JSON parsed. saved report showed 8 results, 4 passed, 4 failed, missing evidence, and ineligible comparison | [Report payload](../../tmp/final-visual/report.json) |
-| Desktop/mobile interactions | Sorting, filtering, CSV download, preserved ranks and identity, no page overflow or JavaScript errors | [Browser checks](../../tmp/final-visual/checks.json) |
-| Visual inspection | Read report and leaderboard screenshots at 1920x1080 and 375px. controls remained readable | [Report preview](../../tmp/final-visual/report.html), [leaderboard fixture](../../tmp/final-visual/leaderboard/index.html) |
+| Full suite with real Docker control and runtime warnings treated as errors | 822 passed. zero skipped. zero warnings | Test log (local verification artifact) |
+| Ruff and task schema validation | Passed. 100/100 task definitions valid | Task validation (local verification artifact) |
+| Fresh wheel build and isolated installation | Commands succeeded and imported the installed wheel. evaluator source fingerprint matched | Installation checks (local verification artifact) |
+| Free static check and saved report | JSON parsed. saved report showed 8 results, 4 passed, 4 failed, missing evidence, and ineligible comparison | Report payload (local verification artifact) |
+| Desktop/mobile interactions | Sorting, filtering, CSV download, preserved ranks and identity, no page overflow or JavaScript errors | Browser checks (local verification artifact) |
+| Visual inspection | Read report and leaderboard screenshots at 1920x1080 and 375px. controls remained readable | Report preview (local verification artifact), leaderboard fixture (local verification artifact) |
 | Real container controls | Correct arithmetic scored 100. no-op scored 0 | Full suite's `test_container_integration.py` |
-| Installed CLI evidence bundle | Nested receipts exported. valid bundle passed. tampered bundle failed. malformed manifest returned JSON error and exit 2 | [Wheel command checks](../../tmp/wheel-smoke/checks.json) |
+| Installed CLI evidence bundle | Nested receipts exported. valid bundle passed. tampered bundle failed. malformed manifest returned JSON error and exit 2 | Wheel command checks (local verification artifact) |
 
 The Docker controls and synthetic leaderboard rows test software behavior. They are not model benchmark results. The saved eight-task report is historical evidence re-rendered with the new reader.
 
