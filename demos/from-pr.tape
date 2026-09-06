@@ -1,7 +1,6 @@
-# awb task from-pr demo - real recording against a real merged PR
-# (xmpuspus/cloudwright#69, a production bug-fix PR with a regression test).
-# Run with: vhs demos/from-pr.tape
-# Produces: demos/from-pr.gif
+# awb task from-pr demo: generate a candidate from a real merged PR.
+# Schema validation does not admit it; controls and independent review remain required.
+# Prerequisite: current AWB venv at tmp/demo-env; GitHub CLI needs read access.
 
 Output demos/from-pr.gif
 
@@ -15,49 +14,39 @@ Set TypingSpeed 28ms
 Set Theme { "name": "AWB", "background": "#0c0c0f", "foreground": "#e6e6e6", "black": "#0c0c0f", "red": "#ef4444", "green": "#4ade80", "yellow": "#facc15", "blue": "#60a5fa", "magenta": "#c084fc", "cyan": "#22d3ee", "white": "#e6e6e6", "brightBlack": "#52525b", "brightRed": "#f87171", "brightGreen": "#86efac", "brightYellow": "#fde047", "brightBlue": "#93c5fd", "brightMagenta": "#d8b4fe", "brightCyan": "#67e8f9", "brightWhite": "#f4f4f5", "cursor": "#e6e6e6", "selection": "#52525b" }
 
 Hide
-Type "cd /tmp/awb-demo-rec && source /Users/xavier/Desktop/ai-workflow-benchmark/.venv/bin/activate && setopt interactive_comments && export FORCE_COLOR=1 && export PS1='%F{cyan}>%f ' && clear"
+Type "source tmp/demo-env/bin/activate && mkdir -p tmp/from-pr-demo/tasks && find tmp/from-pr-demo/tasks -mindepth 1 -delete && setopt interactive_comments && export FORCE_COLOR=1 && export PS1='%F{cyan}>%f ' && clear"
 Enter
 Sleep 800ms
 Show
 
 Sleep 700ms
-Type "# turn a merged PR from one of my repos into a private benchmark task"
+Type "# generate a benchmark candidate from a merged bug-fix PR"
 Enter
 Sleep 900ms
-Type "awb task from-pr https://github.com/xmpuspus/cloudwright/pull/69 --out tasks --category bug-fix"
+Type "awb task from-pr https://github.com/xmpuspus/cloudwright/pull/69 --out tmp/from-pr-demo/tasks --category bug-fix"
 Enter
 Sleep 9s
 
 Type "clear"
 Enter
 Sleep 400ms
-Type "# pre-merge SHA pinned, the PR regression test overlaid onto the old tree"
+Type "# provenance is pinned to the pre-merge tree"
 Enter
 Sleep 900ms
-Type "head -13 tasks/BF-002.yaml"
+Type "sed -n '1,16p' tmp/from-pr-demo/tasks/BF-002.yaml"
 Enter
 Sleep 4200ms
 
 Type "clear"
 Enter
 Sleep 400ms
-Type "# graded rubric: overlaid tests 60, no regressions 30, source touched 10"
-Enter
-Sleep 900ms
-Type "grep -A 10 '^verification:' tasks/BF-002.yaml"
-Enter
-Sleep 4200ms
-
-Type "clear"
-Enter
-Sleep 400ms
-Type "awb validate --task-dir tasks -v"
+Type "awb validate --task-dir tmp/from-pr-demo/tasks -v"
 Enter
 Sleep 2600ms
 
-Type "# no model trained on what this repo does next - run it like any task set"
+Type "# schema-valid is still a candidate, not an admitted benchmark"
 Enter
 Sleep 900ms
-Type "awb run claude-code-vanilla --tasks-dir tasks --dry-run"
+Type "cat tmp/from-pr-demo/tasks/BF-002.review.json"
 Enter
 Sleep 5s
