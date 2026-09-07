@@ -9,6 +9,7 @@ import shutil
 from pathlib import Path
 
 from awb.core.config import TaskDefinition
+from awb.core.subprocesses import run_exec, run_shell
 
 log = logging.getLogger(__name__)
 
@@ -45,40 +46,20 @@ class RepoManager:
         whole runner indefinitely. Caller passes timeout per operation
         (typical: 300s for clones, 120s for checkouts, 60s for diffs).
         """
-        proc = await asyncio.create_subprocess_exec(
-            *args,
-            cwd=cwd,
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE,
-        )
-        try:
-            stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=timeout)
-        except TimeoutError:
-            with contextlib.suppress(ProcessLookupError):
-                proc.kill()
-            with contextlib.suppress(Exception):
-                await proc.communicate()
-            return 124, "", f"command timed out after {timeout}s: {' '.join(args)}"
-        return proc.returncode, stdout.decode(), stderr.decode()
+        result = await run_exec(*args, cwd=cwd, timeout=timeout)
+        stderr = result.stderr.decode(errors="replace")
+        if result.exit_code == 124:
+            stderr = f"command timed out after {timeout}s: {' '.join(args)}"
+        return result.exit_code, result.stdout.decode(errors="replace"), stderr
 
     async def _run_shell(
         self, cmd: str, cwd: Path | None = None, timeout: float = 300.0
     ) -> tuple[int, str, str]:
-        proc = await asyncio.create_subprocess_shell(
-            cmd,
-            cwd=cwd,
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE,
-        )
-        try:
-            stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=timeout)
-        except TimeoutError:
-            with contextlib.suppress(ProcessLookupError):
-                proc.kill()
-            with contextlib.suppress(Exception):
-                await proc.communicate()
-            return 124, "", f"shell command timed out after {timeout}s: {cmd}"
-        return proc.returncode, stdout.decode(), stderr.decode()
+        result = await run_shell(cmd, cwd=cwd or Path.cwd(), timeout=timeout)
+        stderr = result.stderr.decode(errors="replace")
+        if result.exit_code == 124:
+            stderr = f"shell command timed out after {timeout}s: {cmd}"
+        return result.exit_code, result.stdout.decode(errors="replace"), stderr
 
     async def prepare(self, task: TaskDefinition, run_id: str | None = None) -> Path:
         workspace = self.workspace_root / (f"{task.id}_{run_id}" if run_id else task.id)
@@ -142,22 +123,13 @@ class RepoManager:
             for cmd in task.repo.setup_commands:
                 if self.use_uv:
                     cmd = cmd.replace("pip install", "uv pip install")
-                try:
-                    proc = await asyncio.create_subprocess_shell(
-                        cmd,
-                        cwd=workspace,
-                        stdout=asyncio.subprocess.PIPE,
-                        stderr=asyncio.subprocess.PIPE,
-                    )
-                    _, stderr = await asyncio.wait_for(proc.communicate(), timeout=600)
-                    if proc.returncode != 0:
-                        raise RuntimeError(
-                            f"setup command failed ({cmd}): {stderr.decode(errors='replace')}"
-                        )
-                except TimeoutError:
-                    proc.kill()
-                    await proc.communicate()
+                result = await run_shell(cmd, cwd=workspace, timeout=600)
+                if result.exit_code == 124:
                     raise RuntimeError(f"setup command timed out after 600s: {cmd}") from None
+                if result.exit_code != 0:
+                    raise RuntimeError(
+                        f"setup command failed ({cmd}): {result.stderr.decode(errors='replace')}"
+                    )
 
             # Cache the prepared workspace so future runs skip setup
             if template_path.exists():

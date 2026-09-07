@@ -20,6 +20,7 @@ from awb.scoring.normalize import (
     normalize_success_rate,
     normalize_token_efficiency,
 )
+from awb.scoring.readiness import quality_measurement_status
 
 DIFFICULTY_WEIGHT = {"easy": 1.0, "medium": 1.5, "hard": 2.5}
 
@@ -38,6 +39,7 @@ def _compute_efficiency(result, baselines) -> float:
         token_score = normalize_token_efficiency(tpi)
         return round(0.5 * iter_score + 0.5 * token_score, 1)
     return iter_score
+
 
 _weight_cache: dict[str, dict[str, float]] = {}
 
@@ -65,8 +67,9 @@ class TaskScore:
 
     task_id: str
     difficulty: str
-    per_metric: dict[str, float] = field(default_factory=dict)
-    composite: float = 0.0
+    per_metric: dict[str, float | None] = field(default_factory=dict)
+    composite: float | None = None
+    measurement_coverage: dict[str, str] = field(default_factory=dict)
 
     @property
     def difficulty_weight(self) -> float:
@@ -91,30 +94,62 @@ def compute_task_score(
     # Correctness: 60% binary success + 40% partial credit gradient
     correctness = 0.6 * normalize_success_rate(success) + 0.4 * normalize_partial_credit(partial)
 
-    per_metric = {
+    regression_status = quality_measurement_status(result, "test_regressions")
+    security_status = quality_measurement_status(result, "security")
+    lint_status = quality_measurement_status(result, "lint")
+    usage_status = getattr(result.cost, "usage_status", "unknown")
+    measured_statuses = {"measured", "measured_clean", "measured_findings"}
+    per_metric: dict[str, float | None] = {
         "correctness": round(correctness, 1),
-        "cost_efficiency": normalize_cost(
-            result.cost.estimated_cost_usd,
-            baselines.cost_optimal,
-            baselines.cost_baseline,
+        "cost_efficiency": (
+            normalize_cost(
+                result.cost.estimated_cost_usd,
+                baselines.cost_optimal,
+                baselines.cost_baseline,
+            )
+            if usage_status == "complete"
+            else None
         ),
         "speed": normalize_speed(
             result.metrics.wall_clock_seconds,
             baselines.speed_optimal,
             baselines.speed_baseline,
         ),
-        "code_quality": normalize_quality(result.quality.lint_delta, 1),
-        "reliability": normalize_regressions(result.quality.test_regressions, 1),
-        "security": normalize_security(result.quality.security_delta, 1),
-        "efficiency": _compute_efficiency(result, baselines),
+        "code_quality": (
+            normalize_quality(result.quality.lint_delta, 1)
+            if lint_status in measured_statuses
+            else None
+        ),
+        "reliability": (
+            normalize_regressions(result.quality.test_regressions, 1)
+            if regression_status in measured_statuses
+            else None
+        ),
+        "security": (
+            normalize_security(result.quality.security_delta, 1)
+            if security_status in measured_statuses
+            else None
+        ),
+        "efficiency": _compute_efficiency(result, baselines)
+        if usage_status == "complete"
+        else None,
     }
 
-    composite = sum(per_metric.get(k, 0) * w for k, w in weights.items())
+    composite = None
+    if all(per_metric.get(name) is not None for name in weights):
+        composite = sum(float(per_metric[name]) * weight for name, weight in weights.items())
     return TaskScore(
         task_id=result.task_id,
         difficulty=task.difficulty,
         per_metric=per_metric,
-        composite=round(composite, 1),
+        composite=round(composite, 1) if composite is not None else None,
+        measurement_coverage={
+            "cost_efficiency": usage_status,
+            "efficiency": usage_status,
+            "code_quality": lint_status,
+            "reliability": regression_status,
+            "security": security_status,
+        },
     )
 
 
@@ -123,7 +158,7 @@ def compute_aggregate_score(
     tasks: dict[str, TaskDefinition],
     weights: dict[str, float] | None = None,
     stability_weights: dict[str, float] | None = None,
-) -> tuple[float, list[TaskScore]]:
+) -> tuple[float | None, list[TaskScore]]:
     """Compute difficulty-weighted aggregate score across multiple task results.
 
     Returns (aggregate_score, per_task_scores).
@@ -131,12 +166,46 @@ def compute_aggregate_score(
     if weights is None:
         weights = load_weight_profile()
 
-    task_scores = []
+    attempt_scores: dict[str, list[TaskScore]] = {}
     for result in results:
         task = tasks.get(result.task_id)
         if not task:
             continue
-        task_scores.append(compute_task_score(result, task, weights))
+        attempt_scores.setdefault(result.task_id, []).append(
+            compute_task_score(result, task, weights)
+        )
+
+    task_scores = []
+    for task_id, scores in sorted(attempt_scores.items()):
+        metric_names = {name for score in scores for name in score.per_metric}
+        per_metric = {
+            name: (
+                round(sum(float(score.per_metric[name]) for score in scores) / len(scores), 1)
+                if all(score.per_metric.get(name) is not None for score in scores)
+                else None
+            )
+            for name in metric_names
+        }
+        composites = [score.composite for score in scores]
+        task_scores.append(
+            TaskScore(
+                task_id=task_id,
+                difficulty=scores[0].difficulty,
+                per_metric=per_metric,
+                composite=(
+                    round(sum(float(value) for value in composites) / len(composites), 1)
+                    if all(value is not None for value in composites)
+                    else None
+                ),
+                measurement_coverage={
+                    name: status
+                    if len({score.measurement_coverage.get(name, "missing") for score in scores})
+                    == 1
+                    else "mixed"
+                    for name, status in scores[0].measurement_coverage.items()
+                },
+            )
+        )
 
     if not task_scores:
         return 0.0, []
@@ -146,19 +215,29 @@ def compute_aggregate_score(
         return ts.difficulty_weight * sw
 
     total_weight = sum(_eff_weight(ts) for ts in task_scores)
-    aggregate = sum(ts.composite * _eff_weight(ts) for ts in task_scores) / total_weight
+    if any(task_score.composite is None for task_score in task_scores):
+        return None, task_scores
+    aggregate = sum(float(ts.composite) * _eff_weight(ts) for ts in task_scores) / total_weight
     return round(aggregate, 1), task_scores
 
 
 # --- Legacy interface for backward compatibility ---
 
 
-def compute_composite_score(tool_stats: dict) -> float:
+def compute_composite_score(tool_stats: dict) -> float | None:
     """Compute weighted composite score from aggregated tool stats (legacy).
 
     Uses global baselines. Prefer compute_task_score for per-task scoring.
     """
     n = tool_stats["total_tasks"] or 1
+    if tool_stats.get("regression_measurements", 0) < n:
+        return None
+    if tool_stats.get("security_measurements", 0) < n:
+        return None
+    if tool_stats.get("lint_measurements", 0) < n:
+        return None
+    if tool_stats.get("usage_measurements", 0) < n:
+        return None
     success = normalize_success_rate(tool_stats["success_rate"])
     partial = normalize_partial_credit(tool_stats["avg_score_pct"])
     correctness = 0.6 * success + 0.4 * partial

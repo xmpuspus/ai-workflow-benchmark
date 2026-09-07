@@ -43,6 +43,7 @@ class MetricCollector:
         self._thinking_tokens: int = 0
         self._iterations: int = 0
         self._final_cost: float | None = None
+        self._usage_status: str = "unknown"
         self._per_iteration: list[IterationTokens] = []
         self._current_iter: IterationTokens | None = None
         self._pricing = pricing or MODEL_PRICING["default"]
@@ -84,6 +85,7 @@ class MetricCollector:
 
                     if inp or out:
                         self.record_tokens(inp, out)
+                        self._usage_status = "partial"
                     if cache_read:
                         self._cache_read += cache_read
                     if cache_create:
@@ -128,6 +130,7 @@ class MetricCollector:
                     self._output_tokens = out
                     self._cache_read = cache_read
                     self._cache_create = cache_create
+                    self._usage_status = "complete"
             # Extract iteration count from result
             num_turns = event.get("num_turns")
             if num_turns is not None:
@@ -141,6 +144,8 @@ class MetricCollector:
                 self._cache_read = int(usage.get("cached_input_tokens") or 0)
                 self._cache_create = int(usage.get("cache_write_input_tokens") or 0)
                 self._thinking_tokens = int(usage.get("reasoning_output_tokens") or 0)
+                if any(value for value in usage.values() if isinstance(value, int | float)):
+                    self._usage_status = "complete"
             self._iterations += 1
 
         elif event_type == "item.completed":
@@ -223,4 +228,5 @@ class MetricCollector:
             estimated_credits=(
                 round(estimated_credits, 4) if estimated_credits is not None else None
             ),
+            usage_status=self._usage_status,
         )

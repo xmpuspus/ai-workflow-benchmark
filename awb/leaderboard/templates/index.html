@@ -10,7 +10,7 @@
 <body>
     <header>
         <h1>AI Workflow Benchmark</h1>
-        <p class="subtitle">Measuring tool+workflow performance, not just model capability</p>
+        <p class="subtitle">Compare recorded tool and workflow evidence</p>
     </header>
 
     <div class="container">
@@ -25,7 +25,7 @@
             </div>
             <div class="stat">
                 <span class="stat-value">{{ tools|length }}</span>
-                <span class="stat-label">Tools Compared</span>
+                <span class="stat-label">Experiment Cohorts</span>
             </div>
         </div>
 
@@ -36,6 +36,7 @@
         </div>
 
         <div class="table-wrapper">
+            <p class="scroll-cue">Swipe or scroll sideways to view all metrics.</p>
             <table id="leaderboard-table">
                 <thead>
                     <tr>
@@ -53,14 +54,14 @@
                 <tbody>
                     {% for tool in tools %}
                     <tr data-tool="{{ tool.tool }}">
-                        <td class="rank">{{ loop.index }}</td>
-                        <td class="tool-name">{{ tool.tool }}</td>
+                        <td class="rank">{{ tool.rank if tool.rank is not none else "n/a" }}</td>
+                        <td class="tool-name">{{ tool.tool }}<br><small>Cohort {{ tool.identity_hash }}</small>{% if not tool.comparison_eligible %}<br><small title="{{ tool.ineligibility_reasons|join(", ") }}">Not comparison eligible: {{ tool.ineligibility_reasons|length }} unmet requirements</small>{% endif %}</td>
                         <td>{{ tool.model }}</td>
-                        <td><span class="score-badge {% if tool.composite_score >= 80 %}score-high{% elif tool.composite_score >= 50 %}score-mid{% else %}score-low{% endif %}" data-target="{{ tool.composite_score }}">0</span></td>
+                        <td>{% if tool.composite_score is not none %}<span class="score-badge {% if tool.composite_score >= 80 %}score-high{% elif tool.composite_score >= 50 %}score-mid{% else %}score-low{% endif %}" data-target="{{ tool.composite_score }}">0</span>{% else %}n/a{% endif %}</td>
                         <td><span data-target="{{ tool.success_rate }}">0</span>%</td>
                         <td><span data-target="{{ tool.avg_score_pct }}">0</span>%</td>
                         <td>{{ tool.avg_time }}</td>
-                        <td>${{ tool.avg_cost }}</td>
+                        <td>{% if tool.avg_cost is not none %}${{ tool.avg_cost }}{% else %}n/a{% endif %}</td>
                         <td>{{ tool.avg_iterations }}</td>
                     </tr>
                     {% endfor %}
@@ -68,10 +69,10 @@
             </table>
         </div>
 
-        <div class="chart-section">
+        {% if comparison_eligible_count %}<div class="chart-section">
             <h2>Metric Comparison</h2>
             <canvas id="radar-chart" width="500" height="500"></canvas>
-        </div>
+        </div>{% endif %}
 
         {% if task_results %}
         <div class="breakdown-section">

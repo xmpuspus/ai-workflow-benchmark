@@ -124,6 +124,13 @@
           "items": {
             "type": "string"
           }
+        },
+        "allowed_edit_paths": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "Explicit repository-relative paths or glob patterns the agent may edit"
         }
       }
     },
@@ -178,6 +185,13 @@
     "workspace_claude_md": {
       "type": "string",
       "description": "Optional inline project instructions written for both Claude Code and Codex before tool runs"
+    },
+    "allowed_edit_paths": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "description": "Explicit repository-relative paths or glob patterns the agent may edit"
     },
     "provenance": {
       "type": "object",
@@ -244,6 +258,27 @@
           "minimum": 0,
           "default": 0,
           "description": "Maximum output tokens allowed (0 = unlimited)"
+        }
+      }
+    },
+    "oracle_review": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "status": {
+          "enum": [
+            "candidate",
+            "reviewed"
+          ]
+        },
+        "evaluator_version": {
+          "type": "string"
+        },
+        "controls": {
+          "type": "string"
+        },
+        "confirmation_eligible": {
+          "type": "boolean"
         }
       }
     }

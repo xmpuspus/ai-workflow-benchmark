@@ -11,6 +11,11 @@ from jinja2 import Environment, FileSystemLoader
 from awb.core.config import RESULTS_DIR
 from awb.core.results import _dict_to_result
 from awb.core.task_loader import load_all_tasks
+from awb.scoring.cohorts import (
+    assess_cohort_coverage,
+    cohort_group_key_mapping,
+    identity_from_mapping,
+)
 from awb.scoring.composite import compute_aggregate_score
 
 
@@ -30,14 +35,20 @@ def load_results(results_dir: Path | None = None) -> list[dict]:
 
 
 def aggregate_by_tool(results: list[dict]) -> dict[str, dict]:
-    """Aggregate results by tool name. Returns per-tool summary stats."""
+    """Aggregate only within compatible experiment identities."""
     tools = {}
     for r in results:
         tool = r["tool"]
-        if tool not in tools:
-            tools[tool] = {
+        cohort_key = cohort_group_key_mapping(r)
+        if cohort_key not in tools:
+            identity = identity_from_mapping(r)
+            tools[cohort_key] = {
                 "tool": tool,
                 "model": r.get("model", "unknown"),
+                "cohort_id": cohort_key,
+                "identity_hash": identity.cohort_id,
+                "comparison_eligible": identity.eligible,
+                "ineligibility_reasons": [f"missing {name}" for name in identity.missing_fields],
                 "runs": [],
                 "total_tasks": 0,
                 "successes": 0,
@@ -49,8 +60,12 @@ def aggregate_by_tool(results: list[dict]) -> dict[str, dict]:
                 "total_lint_delta": 0,
                 "total_security_delta": 0,
                 "total_regressions": 0,
+                "security_measurements": 0,
+                "regression_measurements": 0,
+                "lint_measurements": 0,
+                "usage_measurements": 0,
             }
-        t = tools[tool]
+        t = tools[cohort_key]
         t["runs"].append(r)
         t["total_tasks"] += 1
         if r["outcome"]["success"]:
@@ -63,13 +78,33 @@ def aggregate_by_tool(results: list[dict]) -> dict[str, dict]:
         t["total_lint_delta"] += r["quality"]["lint_delta"]
         t["total_security_delta"] += r["quality"]["security_delta"]
         t["total_regressions"] += r["quality"]["test_regressions"]
+        if r["quality"].get("security_status") in {
+            "measured",
+            "measured_clean",
+            "measured_findings",
+        }:
+            t["security_measurements"] += 1
+        if r["quality"].get("test_regressions_status") in {
+            "measured",
+            "measured_clean",
+            "measured_findings",
+        }:
+            t["regression_measurements"] += 1
+        if r["quality"].get("lint_status") in {
+            "measured",
+            "measured_clean",
+            "measured_findings",
+        }:
+            t["lint_measurements"] += 1
+        if r["cost"].get("usage_status") == "complete":
+            t["usage_measurements"] += 1
 
     for t in tools.values():
         n = t["total_tasks"] or 1
         t["success_rate"] = round(t["successes"] / n * 100, 1)
         t["avg_score_pct"] = round(t["total_score"] / max(t["total_max_score"], 1) * 100, 1)
         t["avg_time"] = round(t["total_time"] / n, 1)
-        t["avg_cost"] = round(t["total_cost"] / n, 2)
+        t["avg_cost"] = round(t["total_cost"] / n, 2) if t["usage_measurements"] == n else None
         t["avg_iterations"] = round(t["total_iterations"] / n, 1)
 
     return tools
@@ -98,28 +133,63 @@ def generate_leaderboard(
 
     for tool_stats in tools.values():
         run_results = [_dict_to_result(r) for r in tool_stats["runs"]]
+        coverage = assess_cohort_coverage(tool_stats["runs"])
         agg_score, _ = compute_aggregate_score(run_results, task_defs)
         tool_stats["composite_score"] = agg_score
+        if not coverage.eligible:
+            tool_stats["comparison_eligible"] = False
+            tool_stats["ineligibility_reasons"].extend(coverage.reasons)
+        if agg_score is None:
+            tool_stats["comparison_eligible"] = False
+            tool_stats["ineligibility_reasons"].append("missing quality measurement coverage")
+        tool_stats["ineligibility_reasons"] = sorted(set(tool_stats["ineligibility_reasons"]))
 
-    ranked = sorted(tools.values(), key=lambda t: t["composite_score"], reverse=True)
+    ranked = sorted(
+        tools.values(),
+        key=lambda t: (
+            not t["comparison_eligible"],
+            -(t["composite_score"] if t["composite_score"] is not None else -1),
+            t["tool"],
+        ),
+    )
+    rank = 0
+    for tool_stats in ranked:
+        if tool_stats["comparison_eligible"]:
+            rank += 1
+            tool_stats["rank"] = rank
+        else:
+            tool_stats["rank"] = None
 
     task_results = {}
     for r in results:
         tid = r["task_id"]
         if tid not in task_results:
             task_results[tid] = {}
-        task_results[tid][r["tool"]] = r
+        cohort_key = cohort_group_key_mapping(r)
+        task_results[tid][f"{r['tool']} · {cohort_key}"] = r
 
     env = Environment(
         loader=FileSystemLoader(str(leaderboard_dir / "templates")),
         autoescape=True,
     )
     template = env.get_template("index.html")
+    eligibility_by_cohort = {
+        tool_stats["cohort_id"]: tool_stats["comparison_eligible"] for tool_stats in ranked
+    }
+    render_results = []
+    for result in results:
+        rendered = dict(result)
+        cohort_key = cohort_group_key_mapping(result)
+        rendered["cohort_id"] = cohort_key
+        rendered["comparison_eligible"] = eligibility_by_cohort[cohort_key]
+        render_results.append(rendered)
+
     html = template.render(
         tools=ranked,
         task_results=task_results,
         total_results=len(results),
-        results_json=json.dumps(results, indent=2),
+        comparison_eligible_count=sum(t["comparison_eligible"] for t in ranked),
+        results_json=json.dumps(render_results, indent=2),
     )
 
     output_path = output_dir / "index.html"
@@ -137,7 +207,7 @@ def generate_leaderboard(
     history.append(
         {
             "timestamp": datetime.now(UTC).isoformat(),
-            "tools": {t["tool"]: t.get("composite_score", 0) for t in ranked},
+            "tools": {t["cohort_id"]: t.get("composite_score", 0) for t in ranked},
         }
     )
     history_path.write_text(json.dumps(history, indent=2))

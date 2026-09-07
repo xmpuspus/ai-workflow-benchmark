@@ -1,7 +1,12 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import logging
+import os
+import shlex
+import signal
+import sys
 from pathlib import Path
 
 from awb.core.config import CriterionResult, PartialCreditCriterion
@@ -20,19 +25,31 @@ async def _eval_single(
     output = ""
 
     try:
+        command = criterion.check
+        if command.startswith("awb-oracle "):
+            args = shlex.split(command)
+            if len(args) != 3 or args[1] not in {"BF-001", "BF-009", "CR-007"}:
+                raise ValueError("Unknown trusted oracle")
+            interpreter = workspace / ".venv/bin/python"
+            command = shlex.join(
+                [
+                    str(interpreter) if interpreter.exists() else sys.executable,
+                    str(Path(__file__).with_name("task_oracles.py")),
+                    *args[1:],
+                ]
+            )
         proc = await asyncio.create_subprocess_shell(
-            criterion.check,
+            command,
             cwd=workspace,
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.STDOUT,
+            start_new_session=True,
         )
         try:
             stdout, _ = await asyncio.wait_for(proc.communicate(), timeout=60)
             check_output = stdout.decode(errors="replace")
             passed = proc.returncode == 0
-            log.debug(
-                "Criterion %r: rc=%d\n%s", criterion.criterion, proc.returncode, check_output
-            )
+            log.debug("Criterion %r: rc=%d\n%s", criterion.criterion, proc.returncode, check_output)
             output = (
                 f"$ {criterion.check}\n"
                 f"  criterion: {criterion.criterion}\n"
@@ -40,9 +57,15 @@ async def _eval_single(
                 f"{check_output}"
             )
         except TimeoutError:
-            proc.kill()
+            with contextlib.suppress(ProcessLookupError):
+                os.killpg(proc.pid, signal.SIGKILL)
             await proc.communicate()
             output = f"$ {criterion.check}\n  [TIMEOUT after 60s]\n"
+        except asyncio.CancelledError:
+            with contextlib.suppress(ProcessLookupError):
+                os.killpg(proc.pid, signal.SIGKILL)
+            await proc.communicate()
+            raise
     except FileNotFoundError:
         output = f"$ {criterion.check}\n  [command not found]\n"
 

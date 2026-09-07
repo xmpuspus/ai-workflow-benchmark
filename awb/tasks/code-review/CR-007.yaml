@@ -1,115 +1,74 @@
 id: CR-007
 category: code-review
-title: "Audit dependency versions and fix unpinned packages in requirements.txt"
+title: Audit dependency versions and fix unpinned packages in requirements.txt
 difficulty: hard
 estimated_minutes: 15
-languages: [python]
-tags: [fastapi, dependencies, supply-chain, security, pinning]
-capabilities: [security_awareness]
-
+languages:
+- python
+tags:
+- fastapi
+- dependencies
+- supply-chain
+- security
+- pinning
+capabilities:
+- security_awareness
 repo:
-  url: "https://github.com/tiangolo/fastapi"
-  commit: "628c34e0cae200564d191c95d7edea78c88c4b5e"
+  url: https://github.com/tiangolo/fastapi
+  commit: 628c34e0cae200564d191c95d7edea78c88c4b5e
   setup_commands:
-    - "python3 -m venv .venv && source .venv/bin/activate && pip install -e '.[all]' && pip install pytest"
-
+  - python3 -m venv .venv && source .venv/bin/activate && pip install -e '.[all]' && pip install
+    pytest
 issue:
-  description: |
-    A FastAPI project's requirements.txt contains a mix of pinned and unpinned
-    dependencies. Unpinned packages (using >=, ^, ~, or no version at all)
-    allow pip to install any newer version, which can introduce breaking
-    changes or security vulnerabilities without an explicit decision to upgrade.
-
-    Create requirements.txt with 8 dependencies — 3 correctly pinned, 3 with
-    loose version specifiers, and 2 with no version at all:
-
-      # Correctly pinned (good)
-      fastapi==0.109.0
-      uvicorn==0.27.0
-      pydantic==2.6.0
-
-      # Loose specifiers (bad)
-      httpx>=0.26.0
-      sqlalchemy>=2.0.0,<3.0.0
-      alembic~=1.13.0
-
-      # No version (bad)
-      requests
-      python-dotenv
-
-    Create audit/check_deps.py — a script that:
-      - Reads requirements.txt line by line
-      - Skips blank lines and comments (#)
-      - For each dependency line, checks whether it is pinned with ==
-      - Prints a PASS or FAIL line for each dependency
-      - Exits with code 1 if any dependency is not pinned exactly with ==
-      - Example output:
-          [PASS] fastapi==0.109.0
-          [FAIL] httpx>=0.26.0 — not pinned to exact version
-          [FAIL] requests — no version specified
-
-    Fix requirements.txt: pin all 8 dependencies to exact versions using ==.
-    The chosen version numbers must be realistic (look up actual published
-    versions or use plausible version strings like 2.31.0 for requests).
-
-    Create tests/test_audit.py that:
-      - Import and call the audit logic (or subprocess the script)
-      - Verify that the fixed requirements.txt has all 8 packages pinned
-      - Assert that no line with a real package name uses >=, ~=, ^, or has
-        no version specifier at all
-      - Assert that the audit script exits 0 when all packages are pinned
-      - Assert that the audit script exits 1 when given a file with an
-        unpinned package
-
-    Your task:
-      1. Create requirements.txt with 8 packages as described (mixed pinning).
-      2. Create audit/check_deps.py that detects unpinned packages.
-      3. Fix requirements.txt to pin all 8 packages exactly with ==.
-      4. Create tests/test_audit.py and confirm all tests pass.
+  description: "A FastAPI project's requirements.txt contains a mix of pinned and unpinned\ndependencies.\
+    \ Unpinned packages (using >=, ^, ~, or no version at all)\nallow pip to install any newer version,\
+    \ which can introduce breaking\nchanges or security vulnerabilities without an explicit decision\
+    \ to upgrade.\n\nCreate requirements.txt with 8 dependencies \u2014 3 correctly pinned, 3 with\n\
+    loose version specifiers, and 2 with no version at all:\n\n  # Correctly pinned (good)\n  fastapi==0.109.0\n\
+    \  uvicorn==0.27.0\n  pydantic==2.6.0\n\n  # Loose specifiers (bad)\n  httpx>=0.26.0\n  sqlalchemy>=2.0.0,<3.0.0\n\
+    \  alembic~=1.13.0\n\n  # No version (bad)\n  requests\n  python-dotenv\n\nCreate audit/check_deps.py\
+    \ \u2014 a script that:\n  - Reads requirements.txt line by line\n  - Skips blank lines and comments\
+    \ (#)\n  - For each dependency line, checks whether it is pinned with ==\n  - Prints a PASS or\
+    \ FAIL line for each dependency\n  - Exits with code 1 if any dependency is not pinned exactly\
+    \ with ==\n  - Example output:\n      [PASS] fastapi==0.109.0\n      [FAIL] httpx>=0.26.0 \u2014\
+    \ not pinned to exact version\n      [FAIL] requests \u2014 no version specified\n\nFix requirements.txt:\
+    \ pin all 8 dependencies to exact versions using ==.\nThe chosen version numbers must be realistic\
+    \ (look up actual published\nversions or use plausible version strings like 2.31.0 for requests).\n\
+    \nCreate tests/test_audit.py that:\n  - Import and call the audit logic (or subprocess the script)\n\
+    \  - Verify that the fixed requirements.txt has all 8 packages pinned\n  - Assert that no line\
+    \ with a real package name uses >=, ~=, ^, or has\n    no version specifier at all\n  - Assert\
+    \ that the audit script exits 0 when all packages are pinned\n  - Assert that the audit script\
+    \ exits 1 when given a file with an\n    unpinned package\n\nYour task:\n  1. Create requirements.txt\
+    \ with 8 packages as described (mixed pinning).\n  2. Create audit/check_deps.py that detects\
+    \ unpinned packages.\n  3. Fix requirements.txt to pin all 8 packages exactly with ==.\n  4.\
+    \ Create tests/test_audit.py and confirm all tests pass.\n"
   files_to_examine:
-    - "requirements.txt"
-    - "audit/check_deps.py"
-    - "tests/test_audit.py"
-
+  - requirements.txt
+  - audit/check_deps.py
+  - tests/test_audit.py
 verification:
   test_commands:
-    - "source .venv/bin/activate && python3 -m pytest tests/test_audit.py -v"
+  - source .venv/bin/activate && python3 -m pytest tests/test_audit.py -v
   lint_commands:
-    - "source .venv/bin/activate && ruff check audit/check_deps.py"
+  - source .venv/bin/activate && ruff check audit/check_deps.py
   security_commands: []
   partial_credit:
-    - criterion: "audit/check_deps.py created and detects unpinned dependencies"
-      points: 20
-      check: "test -f audit/check_deps.py && python3 audit/check_deps.py requirements.txt 2>/dev/null; true"
-    - criterion: "Audit script exists and runs without crashing"
-      points: 10
-      check: "test -f audit/check_deps.py && python3 -c \"compile(open('audit/check_deps.py').read(), 'audit/check_deps.py', 'exec')\" 2>/dev/null && echo ok"
-    - criterion: "Audit script correctly identifies unpinned packages"
-      points: 10
-      check: "echo 'requests' | python3 -c \"import sys; content=sys.stdin.read(); exec(open('audit/check_deps.py').read())\" 2>/dev/null | grep -q 'FAIL' || python3 audit/check_deps.py <(echo 'requests') 2>/dev/null | grep -q 'FAIL' || grep -q 'FAIL\\|not pinned\\|no version' audit/check_deps.py"
-    - criterion: "All 8 dependencies in requirements.txt are pinned with =="
-      points: 25
-      check: "python3 -c \"
-lines = [l.strip() for l in open('requirements.txt') if l.strip() and not l.strip().startswith('#')]
-assert len(lines) >= 8, f'expected 8 deps, found {len(lines)}'
-unpinned = [l for l in lines if '==' not in l]
-assert not unpinned, f'unpinned: {unpinned}'
-print(f'all {len(lines)} deps pinned')
-\""
-    - criterion: "No >= or ~= or ^ remaining in requirements.txt"
-      points: 15
-      check: "! grep -E '>=|~=|\\^|[^=]=[^=]' requirements.txt | grep -v '^#'"
-    - criterion: "Tests pass"
-      points: 20
-      check: "source .venv/bin/activate && python3 -m pytest tests/test_audit.py -v"
-
+  - criterion: Scanner accepts pins and rejects unpinned inputs
+    points: 50
+    check: awb-oracle CR-007 detection
+  - criterion: Exactly the eight requested packages have exact pins
+    points: 50
+    check: awb-oracle CR-007 pins
 constraints:
   max_iterations: 15
   timeout_seconds: 332
-
-# === provenance (backfilled) ===
 provenance:
-  created_at: "2026-03-21T19:52:06+08:00"
-  last_verified_at: "2026-03-28T23:24:10.335284+00:00"
+  created_at: '2026-03-21T19:52:06+08:00'
+  last_verified_at: '2026-03-28T23:24:10.335284+00:00'
 contamination_risk: high
 label: synthetic_overlay
+oracle_review:
+  status: candidate
+  evaluator_version: behavioral-v1
+  controls: tests/test_task_oracles.py
+  confirmation_eligible: false

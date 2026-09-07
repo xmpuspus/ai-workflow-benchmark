@@ -37,7 +37,7 @@ The benchmark measures what the tool delivers with its best configuration. A van
 
 ### 6. Three runs minimum
 
-Each task-tool combination runs at least 3 times. Results report the median to reduce variance from non-determinism in LLM outputs and execution environment. Outlier runs (>2 standard deviations from the median) are flagged in the results.
+Use at least three repeats for a task-tool comparison. The A/B and workflow-lift reports aggregate every repeat within each task before pairing. The frozen experiment protocol declares median aggregation. Repeated attempts measure within-task variation; they do not add independent task samples.
 
 ### 7. Version pinning
 
@@ -240,25 +240,19 @@ The `token_efficient` and `rate_limited` profiles exist because the real-world b
 
 ## Execution Modes
 
-v1.1 introduces three execution modes that trade coverage for speed and token cost. They do not change how scoring works — they change which tasks are run. A result produced in progressive or fast-check mode is scored by the same sigmoid normalization as a full-suite result; the difference is sample size.
+Execution modes change which tasks run and which budgets apply. These choices change the experiment. Record the mode in its identity and compare compatible cohorts.
 
-**Full mode** (default) runs every task for `--runs` iterations. This is the reference evaluation. Results from this mode are directly comparable across tools.
+**Full mode** runs every selected task for `--runs` repeats. Comparison also needs matching task, model, evaluator, environment, and budget identities. Full coverage alone does not prove comparability.
 
 **Progressive mode** (`--progressive`) sorts tasks by difficulty and runs easy tasks first. After easy tasks complete on run 1, the runner checks pass rate: if below 40%, the run terminates with a clear explanation that the tool is not ready for harder tasks. Same check after medium tasks at a 20% threshold. Progressive results are scored normally but cover only the difficulty tiers that completed — gap analysis will flag that hard tasks were skipped. This mode exists to stop wasting tokens on tools that clearly aren't going to handle non-trivial work.
 
-**Fast-check mode** (`--fast-check`) runs 8 hand-picked representative tasks (one per category) for a single run. It reports an estimated full-suite score with a 95% confidence margin computed from the 8 samples. Fast-check results are not published on the leaderboard — they are a sighting shot. Use them for PR gates, config iteration, or deciding whether a new tool is worth a full evaluation.
+**Fast-check mode** (`--fast-check`) runs eight selected tasks, one per category, once. Its summary describes those tasks only. This hand-picked sample does not support a 95% full-suite confidence interval. Use it to find failures and plan a comparison.
 
-**Adaptive runs** (`--adaptive`) is not a mode but a modifier. It applies to runs 2 and 3, skipping tasks that were decisive on run 1 (scored 0%, 100%, or below a configurable minimum) and only re-running near-misses. Combined with adaptive timeout tightening (runs 2+ get `min(original, 2 × run1_actual)` per task), this cuts runs 2-3 wall clock by 40-60% without losing the variance signal that matters.
+**Adaptive runs** (`--adaptive`) select later repeats using earlier outcomes and can tighten timeouts. This is exploratory execution. Selection can bias scores and variance estimates. Do not use adaptive results as a fixed-budget confirmation experiment.
 
-| Mode | Tasks | Runs | Typical wall clock | Typical API cost |
-|------|-------|------|-------------------|------------------|
-| Full | 100 | 3 | ~3 hours | ~$150 |
-| Full + adaptive | 100 + ~40 | 1 + 2 partial | ~1.5 hours | ~$100 |
-| Progressive (strong tool) | 100 | 3 | ~3 hours | ~$150 |
-| Progressive (weak tool) | ~48 | 3 | ~1 hour | ~$40-75 |
-| Fast-check | 8 | 1 | ~15 minutes | ~$4 |
+Wall time and spend depend on the selected tasks, setup cache, model, concurrency, and usage reporting. Use the recorded run receipts rather than fixed cost estimates. A timeout with incomplete usage cannot establish a total spend or cost-efficiency score.
 
-Wall-clock estimates assume `-j 4` parallelism and the workspace template cache is warm (`awb warmup` run once). Cost estimates are for Claude Opus 4.6 with typical extended thinking.
+The [controlled experiment workflow](docs/evidence-workflow.md) adds a frozen schedule, practical threshold, separate holdout, and reviewable evidence bundle. Historical full-suite scores are descriptive unless their identities and coverage satisfy the current comparison checks.
 
 ## Workflow Lift Score
 

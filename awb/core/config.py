@@ -74,6 +74,7 @@ class TaskDefinition:
     capabilities: list[str] = field(default_factory=list)
     issue_description: str = ""
     files_to_examine: list[str] = field(default_factory=list)
+    allowed_edit_paths: list[str] = field(default_factory=list)
     workspace_claude_md: str = ""
     provenance: TaskProvenance | None = None
     contamination_risk: str = "unknown"
@@ -130,6 +131,7 @@ class RunCost:
     thinking_tokens: int = 0
     estimated_cost_usd: float = 0.0
     estimated_credits: float | None = None
+    usage_status: str = "unknown"
 
 
 @dataclass
@@ -137,6 +139,20 @@ class RunQuality:
     lint_delta: int = 0
     security_delta: int = 0
     test_regressions: int = 0
+    baseline_security_issues: int | None = None
+    post_security_issues: int | None = None
+    lint_status: str = "missing"
+    security_status: str = "missing"
+    test_regressions_status: str = "missing"
+
+
+@dataclass
+class RunExecution:
+    status: str = "unknown"
+    stage: str = "pending"
+    termination_reason: str = ""
+    tool_success: bool | None = None
+    tool_exit_code: int | None = None
 
 
 def _detect_python_version() -> str:
@@ -229,6 +245,44 @@ class RunResult:
     workflow: WorkflowInfo | None = None
     task_set_hash: str = ""
     trace_path: str = ""
+    execution: RunExecution = field(default_factory=RunExecution)
+    task_definition_hash: str = ""
+    evaluator_version: str = ""
+    effective_config_hash: str = ""
+    adapter_version: str = ""
+    execution_mode: str = "host"
+    environment_fingerprint: str = ""
+    budget_fingerprint: str = ""
+    cohort_id: str = ""
+    loaded_instruction_files: list[str] = field(default_factory=list)
+    allowed_edit_paths: list[str] = field(default_factory=list)
+    effective_input_manifest: dict[str, Any] = field(default_factory=dict)
+    environment_manifest: dict[str, Any] = field(default_factory=dict)
+    cohort_manifest: dict[str, Any] = field(default_factory=dict)
+    experiment_plan_hash: str = ""
+    experiment_split: str = ""
+    experiment_arm: str = ""
+    repeat_index: int | None = None
+    requested_model: str = ""
+    experiment_attempt_status: str = ""
+    experiment_state_policy: str = ""
+    configured_instruction_files: list[str] = field(default_factory=list)
+
+    @property
+    def execution_status(self) -> str:
+        return self.execution.status
+
+    @property
+    def execution_stage(self) -> str:
+        return self.execution.stage
+
+    @property
+    def termination_reason(self) -> str:
+        return self.execution.termination_reason
+
+    @property
+    def usage_status(self) -> str:
+        return self.cost.usage_status
 
     def to_dict(self) -> dict[str, Any]:
         breakdown = [
@@ -279,6 +333,7 @@ class RunResult:
                 "cache_creation_tokens": self.cost.cache_creation_tokens,
                 "thinking_tokens": self.cost.thinking_tokens,
                 "estimated_cost_usd": self.cost.estimated_cost_usd,
+                "usage_status": self.cost.usage_status,
                 **(
                     {"estimated_credits": self.cost.estimated_credits}
                     if self.cost.estimated_credits is not None
@@ -289,6 +344,11 @@ class RunResult:
                 "lint_delta": self.quality.lint_delta,
                 "security_delta": self.quality.security_delta,
                 "test_regressions": self.quality.test_regressions,
+                "baseline_security_issues": self.quality.baseline_security_issues,
+                "post_security_issues": self.quality.post_security_issues,
+                "lint_status": self.quality.lint_status,
+                "security_status": self.quality.security_status,
+                "test_regressions_status": self.quality.test_regressions_status,
             },
             "environment": {
                 "os": self.environment.os,
@@ -298,6 +358,26 @@ class RunResult:
                 "adapter_version": self.environment.adapter_version,
                 "pip_freeze_hash": self.environment.pip_freeze_hash,
             },
+            "execution": {
+                "status": self.execution.status,
+                "stage": self.execution.stage,
+                "termination_reason": self.execution.termination_reason,
+                "tool_success": self.execution.tool_success,
+                "tool_exit_code": self.execution.tool_exit_code,
+            },
+            "task_definition_hash": self.task_definition_hash,
+            "evaluator_version": self.evaluator_version,
+            "effective_config_hash": self.effective_config_hash,
+            "adapter_version": self.adapter_version,
+            "execution_mode": self.execution_mode,
+            "environment_fingerprint": self.environment_fingerprint,
+            "budget_fingerprint": self.budget_fingerprint,
+            "cohort_id": self.cohort_id,
+            "loaded_instruction_files": self.loaded_instruction_files,
+            "allowed_edit_paths": self.allowed_edit_paths,
+            "effective_input_manifest": self.effective_input_manifest,
+            "environment_manifest": self.environment_manifest,
+            "cohort_manifest": self.cohort_manifest,
         }
         if self.workflow:
             d["workflow"] = {
@@ -312,4 +392,16 @@ class RunResult:
             d["task_set_hash"] = self.task_set_hash
         if self.trace_path:
             d["trace_path"] = self.trace_path
+        if self.experiment_plan_hash:
+            for name in (
+                "experiment_plan_hash",
+                "experiment_split",
+                "experiment_arm",
+                "repeat_index",
+                "requested_model",
+                "experiment_attempt_status",
+                "experiment_state_policy",
+                "configured_instruction_files",
+            ):
+                d[name] = getattr(self, name)
         return d

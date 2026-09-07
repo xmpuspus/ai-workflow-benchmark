@@ -22,11 +22,10 @@ RUBRIC_MIN_LOW_TASKS = 2
 CAPABILITY_SCORE_THRESHOLD = 60
 CAPABILITY_MIN_TASKS = 2
 
-# Lighthouse-style honesty rule: impact estimates are computed independently
-# per prescription (mean shortfall below the firing threshold), so stacking
-# several fixes does not mean their deltas add up. Surfaced in the report so
-# a renderer prints it once next to the ranked list.
-IMPACT_CAVEAT = "Impact estimates are independent; applying several fixes will not sum cleanly."
+IMPACT_CAVEAT = (
+    "Observed deficits prioritize investigation; they do not predict improvement. "
+    "Run the proposed comparison to measure lift."
+)
 
 
 @dataclass
@@ -38,7 +37,23 @@ class Prescription:
     severity: int
     snippet: str
     rationale: str
-    estimated_score_delta: float | None = None
+    suspected_cause: str = ""
+    observed_deficit: float | None = None
+    competing_explanations: list[str] = field(
+        default_factory=lambda: [
+            "task difficulty or task mix",
+            "tool or environment failure",
+            "measurement coverage or evaluator error",
+        ]
+    )
+    proposed_comparison: str = (
+        "Run the same eligible tasks and budgets with this change as the only varied input."
+    )
+
+    @property
+    def estimated_score_delta(self) -> None:
+        """Compatibility shim: a deficit is not an estimated improvement."""
+        return None
 
 
 @dataclass
@@ -371,7 +386,12 @@ def _grade_traces(
 
         task = task_defs.get(result.task_id)
         files_to_examine = task.files_to_examine if task else []
-        scores = grade_trace_or_none(trace_path, files_to_examine=files_to_examine)
+        allowed_edit_paths = getattr(result, "allowed_edit_paths", None) or []
+        scores = grade_trace_or_none(
+            trace_path,
+            files_to_examine=files_to_examine,
+            allowed_edit_paths=allowed_edit_paths,
+        )
         if scores is None:
             n_missing += 1
             continue
@@ -416,9 +436,8 @@ def _rubric_prescriptions(
                 severity=len(low),
                 snippet=spec["snippet"],
                 rationale=spec["rationale"],
-                estimated_score_delta=_mean_shortfall(
-                    [sc for _, sc in low], RUBRIC_SCORE_THRESHOLD
-                ),
+                suspected_cause=spec["rationale"],
+                observed_deficit=_mean_shortfall([sc for _, sc in low], RUBRIC_SCORE_THRESHOLD),
             )
         )
     return prescriptions
@@ -474,7 +493,8 @@ def _capability_prescriptions(
                 severity=len(low),
                 snippet=spec["snippet"],
                 rationale=spec["rationale"],
-                estimated_score_delta=_mean_shortfall([sc for _, sc in low], threshold),
+                suspected_cause=spec["rationale"],
+                observed_deficit=_mean_shortfall([sc for _, sc in low], threshold),
             )
         )
     return prescriptions
@@ -499,8 +519,8 @@ def build_prescriptions(
 
     prescriptions = _rubric_prescriptions(rubric_scores)
     prescriptions.extend(_capability_prescriptions(results, task_defs, threshold))
-    # Most severe first; within the same severity, the bigger estimated fix wins.
-    prescriptions.sort(key=lambda p: (-p.severity, -(p.estimated_score_delta or 0)))
+    # Most severe first; observed deficit only breaks ties. It is not predicted lift.
+    prescriptions.sort(key=lambda p: (-p.severity, -(p.observed_deficit or 0)))
 
     return PrescriptionReport(
         tool=tool,

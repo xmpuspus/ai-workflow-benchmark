@@ -168,3 +168,15 @@ class TestTokenBudgetFields:
             assert task.constraints.max_output_tokens == 0
         finally:
             path.unlink()
+
+
+def test_allowed_edit_paths_survive_yaml_parse(valid_task_dict):
+    valid_task_dict["allowed_edit_paths"] = ["src/**", "tests/test_api.py"]
+    with tempfile.NamedTemporaryFile(suffix=".yaml", mode="w", delete=False) as f:
+        yaml.dump(valid_task_dict, f)
+        path = Path(f.name)
+    try:
+        task = load_task(path)
+        assert task.allowed_edit_paths == ["src/**", "tests/test_api.py"]
+    finally:
+        path.unlink()

@@ -12,6 +12,7 @@ from awb.core.config import (
     RunCost,
     RunEnvironment,
     RunError,
+    RunExecution,
     RunMetrics,
     RunOutcome,
     RunQuality,
@@ -113,12 +114,20 @@ class ResultRecorder:
     def find_incomplete_run(
         self,
         tool: str,
-        expected_tasks: int,
+        expected_tasks: int | None = None,
+        *,
+        task_ids: list[str] | None = None,
+        requested_runs: int = 1,
+        task_set_hash: str = "",
+        identity_by_task: dict[str, dict[str, object]] | None = None,
     ) -> str | None:
-        """Find the most recent run_id for this tool that has fewer results than expected.
+        """Find the newest compatible experiment missing a task/repeat result.
 
-        Scans all _runN directories for the given tool.
-        Returns the base run_id (without _runN suffix) if incomplete, else None.
+        ``identity_by_task`` is optional for callers using the legacy counting
+        API. When supplied, every recorded result must carry the exact current
+        execution identity. Empty legacy identity fields are not compatible.
+        An empty expected model means the current runner did not pin a model,
+        so the adapter's observed model is not used as a resume constraint.
         """
         if not self.results_dir.exists():
             return None
@@ -138,18 +147,56 @@ class ResultRecorder:
             base_ids.setdefault(base_id, []).append(run_dir)
 
         for base_id, run_dirs in base_ids.items():
-            # Count tool results across all run directories for this base
-            total_files = 0
-            has_any = False
-            for run_dir in run_dirs:
-                tool_files = list(run_dir.glob(f"*_{tool}.json"))
-                total_files += len(tool_files)
-                if tool_files:
-                    has_any = True
-            if has_any and total_files < expected_tasks:
+            if task_ids is None:
+                total_files = sum(len(list(path.glob(f"*_{tool}.json"))) for path in run_dirs)
+                if total_files and expected_tasks is not None and total_files < expected_tasks:
+                    return base_id
+                continue
+
+            found_any = False
+            compatible = True
+            complete = True
+            for repeat in range(1, requested_runs + 1):
+                run_id = f"{base_id}_run{repeat}"
+                for task_id in task_ids:
+                    result = self.load_single(run_id, task_id, tool)
+                    if result is None:
+                        complete = False
+                        continue
+                    found_any = True
+                    if task_set_hash and result.task_set_hash != task_set_hash:
+                        compatible = False
+                        break
+                    expected_identity = (identity_by_task or {}).get(task_id)
+                    if identity_by_task is not None and (
+                        expected_identity is None
+                        or not _matches_resume_identity(result, expected_identity)
+                    ):
+                        compatible = False
+                        break
+                if not compatible:
+                    break
+            if found_any and compatible and not complete:
                 return base_id
 
         return None
+
+
+def _matches_resume_identity(result: RunResult, expected: dict[str, object]) -> bool:
+    """Return whether a saved result proves it belongs to the current cohort."""
+    for field, expected_value in expected.items():
+        if field == "model" and _unknown_identity_value(expected_value):
+            continue
+        if _unknown_identity_value(expected_value):
+            return False
+        actual_value = getattr(result, field, None)
+        if _unknown_identity_value(actual_value) or actual_value != expected_value:
+            return False
+    return True
+
+
+def _unknown_identity_value(value: object) -> bool:
+    return value is None or value == "" or value == "unknown" or value == {}
 
 
 def _dict_to_result(data: dict) -> RunResult:
@@ -221,11 +268,17 @@ def _dict_to_result(data: dict) -> RunResult:
             thinking_tokens=cost_data.get("thinking_tokens", 0),
             estimated_cost_usd=cost_data.get("estimated_cost_usd", 0),
             estimated_credits=cost_data.get("estimated_credits"),
+            usage_status=cost_data.get("usage_status", "unknown"),
         ),
         quality=RunQuality(
             lint_delta=quality_data.get("lint_delta", 0),
             security_delta=quality_data.get("security_delta", 0),
             test_regressions=quality_data.get("test_regressions", 0),
+            baseline_security_issues=quality_data.get("baseline_security_issues"),
+            post_security_issues=quality_data.get("post_security_issues"),
+            lint_status=quality_data.get("lint_status", "missing"),
+            security_status=quality_data.get("security_status", "missing"),
+            test_regressions_status=quality_data.get("test_regressions_status", "missing"),
         ),
         environment=RunEnvironment(
             os=env_data.get("os", ""),
@@ -238,4 +291,32 @@ def _dict_to_result(data: dict) -> RunResult:
         workflow=workflow,
         task_set_hash=data.get("task_set_hash", ""),
         trace_path=data.get("trace_path", ""),
+        execution=RunExecution(
+            status=data.get("execution", {}).get("status", "unknown"),
+            stage=data.get("execution", {}).get("stage", "unknown"),
+            termination_reason=data.get("execution", {}).get("termination_reason", ""),
+            tool_success=data.get("execution", {}).get("tool_success"),
+            tool_exit_code=data.get("execution", {}).get("tool_exit_code"),
+        ),
+        task_definition_hash=data.get("task_definition_hash", ""),
+        evaluator_version=data.get("evaluator_version", ""),
+        effective_config_hash=data.get("effective_config_hash", ""),
+        adapter_version=data.get("adapter_version", ""),
+        execution_mode=data.get("execution_mode", "host"),
+        environment_fingerprint=data.get("environment_fingerprint", ""),
+        budget_fingerprint=data.get("budget_fingerprint", ""),
+        cohort_id=data.get("cohort_id", ""),
+        loaded_instruction_files=data.get("loaded_instruction_files", []),
+        allowed_edit_paths=data.get("allowed_edit_paths", []),
+        effective_input_manifest=data.get("effective_input_manifest", {}),
+        environment_manifest=data.get("environment_manifest", {}),
+        cohort_manifest=data.get("cohort_manifest", {}),
+        experiment_plan_hash=data.get("experiment_plan_hash", ""),
+        experiment_split=data.get("experiment_split", ""),
+        experiment_arm=data.get("experiment_arm", ""),
+        repeat_index=data.get("repeat_index"),
+        requested_model=data.get("requested_model", ""),
+        experiment_attempt_status=data.get("experiment_attempt_status", ""),
+        experiment_state_policy=data.get("experiment_state_policy", ""),
+        configured_instruction_files=data.get("configured_instruction_files", []),
     )

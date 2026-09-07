@@ -67,7 +67,7 @@ verification:
   lint_commands:
     - "source .venv/bin/activate && ruff check routes/products.py repos/product_repo.py"
   security_commands:
-    - "source .venv/bin/activate && bandit -r routes/ repos/ -ll 2>/dev/null || true"
+    - "source .venv/bin/activate && bandit -r routes/ repos/ -ll"
   partial_credit:
     - criterion: "repos/product_repo.py module created"
       points: 10

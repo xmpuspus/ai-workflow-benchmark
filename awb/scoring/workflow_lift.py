@@ -34,6 +34,13 @@ class WorkflowLiftReport:
     ties: int
     capability_lifts: list[CapabilityLift] = field(default_factory=list)
     per_task: list[dict] = field(default_factory=list)
+    aggregation: str = "mean_per_task"
+    total_attempts_vanilla: int = 0
+    total_attempts_custom: int = 0
+    unpaired_attempts_vanilla: int = 0
+    unpaired_attempts_custom: int = 0
+    comparison_eligible: bool = True
+    incomplete_tasks: list[str] = field(default_factory=list)
 
 
 def compute_workflow_lift(
@@ -43,9 +50,17 @@ def compute_workflow_lift(
 ) -> WorkflowLiftReport:
     """Compute how much the custom workflow improves over vanilla."""
     # Build lookup by task_id
-    v_by_task = {r.task_id: r for r in vanilla_results}
-    c_by_task = {r.task_id: r for r in custom_results}
-    common = sorted(set(v_by_task) & set(c_by_task))
+    v_by_task: dict[str, list[RunResult]] = defaultdict(list)
+    c_by_task: dict[str, list[RunResult]] = defaultdict(list)
+    for result in vanilla_results:
+        v_by_task[result.task_id].append(result)
+    for result in custom_results:
+        c_by_task[result.task_id].append(result)
+    shared = sorted(set(v_by_task) & set(c_by_task))
+    incomplete = [
+        task_id for task_id in shared if len(v_by_task[task_id]) != len(c_by_task[task_id])
+    ]
+    common = [task_id for task_id in shared if task_id not in incomplete]
 
     if not common:
         return WorkflowLiftReport(
@@ -60,6 +75,20 @@ def compute_workflow_lift(
             custom_wins=0,
             vanilla_wins=0,
             ties=0,
+            total_attempts_vanilla=len(vanilla_results),
+            total_attempts_custom=len(custom_results),
+            unpaired_attempts_vanilla=(
+                sum(max(0, len(v_by_task[t]) - len(c_by_task[t])) for t in incomplete)
+                if incomplete
+                else len(vanilla_results)
+            ),
+            unpaired_attempts_custom=(
+                sum(max(0, len(c_by_task[t]) - len(v_by_task[t])) for t in incomplete)
+                if incomplete
+                else len(custom_results)
+            ),
+            comparison_eligible=False,
+            incomplete_tasks=incomplete,
         )
 
     # Per-task scores (partial credit percentage)
@@ -71,12 +100,16 @@ def compute_workflow_lift(
     ties = 0
 
     for tid in common:
-        vr = v_by_task[tid]
-        cr = c_by_task[tid]
-        v_max = vr.outcome.partial_credit_max or 1
-        c_max = cr.outcome.partial_credit_max or 1
-        vs = (vr.outcome.partial_credit_score / v_max) * 100
-        cs = (cr.outcome.partial_credit_score / c_max) * 100
+        vanilla_attempts = v_by_task[tid]
+        custom_attempts = c_by_task[tid]
+        vs = stats_mod.mean(
+            (r.outcome.partial_credit_score / (r.outcome.partial_credit_max or 1)) * 100
+            for r in vanilla_attempts
+        )
+        cs = stats_mod.mean(
+            (r.outcome.partial_credit_score / (r.outcome.partial_credit_max or 1)) * 100
+            for r in custom_attempts
+        )
         v_scores.append(vs)
         c_scores.append(cs)
 
@@ -94,6 +127,8 @@ def compute_workflow_lift(
                 "vanilla": round(vs, 1),
                 "custom": round(cs, 1),
                 "lift": round(delta, 1),
+                "vanilla_attempts": len(vanilla_attempts),
+                "custom_attempts": len(custom_attempts),
             }
         )
 
@@ -103,10 +138,11 @@ def compute_workflow_lift(
 
     # Significance
     stat = compare_tools_paired(v_scores, c_scores)
+    comparison_eligible = not incomplete
 
     # Pass rates
-    v_pass = sum(1 for tid in common if v_by_task[tid].outcome.success)
-    c_pass = sum(1 for tid in common if c_by_task[tid].outcome.success)
+    v_pass = sum(stats_mod.mean(r.outcome.success for r in v_by_task[tid]) for tid in common)
+    c_pass = sum(stats_mod.mean(r.outcome.success for r in c_by_task[tid]) for tid in common)
 
     # Capability-level lift
     cap_v_scores: dict[str, list[float]] = defaultdict(list)
@@ -116,12 +152,14 @@ def compute_workflow_lift(
         task = task_defs.get(tid)
         if not task:
             continue
-        vr = v_by_task[tid]
-        cr = c_by_task[tid]
-        v_max = vr.outcome.partial_credit_max or 1
-        c_max = cr.outcome.partial_credit_max or 1
-        vs = (vr.outcome.partial_credit_score / v_max) * 100
-        cs = (cr.outcome.partial_credit_score / c_max) * 100
+        vs = stats_mod.mean(
+            (r.outcome.partial_credit_score / (r.outcome.partial_credit_max or 1)) * 100
+            for r in v_by_task[tid]
+        )
+        cs = stats_mod.mean(
+            (r.outcome.partial_credit_score / (r.outcome.partial_credit_max or 1)) * 100
+            for r in c_by_task[tid]
+        )
 
         for cap in task.capabilities:
             cap_v_scores[cap].append(vs)
@@ -146,8 +184,8 @@ def compute_workflow_lift(
 
     return WorkflowLiftReport(
         lift=round(lift, 1),
-        p_value=stat.p_value,
-        significant=stat.significant,
+        p_value=stat.p_value if comparison_eligible else None,
+        significant=stat.significant if comparison_eligible else False,
         vanilla_pass_rate=round(v_pass / len(common) * 100, 1),
         custom_pass_rate=round(c_pass / len(common) * 100, 1),
         vanilla_partial_avg=round(stats_mod.mean(v_scores), 1),
@@ -158,4 +196,12 @@ def compute_workflow_lift(
         ties=ties,
         capability_lifts=capability_lifts,
         per_task=sorted(per_task, key=lambda x: -abs(x["lift"])),
+        total_attempts_vanilla=len(vanilla_results),
+        total_attempts_custom=len(custom_results),
+        unpaired_attempts_vanilla=sum(len(v) for k, v in v_by_task.items() if k not in shared)
+        + sum(max(0, len(v_by_task[t]) - len(c_by_task[t])) for t in incomplete),
+        unpaired_attempts_custom=sum(len(v) for k, v in c_by_task.items() if k not in shared)
+        + sum(max(0, len(c_by_task[t]) - len(v_by_task[t])) for t in incomplete),
+        comparison_eligible=comparison_eligible,
+        incomplete_tasks=incomplete,
     )

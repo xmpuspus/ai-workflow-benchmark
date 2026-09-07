@@ -1,106 +1,78 @@
 id: BF-009
 category: bug-fix
-title: "Fix circular import between models and services causing AttributeError"
+title: Fix circular import between models and services causing AttributeError
 difficulty: easy
 estimated_minutes: 30
-languages: [python]
-tags: [fastapi, circular-import, modules, architecture]
-capabilities: [bug_diagnosis, code_comprehension]
-
+languages:
+- python
+tags:
+- fastapi
+- circular-import
+- modules
+- architecture
+capabilities:
+- bug_diagnosis
+- code_comprehension
 repo:
-  url: "https://github.com/tiangolo/fastapi"
-  commit: "628c34e0cae200564d191c95d7edea78c88c4b5e"
+  url: https://github.com/tiangolo/fastapi
+  commit: 628c34e0cae200564d191c95d7edea78c88c4b5e
   setup_commands:
-    - "python3 -m venv .venv && source .venv/bin/activate && pip install -e '.[all]' && pip install pytest httpx"
-
+  - python3 -m venv .venv && source .venv/bin/activate && pip install -e '.[all]' && pip install
+    pytest httpx
 issue:
-  description: |
-    Two modules import from each other. Python resolves the cycle at import
-    time by giving each module a partially-initialized version of the other,
-    so top-level names are defined but names assigned later in the file are
-    missing. This causes AttributeError only when the affected function is
-    actually called, not when the modules are first imported.
-
-    Your task:
-    1. Create models/user.py with:
-       from services.auth import hash_password
-
-       class User:
-           def __init__(self, username: str, password: str):
-               self.username = username
-               self.password_hash = hash_password(password)
-
-    2. Create services/auth.py with:
-       from models.user import User
-
-       def hash_password(password: str) -> str:
-           return f"hashed:{password}"
-
-       def create_user(username: str, password: str) -> User:
-           return User(username, password)
-
-    THE BUG: models/user.py imports from services/auth.py, and services/auth.py
-    imports from models/user.py. Python partially evaluates both modules. When
-    services/auth.py is being evaluated, it reaches `from models.user import User`
-    and gets a partially-built models.user that does not yet have User defined.
-    The import itself may not fail, but calling create_user() will raise
-    AttributeError: partially initialized module 'models.user' has no attribute 'User'.
-
-    3. Create tests/test_circular_import.py with:
-       - test_import_succeeds: importing both modules does not raise ImportError
-         (the cycle may resolve at import time)
-       - test_create_user_raises_before_fix: calling services.auth.create_user()
-         raises AttributeError or NameError due to the circular dependency
-         (document this as the bug; this test should be inverted after the fix)
-       - test_create_user_works_after_fix: after the fix, create_user("alice", "pw")
-         returns a User with username="alice" and a non-empty password_hash
-
-    The fix: create models/base.py with shared type definitions (User dataclass
-    or TypedDict), remove the circular dependency. Neither module should import
-    from the other. Or use TYPE_CHECKING for type annotations only:
-       from __future__ import annotations
-       from typing import TYPE_CHECKING
-       if TYPE_CHECKING:
-           from models.user import User
-
-    The TYPE_CHECKING approach is acceptable only if the runtime code does not
-    actually need the User class at call time (only for type hints). If User is
-    instantiated in services/auth.py, it must be a real runtime import — use
-    models/base.py instead.
+  description: "Two modules import from each other. Python resolves the cycle at import\ntime by\
+    \ giving each module a partially-initialized version of the other,\nso top-level names are defined\
+    \ but names assigned later in the file are\nmissing. This causes AttributeError only when the\
+    \ affected function is\nactually called, not when the modules are first imported.\n\nYour task:\n\
+    1. Create models/user.py with:\n   from services.auth import hash_password\n\n   class User:\n\
+    \       def __init__(self, username: str, password: str):\n           self.username = username\n\
+    \           self.password_hash = hash_password(password)\n\n2. Create services/auth.py with:\n\
+    \   from models.user import User\n\n   def hash_password(password: str) -> str:\n       return\
+    \ f\"hashed:{password}\"\n\n   def create_user(username: str, password: str) -> User:\n     \
+    \  return User(username, password)\n\nTHE BUG: models/user.py imports from services/auth.py,\
+    \ and services/auth.py\nimports from models/user.py. Python partially evaluates both modules.\
+    \ When\nservices/auth.py is being evaluated, it reaches `from models.user import User`\nand gets\
+    \ a partially-built models.user that does not yet have User defined.\nThe import itself may not\
+    \ fail, but calling create_user() will raise\nAttributeError: partially initialized module 'models.user'\
+    \ has no attribute 'User'.\n\n3. Create tests/test_circular_import.py with:\n   - test_import_succeeds:\
+    \ importing both modules does not raise ImportError\n     (the cycle may resolve at import time)\n\
+    \   - test_create_user_raises_before_fix: calling services.auth.create_user()\n     raises AttributeError\
+    \ or NameError due to the circular dependency\n     (document this as the bug; this test should\
+    \ be inverted after the fix)\n   - test_create_user_works_after_fix: after the fix, create_user(\"\
+    alice\", \"pw\")\n     returns a User with username=\"alice\" and a non-empty password_hash\n\
+    \nThe fix: create models/base.py with shared type definitions (User dataclass\nor TypedDict),\
+    \ remove the circular dependency. Neither module should import\nfrom the other. Or use TYPE_CHECKING\
+    \ for type annotations only:\n   from __future__ import annotations\n   from typing import TYPE_CHECKING\n\
+    \   if TYPE_CHECKING:\n       from models.user import User\n\nThe TYPE_CHECKING approach is acceptable\
+    \ only if the runtime code does not\nactually need the User class at call time (only for type\
+    \ hints). If User is\ninstantiated in services/auth.py, it must be a real runtime import \u2014\
+    \ use\nmodels/base.py instead.\n"
   files_to_examine:
-    - "fastapi/routing.py"
-    - "tests/"
-
+  - fastapi/routing.py
+  - tests/
 verification:
   test_commands:
-    - "source .venv/bin/activate && python3 -m pytest tests/test_circular_import.py -v"
+  - source .venv/bin/activate && python3 -m pytest tests/test_circular_import.py -v
   lint_commands:
-    - "source .venv/bin/activate && ruff check models/ services/ tests/test_circular_import.py"
+  - source .venv/bin/activate && ruff check models/ services/ tests/test_circular_import.py
   security_commands: []
   partial_credit:
-    - criterion: "Circular import identified and broken"
-      points: 20
-      check: "grep -qvE 'from models.user import|from services.auth import' services/auth.py models/user.py 2>/dev/null || true"
-    - criterion: "Fix uses TYPE_CHECKING or a separate base module (no lazy import hack)"
-      points: 15
-      check: "grep -qE 'TYPE_CHECKING|models/base|models\\.base' models/user.py services/auth.py"
-    - criterion: "models/base.py created OR TYPE_CHECKING pattern used"
-      points: 25
-      check: "test -f models/base.py || grep -qE 'TYPE_CHECKING' models/user.py services/auth.py"
-    - criterion: "Test proving create_user works at runtime"
-      points: 20
-      check: "grep -qE 'create_user|test_create' tests/test_circular_import.py"
-    - criterion: "Tests pass"
-      points: 20
-      check: "source .venv/bin/activate && python3 -m pytest tests/test_circular_import.py -v"
-
+  - criterion: User creation works with models imported first
+    points: 50
+    check: awb-oracle BF-009 models-first
+  - criterion: User creation works with services imported first
+    points: 50
+    check: awb-oracle BF-009 services-first
 constraints:
   max_iterations: 20
   timeout_seconds: 843
-
-# === provenance (backfilled) ===
 provenance:
-  created_at: "2026-03-21T19:52:06+08:00"
-  last_verified_at: "2026-03-23T11:22:30.167315+00:00"
+  created_at: '2026-03-21T19:52:06+08:00'
+  last_verified_at: '2026-03-23T11:22:30.167315+00:00'
 contamination_risk: high
 label: synthetic_overlay
+oracle_review:
+  status: candidate
+  evaluator_version: behavioral-v1
+  controls: tests/test_task_oracles.py
+  confirmation_eligible: false

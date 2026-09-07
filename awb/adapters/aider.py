@@ -5,6 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from awb.adapters.base import ToolAdapter, ToolResult
+from awb.core.subprocesses import run_exec
 
 
 class AiderAdapter(ToolAdapter):
@@ -30,8 +31,6 @@ class AiderAdapter(ToolAdapter):
         timeout_seconds: int = 1800,
         on_event=None,
     ) -> ToolResult:
-        import asyncio
-
         cmd = [
             "aider",
             "--message",
@@ -41,17 +40,8 @@ class AiderAdapter(ToolAdapter):
             "--no-auto-commits",
             "--no-show-model-warnings",
         ]
-        proc = await asyncio.create_subprocess_exec(
-            *cmd,
-            cwd=workspace,
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE,
-        )
-        try:
-            stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=timeout_seconds)
-        except TimeoutError:
-            proc.kill()
-            await proc.communicate()
+        result = await run_exec(*cmd, cwd=workspace, timeout=timeout_seconds)
+        if result.exit_code == 124:
             return ToolResult(
                 success=False,
                 raw_output="",
@@ -59,9 +49,9 @@ class AiderAdapter(ToolAdapter):
                 tool_version=self.get_version(),
             )
         return ToolResult(
-            success=proc.returncode == 0,
-            raw_output=stdout.decode(errors="replace"),
-            exit_code=proc.returncode or 0,
+            success=result.exit_code == 0,
+            raw_output=result.stdout.decode(errors="replace"),
+            exit_code=result.exit_code,
             tool_version=self.get_version(),
         )
 

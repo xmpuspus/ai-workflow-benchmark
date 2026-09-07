@@ -1,6 +1,6 @@
 """Tests for fast-check task selection and score estimation."""
 
-from awb.core.fast_check import estimate_full_score, select_fast_check_tasks
+from awb.core.fast_check import select_fast_check_tasks, summarize_fast_check
 
 
 class TestSelectFastCheckTasks:
@@ -26,23 +26,19 @@ class TestSelectFastCheckTasks:
         assert len(categories) >= 2
 
 
-class TestEstimateFullScore:
+class TestSummarizeFastCheck:
     def test_perfect_scores(self):
-        results = [
-            {"partial_credit_score": 100, "partial_credit_max": 100}
-            for _ in range(8)
-        ]
-        est, margin = estimate_full_score(results)
-        assert est == 100.0
-        assert margin == 0.0
+        results = [{"partial_credit_score": 100, "partial_credit_max": 100} for _ in range(8)]
+        summary = summarize_fast_check(results)
+        assert summary.sample_mean == 100.0
+        assert summary.sample_min == 100.0
+        assert summary.sample_max == 100.0
+        assert summary.population_inference is False
 
     def test_zero_scores(self):
-        results = [
-            {"partial_credit_score": 0, "partial_credit_max": 100}
-            for _ in range(8)
-        ]
-        est, margin = estimate_full_score(results)
-        assert est == 0.0
+        results = [{"partial_credit_score": 0, "partial_credit_max": 100} for _ in range(8)]
+        summary = summarize_fast_check(results)
+        assert summary.sample_mean == 0.0
 
     def test_mixed_scores(self):
         results = [
@@ -50,16 +46,20 @@ class TestEstimateFullScore:
             {"partial_credit_score": 60, "partial_credit_max": 100},
             {"partial_credit_score": 40, "partial_credit_max": 100},
         ]
-        est, margin = estimate_full_score(results)
-        assert 50 < est < 70
-        assert margin > 0
+        summary = summarize_fast_check(results)
+        assert summary.sample_mean == 60.0
+        assert summary.sample_min == 40.0
+        assert summary.sample_max == 80.0
+        assert summary.design == "exploratory_hand_picked"
 
     def test_empty_results(self):
-        est, margin = estimate_full_score([])
-        assert est == 0.0
-        assert margin == 0.0
+        summary = summarize_fast_check([])
+        assert summary.sample_mean is None
+        assert summary.n_tasks == 0
 
-    def test_single_result_high_uncertainty(self):
+    def test_single_result_stays_descriptive(self):
         results = [{"partial_credit_score": 50, "partial_credit_max": 100}]
-        _, margin = estimate_full_score(results)
-        assert margin == 25.0  # High uncertainty for single sample
+        summary = summarize_fast_check(results)
+        assert summary.sample_mean == 50.0
+        assert summary.n_tasks == 1
+        assert "does not estimate full-suite" in summary.message

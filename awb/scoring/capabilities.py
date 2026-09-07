@@ -101,6 +101,8 @@ def _compute_cost_discipline(
     """Score 0-100 based on how efficiently the tool uses tokens."""
     cost_scores = []
     for result in results:
+        if getattr(result.cost, "usage_status", "unknown") != "complete":
+            return None
         task = task_defs.get(result.task_id)
         if not task:
             continue

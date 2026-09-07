@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import asyncio
 import hashlib
 import json
 import os
@@ -11,6 +10,7 @@ import subprocess
 from pathlib import Path
 
 from awb.adapters.base import ToolAdapter, ToolResult
+from awb.core.subprocesses import run_exec
 
 
 class GeminiCliAdapter(ToolAdapter):
@@ -36,41 +36,33 @@ class GeminiCliAdapter(ToolAdapter):
         workspace: Path,
         max_turns: int = 20,
         timeout_seconds: int = 1800,
+        on_event=None,
     ) -> ToolResult:
         cmd = self._get_cmd(prompt, max_turns)
         env = self._get_env()
-        try:
-            proc = await asyncio.create_subprocess_exec(
-                *cmd,
-                stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.PIPE,
-                cwd=workspace,
-                env=env,
-            )
-            stdout_bytes, stderr_bytes = await asyncio.wait_for(
-                proc.communicate(), timeout=timeout_seconds
-            )
-        except TimeoutError:
-            proc.kill()
-            await proc.communicate()
-            return ToolResult(success=False, raw_output="", exit_code=-1)
+        result = await run_exec(*cmd, cwd=workspace, timeout=timeout_seconds, env=env)
+        if result.exit_code == 124:
+            return ToolResult(success=False, raw_output="", exit_code=124)
 
-        stdout = stdout_bytes.decode("utf-8", errors="replace")
+        stdout = result.stdout.decode("utf-8", errors="replace")
         stream_events = []
         for line in stdout.splitlines():
             line = line.strip()
             if not line:
                 continue
             try:
-                stream_events.append(json.loads(line))
+                event = json.loads(line)
+                stream_events.append(event)
+                if on_event is not None and on_event(event) is False:
+                    break
             except json.JSONDecodeError:
                 continue
 
         return ToolResult(
-            success=proc.returncode == 0 and bool(stdout.strip()),
-            raw_output=stdout + stderr_bytes.decode("utf-8", errors="replace"),
+            success=result.exit_code == 0 and bool(stdout.strip()),
+            raw_output=stdout + result.stderr.decode("utf-8", errors="replace"),
             stream_events=stream_events,
-            exit_code=proc.returncode or 0,
+            exit_code=result.exit_code,
             tool_version=self.get_version(),
             model="",
         )

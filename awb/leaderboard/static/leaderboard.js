@@ -27,22 +27,22 @@ function initSorting() {
             th.classList.add("sort-active", "sort-" + direction);
 
             rows.sort(function (a, b) {
-                var aVal = extractValue(a.children[colIndex]);
-                var bVal = extractValue(b.children[colIndex]);
-                if (direction === "asc") return aVal - bVal;
-                return bVal - aVal;
+                var aVal = extractValue(a.children[colIndex], sortKey);
+                var bVal = extractValue(b.children[colIndex], sortKey);
+                var comparison = typeof aVal === "string" ? aVal.localeCompare(bVal) : aVal - bVal;
+                return direction === "asc" ? comparison : -comparison;
             });
 
-            rows.forEach(function (row, i) {
-                row.querySelector(".rank").textContent = i + 1;
+            rows.forEach(function (row) {
                 tbody.appendChild(row);
             });
         });
     });
 }
 
-function extractValue(td) {
+function extractValue(td, sortKey) {
     var text = td.textContent.replace(/[$%,]/g, "").trim();
+    if (sortKey === "tool" || sortKey === "model") return text.toLocaleLowerCase();
     var num = parseFloat(text);
     return isNaN(num) ? 0 : num;
 }
@@ -104,13 +104,15 @@ function drawRadarChart() {
     // Aggregate by tool
     var toolData = {};
     RESULTS_DATA.forEach(function (r) {
-        if (!toolData[r.tool]) {
-            toolData[r.tool] = {
+        if (!r.comparison_eligible) return;
+        var cohortLabel = r.tool + " · " + r.model + " · " + r.cohort_id;
+        if (!toolData[cohortLabel]) {
+            toolData[cohortLabel] = {
                 count: 0, success: 0, score: 0, maxScore: 0,
                 time: 0, cost: 0, iterations: 0, lint: 0, security: 0, regressions: 0
             };
         }
-        var t = toolData[r.tool];
+        var t = toolData[cohortLabel];
         t.count++;
         if (r.outcome.success) t.success++;
         t.score += r.outcome.partial_credit_score;
@@ -173,7 +175,10 @@ function drawRadarChart() {
 /* CSV export */
 function exportCSV() {
     if (typeof RESULTS_DATA === "undefined") return;
-    var rows = [["task_id", "tool", "success", "score", "time_s", "cost_usd"]];
+    var identityFields = ["model", "tool_version", "run_id", "cohort_id", "comparison_eligible",
+        "task_set_hash", "task_definition_hash", "evaluator_version", "effective_config_hash",
+        "execution_mode", "environment_fingerprint", "budget_fingerprint"];
+    var rows = [["task_id", "tool", "success", "score", "time_s", "cost_usd", "usage_status"].concat(identityFields)];
     RESULTS_DATA.forEach(function (r) {
         rows.push([
             r.task_id,
@@ -181,10 +186,16 @@ function exportCSV() {
             r.outcome && r.outcome.success ? "PASS" : "FAIL",
             r.outcome && r.outcome.partial_credit_score || 0,
             r.metrics && r.metrics.wall_clock_seconds || 0,
-            r.cost && r.cost.estimated_cost_usd || 0,
-        ]);
+            r.cost && r.cost.usage_status === "complete" ? r.cost.estimated_cost_usd : "",
+            r.cost && r.cost.usage_status || "unknown",
+        ].concat(identityFields.map(function (key) { return r[key] == null ? "" : r[key]; })));
     });
-    var csv = rows.map(function (r) { return r.join(","); }).join("\n");
+    function csvCell(value) {
+        var text = String(value);
+        if (typeof value === "string" && /^[=+@-]/.test(text)) text = "'" + text;
+        return '"' + text.replace(/"/g, '""') + '"';
+    }
+    var csv = rows.map(function (r) { return r.map(csvCell).join(","); }).join("\n");
     var blob = new Blob([csv], { type: "text/csv" });
     var url = URL.createObjectURL(blob);
     var a = document.createElement("a");

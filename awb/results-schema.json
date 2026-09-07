@@ -158,6 +158,9 @@
         },
         "estimated_credits": {
           "type": "number"
+        },
+        "usage_status": {
+          "type": "string"
         }
       }
     },
@@ -173,6 +176,29 @@
         },
         "test_regressions": {
           "type": "integer"
+        },
+        "baseline_security_issues": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 0
+        },
+        "post_security_issues": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 0
+        },
+        "lint_status": {
+          "type": "string"
+        },
+        "security_status": {
+          "type": "string"
+        },
+        "test_regressions_status": {
+          "type": "string"
         }
       }
     },
@@ -200,6 +226,78 @@
         }
       }
     },
+    "execution": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "status": {
+          "type": "string"
+        },
+        "stage": {
+          "type": "string"
+        },
+        "termination_reason": {
+          "type": "string"
+        },
+        "tool_success": {
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "tool_exit_code": {
+          "type": [
+            "integer",
+            "null"
+          ]
+        }
+      }
+    },
+    "task_definition_hash": {
+      "type": "string"
+    },
+    "evaluator_version": {
+      "type": "string"
+    },
+    "effective_config_hash": {
+      "type": "string"
+    },
+    "adapter_version": {
+      "type": "string"
+    },
+    "execution_mode": {
+      "type": "string"
+    },
+    "environment_fingerprint": {
+      "type": "string"
+    },
+    "budget_fingerprint": {
+      "type": "string"
+    },
+    "cohort_id": {
+      "type": "string"
+    },
+    "loaded_instruction_files": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "allowed_edit_paths": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "effective_input_manifest": {
+      "type": "object"
+    },
+    "environment_manifest": {
+      "type": "object"
+    },
+    "cohort_manifest": {
+      "type": "object"
+    },
     "workflow": {
       "type": "object",
       "additionalProperties": false,
@@ -222,6 +320,37 @@
         "config_hash": {
           "type": "string"
         }
+      }
+    },
+    "experiment_plan_hash": {
+      "type": "string"
+    },
+    "experiment_split": {
+      "type": "string"
+    },
+    "experiment_arm": {
+      "type": "string"
+    },
+    "requested_model": {
+      "type": "string"
+    },
+    "experiment_attempt_status": {
+      "type": "string"
+    },
+    "experiment_state_policy": {
+      "type": "string"
+    },
+    "repeat_index": {
+      "type": [
+        "integer",
+        "null"
+      ],
+      "minimum": 1
+    },
+    "configured_instruction_files": {
+      "type": "array",
+      "items": {
+        "type": "string"
       }
     }
   }

@@ -35,8 +35,15 @@ def _result(task_id, *, success, trace_path=""):
             partial_credit_max=100,
         ),
         metrics=RunMetrics(wall_clock_seconds=42.0, files_modified=1),
-        cost=RunCost(estimated_cost_usd=0.5),
-        quality=RunQuality(test_regressions=0, security_delta=0, lint_delta=0),
+        cost=RunCost(estimated_cost_usd=0.5, usage_status="complete"),
+        quality=RunQuality(
+            test_regressions=0,
+            security_delta=0,
+            lint_delta=0,
+            lint_status="measured_clean",
+            security_status="measured_clean",
+            test_regressions_status="measured_clean",
+        ),
         environment=RunEnvironment(os="darwin", hardware="test"),
         trace_path=trace_path,
     )
@@ -44,12 +51,88 @@ def _result(task_id, *, success, trace_path=""):
 
 def test_submission_includes_readiness_block(tmp_path):
     results = [_result("BF-001", success=True), _result("BF-002", success=False)]
+    for result in results:
+        result.quality.test_regressions_status = "measured_clean"
+        result.quality.security_status = "measured_clean"
     sub = build_submission(results, run_dir=tmp_path, task_defs={}, submitter="me")
     assert "readiness" in sub["submission"]
     r = sub["submission"]["readiness"]
     assert 0 <= r["composite"] <= 100
     # One of two passed -> correctness 50.
     assert r["correctness"] == 50.0
+
+
+def test_submission_preserves_one_consistent_task_set_hash(tmp_path):
+    results = [_result("BF-001", success=True), _result("BF-002", success=True)]
+    for result in results:
+        result.task_set_hash = "ab" * 32
+
+    sub = build_submission(results, run_dir=tmp_path, task_defs={}, submitter="me")
+
+    assert sub["submission"]["task_set_hash"] == "ab" * 32
+
+
+def test_submission_marks_mixed_task_sets_ineligible(tmp_path):
+    results = [_result("BF-001", success=True), _result("BF-002", success=True)]
+    results[0].task_set_hash = "ab" * 32
+    results[1].task_set_hash = "cd" * 32
+
+    sub = build_submission(results, run_dir=tmp_path, task_defs={}, submitter="me")
+
+    assert "task_set_hash" not in sub["submission"]
+    assert sub["submission"]["comparison_eligibility"]["eligible"] is False
+    assert "mixed task_set_hash" in sub["submission"]["comparison_eligibility"]["reasons"]
+
+
+def test_export_with_missing_measurements_still_validates(tmp_path):
+    from awb.submission.ingest import validate_submission
+
+    result = _result("BF-001", success=False)
+    result.quality.security_status = "missing"
+    result.quality.test_regressions_status = "missing"
+    sub = build_submission([result], run_dir=tmp_path, task_defs={}, submitter="me")
+
+    assert sub["submission"]["readiness"]["composite"] is None
+    assert validate_submission(sub) == []
+
+
+def test_complete_matching_submission_identity_is_comparison_eligible(tmp_path):
+    from awb.submission.compare import compare_submissions
+    from awb.submission.ingest import parse_submission
+
+    result = _result("BF-001", success=True)
+    result.task_set_hash = "ab" * 32
+    result.model = "model-a"
+    result.tool_version = "1.2.3"
+    result.effective_config_hash = "config-a"
+    result.evaluator_version = "evaluator-a"
+    result.execution_mode = "local"
+    result.environment_fingerprint = "env-a"
+    result.budget_fingerprint = "budget-a"
+    result.task_definition_hash = "cd" * 32
+    result.cohort_manifest = {"selected_task_ids": ["BF-001"], "requested_repeats": 1}
+    data = build_submission([result], run_dir=tmp_path, task_defs={}, submitter="me")
+    submission = parse_submission(data)
+
+    comparison = compare_submissions(submission, submission)
+
+    assert submission.comparison_eligible is True
+    assert comparison.comparison_eligible is True
+    assert comparison.eligibility_warning == ""
+
+
+def test_quality_measurement_status_survives_submission_ingest(tmp_path):
+    from awb.submission.ingest import parse_submission, submission_to_run_results
+
+    result = _result("BF-001", success=True)
+    result.quality.security_status = "measured_clean"
+    result.quality.test_regressions_status = "measured_clean"
+    data = build_submission([result], run_dir=tmp_path, task_defs={}, submitter="me")
+
+    [loaded] = submission_to_run_results(parse_submission(data))
+
+    assert loaded.quality.security_status == "measured_clean"
+    assert loaded.quality.test_regressions_status == "measured_clean"
 
 
 def test_run_carries_trace_grade_when_spans_present(tmp_path):
@@ -101,9 +184,17 @@ def test_trace_summary_averages_all_six_rubrics_when_gradeable():
         "no_repeated_failing_command_loop",
         "context_discipline",
         "tool_call_efficiency",
+        "coverage",
     }
     assert summary["context_discipline"] == pytest.approx(90.0)
     assert summary["tool_call_efficiency"] == pytest.approx(80.0)
+    assert summary["coverage"]["total_traces"] == 2
+    assert summary["coverage"]["gradeable_traces"] == 2
+    assert summary["coverage"]["rubrics"]["tool_call_efficiency"] == {
+        "measured": 2,
+        "total": 2,
+        "status": "complete",
+    }
 
 
 def test_trace_summary_averages_new_rubric_only_over_runs_that_reported_it():
@@ -130,3 +221,12 @@ def test_trace_summary_averages_new_rubric_only_over_runs_that_reported_it():
     summary = _mean_trace_summary(grades)
     assert summary["context_discipline"] == pytest.approx(40.0)
     assert "tool_call_efficiency" not in summary
+    assert summary["coverage"]["rubrics"]["context_discipline"]["status"] == "partial"
+
+
+def test_trace_summary_keeps_denominator_when_no_trace_is_gradeable():
+    from awb.commands.submit import _mean_trace_summary
+
+    summary = _mean_trace_summary([None, None])
+
+    assert summary == {"coverage": {"total_traces": 2, "gradeable_traces": 0, "rubrics": {}}}

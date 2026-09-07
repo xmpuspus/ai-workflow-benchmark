@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from dataclasses import dataclass
+
 from awb.core.config import TaskDefinition
 
 # Hand-picked representative task IDs: 1 per category, prefer easy/medium, stable tasks
@@ -39,16 +41,24 @@ def select_fast_check_tasks(all_tasks: list[TaskDefinition]) -> list[TaskDefinit
     return selected
 
 
-def estimate_full_score(
-    fast_results: list[dict],
-    total_tasks: int = 100,
-) -> tuple[float, float]:
-    """Estimate full-suite score from fast-check results.
+@dataclass(frozen=True)
+class FastCheckSummary:
+    sample_mean: float | None
+    sample_min: float | None
+    sample_max: float | None
+    n_tasks: int
+    design: str = "exploratory_hand_picked"
+    population_inference: bool = False
+    message: str = (
+        "Exploratory result for the selected fast-check tasks; "
+        "it does not estimate full-suite performance."
+    )
 
-    Returns (estimated_score, confidence_margin).
-    """
+
+def summarize_fast_check(fast_results: list[dict]) -> FastCheckSummary:
+    """Describe the fixed fast-check sample without population inference."""
     if not fast_results:
-        return 0.0, 0.0
+        return FastCheckSummary(sample_mean=None, sample_min=None, sample_max=None, n_tasks=0)
 
     scores = []
     for r in fast_results:
@@ -56,13 +66,20 @@ def estimate_full_score(
         pct = (r.get("partial_credit_score", 0) / max_pts) * 100
         scores.append(pct)
 
-    mean = sum(scores) / len(scores)
-    if len(scores) > 1:
-        variance = sum((s - mean) ** 2 for s in scores) / (len(scores) - 1)
-        std_dev = variance**0.5
-        # 95% CI margin: t-value ~2.4 for n=8
-        margin = 2.4 * std_dev / (len(scores) ** 0.5)
-    else:
-        margin = 25.0  # High uncertainty with single sample
+    return FastCheckSummary(
+        sample_mean=round(sum(scores) / len(scores), 1),
+        sample_min=round(min(scores), 1),
+        sample_max=round(max(scores), 1),
+        n_tasks=len(scores),
+    )
 
-    return round(mean, 1), round(margin, 1)
+
+def estimate_full_score(fast_results: list[dict], total_tasks: int = 100) -> tuple[float, float]:
+    """Compatibility wrapper returning the selected-sample mean and no margin.
+
+    The second value is always zero because this fixed, hand-picked sample
+    does not support an inferential margin for ``total_tasks``.
+    """
+    del total_tasks
+    summary = summarize_fast_check(fast_results)
+    return summary.sample_mean or 0.0, 0.0
